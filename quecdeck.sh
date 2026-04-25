@@ -473,7 +473,7 @@ fi
 
 while true; do
     echo -e "\e[92m"
-    echo "Welcome to the QuecDeck installer!
+    echo "Welcome to the QuecDeck installer!"
     echo ""
     echo -e "\e[0m"
     echo "Select an option:"
