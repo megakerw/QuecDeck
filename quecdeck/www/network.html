@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuecDeck</title>
+    <!-- <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css?v=c58a483b"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    /> -->
+    <!-- Import all the bootstrap css files from css folder -->
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=c58a483b" />
+    <link rel="stylesheet" href="css/styles.css?v=c58a483b" />
+
+    <!-- Logo -->
+    <link rel="quecdeck-logo" href="favicon.ico" />
+
+    <!--  Import BootStrap Javascript -->
+    <script src="js/bootstrap.bundle.min.js?v=c58a483b"></script>
+    <script src="js/utils.js?v=c58a483b" defer></script>
+    <script src="js/alpinejs.min.js?v=c58a483b" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="cellLocking()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=c58a483b"></script>
+
+        <div class="row gy-3 mt-4 mb-4 align-items-stretch">
+          <div class="col-12 col-md-5">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title d-flex align-items-center gap-2 mb-4">
+                Band Locking
+                <span x-show="isGettingBands" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
+                <select
+                  class="form-select ms-auto"
+                  id="networkModeBand"
+                  aria-label="LTE"
+                  style="max-width:140px"
+                >
+                  <option selected value="LTE">LTE</option>
+                  <option value="NSA">NR5G-NSA</option>
+                  <option value="SA">NR5G-SA</option>
+                </select>
+              </div>
+              <form id="bandForm">
+                <!-- Checkboxes will be populated here -->
+              </form>
+              <div class="text-muted small mt-2" x-text="'Active bands: ' + bands"></div>
+              <div class="mt-auto pt-3 d-flex align-items-center gap-2">
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  @click="lockSelectedBands()"
+                  :disabled="$store.scanBanner.active"
+                >
+                  Lock Bands
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-info"
+                  @click="toggleAllBands()"
+                  x-text="allBandsChecked ? 'Deselect All' : 'Select All'"
+                >Select All</button>
+                <div class="ms-auto">
+                  <button
+                    type="button"
+                    class="btn btn-danger"
+                    @click="resetBandLocking()"
+                    :disabled="$store.scanBanner.active"
+                  >
+                    Reset All Bands
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-md form-narrow">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title">APN Settings</div>
+                <div class="mb-4">
+                  <label for="roamPref" class="form-label">Roaming Preference</label>
+                  <select
+                    class="form-select"
+                    id="roamPref"
+                    x-model="roamPref"
+                    aria-label="roamPref"
+                  >
+                    <option value="255">Any Network</option>
+                    <option value="1">Home Network Only</option>
+                    <option value="3">Affiliate Network</option>
+                  </select>
+                </div>
+
+                <div class="mb-4">
+                  <label for="mbnAutoSel" class="form-label">Automatic APN/MBN Selection</label>
+                  <select
+                    class="form-select"
+                    id="mbnAutoSel"
+                    x-model="mbnAutoSel"
+                    aria-label="mbnAutoSel"
+                  >
+                    <option value="1">Enabled</option>
+                    <option value="0">Disabled</option>
+                  </select>
+                </div>
+
+                <div class="mb-4">
+                  <label for="APN" class="form-label">APN</label>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="APN"
+                    x-model="newApn"
+                    aria-describedby="APN"
+                    x-bind:placeholder="'Fetching...'"
+                  />
+                </div>
+
+                <div class="mb-4">
+                  <label for="ipForAPN" class="form-label">APN PDP Type</label>
+                  <select
+                    class="form-select"
+                    id="ipAPN"
+                    x-model="newApnIP"
+                    aria-label="ipForAPN"
+                  >
+                    <option value="IP">IP</option>
+                    <option value="IPV6">IPV6</option>
+                    <option value="IPV4V6">IPV4V6</option>
+                    <option value="PPP">PPP</option>
+                  </select>
+                </div>
+
+                <div class="mb-4">
+                  <label class="form-label">SIM</label>
+                  <div class="btn-group d-flex" role="group" aria-label="SIM selection">
+                    <input type="radio" class="btn-check" name="simSelect" id="SIM1" autocomplete="off" :checked="sim === '1'" @click="newSim = '1'" />
+                    <label class="btn btn-outline-primary" for="SIM1">Slot 1</label>
+                    <input type="radio" class="btn-check" name="simSelect" id="SIM2" autocomplete="off" :checked="sim === '2'" @click="newSim = '2'" />
+                    <label class="btn btn-outline-primary" for="SIM2">Slot 2</label>
+                  </div>
+                </div>
+              <div class="mt-auto pt-3">
+                <button type="button" class="btn btn-primary" @click="saveApnSettings()" :disabled="$store.scanBanner.active">Save</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-md form-narrow">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title">Network Preferences</div>
+                <div class="mb-4">
+                  <label class="form-label">Preferred Network Mode</label>
+                  <div class="text-muted small mb-2" x-text="prefNetwork === '-' ? 'Fetching...' : 'Current: ' + prefNetwork"></div>
+                  <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="autoModeCheck" x-model="autoMode" @change="disableAllNetworkModes()" :disabled="autoMode" />
+                    <label class="form-check-label" for="autoModeCheck">AUTO</label>
+                  </div>
+                  <div>
+                    <template x-for="(mode, index) in networkModes" :key="mode.id">
+                      <div class="d-flex align-items-center gap-2 mb-2">
+                        <input class="form-check-input mt-0 flex-shrink-0" type="checkbox" x-model="mode.enabled" @change="onNetworkModeChange(mode)" />
+                        <span class="flex-grow-1" x-text="mode.label"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <div class="mb-4">
+                  <label class="form-label">RAT Acquisition Order</label>
+                  <div class="text-muted small mb-2" x-text="ratAcqOrder === '-' ? 'Fetching...' : 'Current: ' + ratAcqOrder"></div>
+                  <div>
+                    <template x-for="(rat, index) in ratAcqModes" :key="rat.id">
+                      <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="flex-grow-1" x-text="rat.label"></span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2 py-0" @click="moveRatAcqUp(index)" :disabled="index === 0">↑</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2 py-0" @click="moveRatAcqDown(index)" :disabled="index === ratAcqModes.length - 1">↓</button>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <div class="mb-4" :style="!nr5gEnabled ? 'opacity: 0.45' : ''">
+                  <label for="prefNetwork" class="form-label">NR5G Mode Control</label>
+                  <select
+                    class="form-select"
+                    id="nrModeControl"
+                    x-model="nrModeControl"
+                    aria-label="nrModeControl"
+                    :disabled="!nr5gEnabled"
+                  >
+                    <option value="0">NSA & SA</option>
+                    <option value="2">NR5G-NSA Disabled</option>
+                    <option value="1">NR5G-SA Disabled</option>
+                  </select>
+                </div>
+              <div class="mt-auto pt-3">
+                <button type="button" class="btn btn-primary" @click="saveNetworkPreferences()" :disabled="$store.scanBanner.active">Save</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </main>
+
+    <script src="js/populate-bands.js?v=c58a483b"></script>
+    <script src="js/parse-settings.js?v=c58a483b"></script>
+    <script src="js/network.js?v=c58a483b"></script>
+    <script src="js/dark-mode.js?v=c58a483b"></script>
+  </body>
+</html>

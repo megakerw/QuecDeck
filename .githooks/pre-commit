@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# Pre-commit hook: regenerates quecdeck/checksums.sha256 whenever any
+# of the listed files are staged for commit.
+#
+# One-time setup (from repo root):
+#   git config core.hooksPath .githooks
+
+CHECKSUMS_FILE="quecdeck/checksums.sha256"
+
+CHECKSUMMED_FILES=(
+  quecdeck/script/create_watchcat.sh
+  quecdeck/script/remove_watchcat.sh
+  quecdeck/script/watchcat.sh
+  quecdeck/script/create_scheduled_restart.sh
+  quecdeck/script/remove_scheduled_restart.sh
+  quecdeck/script/scheduled_restart.sh
+  quecdeck/script/atcmd_queue_daemon.sh
+  quecdeck/script/connection_logger.sh
+  quecdeck/script/update_lan_ip.sh
+  quecdeck/script/lean_mode.sh
+  quecdeck/script/write_htpasswd.sh
+  quecdeck/systemd/lighttpd.service
+  quecdeck/systemd/watchcat.service
+  quecdeck/systemd/ttyd.service
+  quecdeck/systemd/scheduled_restart.service
+  quecdeck/systemd/atcmd-daemon.service
+  quecdeck/systemd/connection-logger.service
+  quecdeck/console/ttyd.bash
+  quecdeck/quecdeckdevpasswd
+  quecdeck/auth.lua
+  quecdeck/console/menu/start_menu.sh
+  quecdeck/www/index.html
+  quecdeck/www/network.html
+  quecdeck/www/settings.html
+  quecdeck/www/monitoring.html
+  quecdeck/www/logs.html
+  quecdeck/www/deviceinfo.html
+  quecdeck/www/scanner.html
+  quecdeck/www/sms.html
+  quecdeck/www/developer.html
+  quecdeck/www/js/utils.js
+  quecdeck/www/js/dark-mode.js
+  quecdeck/www/js/parse-settings.js
+  quecdeck/www/js/populate-bands.js
+  quecdeck/www/js/login.js
+  quecdeck/www/js/home.js
+  quecdeck/www/js/settings.js
+  quecdeck/www/js/scanner.js
+  quecdeck/www/js/deviceinfo.js
+  quecdeck/www/js/developer.js
+  quecdeck/www/js/sms.js
+  quecdeck/www/js/watchcat.js
+  quecdeck/www/js/network.js
+  quecdeck/www/js/logs.js
+  quecdeck/www/js/setup.js
+  quecdeck/www/css/styles.css
+  quecdeck/www/cgi-bin/auth_login
+  quecdeck/www/cgi-bin/auth_logout
+  quecdeck/www/cgi-bin/auth_dev
+  quecdeck/www/cgi-bin/get_atcommand
+  quecdeck/www/cgi-bin/get_modem_stats
+  quecdeck/www/cgi-bin/get_device_info
+  quecdeck/www/cgi-bin/get_settings
+  quecdeck/www/cgi-bin/set_setting
+  quecdeck/www/cgi-bin/get_network_info
+  quecdeck/www/cgi-bin/set_bands
+  quecdeck/www/cgi-bin/save_apn
+  quecdeck/www/cgi-bin/save_network_pref
+  quecdeck/www/cgi-bin/set_cell_lock
+  quecdeck/www/cgi-bin/get_neighbour_cells
+  quecdeck/www/cgi-bin/get_sms
+  quecdeck/www/cgi-bin/delete_sms
+  quecdeck/www/cgi-bin/user_atcommand
+  quecdeck/www/cgi-bin/get_ping
+  quecdeck/www/cgi-bin/get_uptime
+  quecdeck/www/cgi-bin/get_system_stats
+  quecdeck/www/cgi-bin/get_watchcat_status
+  quecdeck/www/cgi-bin/get_watchcat_stats
+  quecdeck/www/cgi-bin/watchcat_maker
+  quecdeck/www/cgi-bin/get_scheduled_restart
+  quecdeck/www/cgi-bin/scheduled_restart_maker
+  quecdeck/www/cgi-bin/toggle_ttyd
+  quecdeck/www/cgi-bin/get_set_lanip
+  quecdeck/www/cgi-bin/get_ippt_status
+  quecdeck/www/cgi-bin/get_upnp_status
+  quecdeck/www/cgi-bin/run_cell_scan
+  quecdeck/www/cgi-bin/cgi-lib.sh
+  quecdeck/www/cgi-bin/get_service_status
+  quecdeck/www/cgi-bin/get_logs
+  quecdeck/www/cgi-bin/init_setup
+  quecdeck/console/.profile
+  quecdeck/bin/atcli
+  quecdeck/www/login.html
+  quecdeck/www/setup.html
+  quecdeck/www/favicon.ico
+  quecdeck/www/js/alpinejs.min.js
+  quecdeck/www/js/bootstrap.bundle.min.js
+  quecdeck/www/js/chart.min.js
+  quecdeck/www/css/bootstrap.min.css
+  quecdeck/www/fonts/poppins-v23-latin-300italic.woff2
+  quecdeck/www/fonts/poppins-v23-latin-300.woff2
+  quecdeck/www/fonts/poppins-v23-latin-500italic.woff2
+  quecdeck/www/fonts/poppins-v23-latin-500.woff2
+  quecdeck/www/fonts/poppins-v23-latin-600italic.woff2
+  quecdeck/www/fonts/poppins-v23-latin-600.woff2
+  quecdeck/www/fonts/poppins-v23-latin-700italic.woff2
+  quecdeck/www/fonts/poppins-v23-latin-700.woff2
+  quecdeck/www/fonts/poppins-v23-latin-italic.woff2
+  quecdeck/www/fonts/poppins-v23-latin-regular.woff2
+)
+
+# Check whether any checksummed file is staged
+staged=$(git diff --cached --name-only)
+needs_update=0
+for f in "${CHECKSUMMED_FILES[@]}"; do
+  if echo "$staged" | grep -qx "$f"; then
+    needs_update=1
+    break
+  fi
+done
+
+if [ "$needs_update" = "0" ]; then
+  exit 0
+fi
+
+# Update ?v= cache-busting query string in HTML files.
+# Version is an 8-char hash of all staged JS+CSS content — changes whenever
+# any JS or CSS file changes, causing browsers to discard the 1-year cache.
+asset_version=$(
+  for f in "${CHECKSUMMED_FILES[@]}"; do
+    case "$f" in *.js|*.css) git show ":$f" 2>/dev/null ;; esac
+  done | sha256sum | cut -c1-8
+)
+HTML_FILES=(
+  quecdeck/www/index.html
+  quecdeck/www/login.html
+  quecdeck/www/setup.html
+  quecdeck/www/network.html
+  quecdeck/www/settings.html
+  quecdeck/www/monitoring.html
+  quecdeck/www/logs.html
+  quecdeck/www/scanner.html
+  quecdeck/www/sms.html
+  quecdeck/www/deviceinfo.html
+  quecdeck/www/developer.html
+)
+for html in "${HTML_FILES[@]}"; do
+  git show ":$html" > /dev/null 2>&1 || continue
+  blob=$(git show ":$html" | \
+    sed 's/\(\.\(js\|css\)\)\(?v=[a-f0-9]*\)\?"/\1?v='"$asset_version"'"/g' | \
+    git hash-object -w --stdin)
+  git update-index --cacheinfo "100644,$blob,$html"
+done
+
+# Regenerate — hash the staged (index) content so checksums are always LF,
+# matching what GitHub serves to the device regardless of core.autocrlf.
+{
+  echo "# SHA256 checksums for QuecDeck files"
+  echo "# Auto-generated by .githooks/pre-commit — do not edit manually"
+  echo "# NOTE: protects against partial repo tampering; a full repo compromise"
+  echo "# would require updating this file too."
+  echo ""
+  for f in "${CHECKSUMMED_FILES[@]}"; do
+    git show ":$f" > /dev/null 2>&1 || continue
+    hash=$(git show ":$f" | sha256sum | awk '{print $1}')
+    echo "$hash *$f"
+  done
+} > "$CHECKSUMS_FILE"
+
+git add "$CHECKSUMS_FILE"
+echo "Updated $CHECKSUMS_FILE"

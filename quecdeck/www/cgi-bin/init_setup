@@ -1,0 +1,47 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+cgi_output_json
+
+# Security: refuse if setup is already complete (non-empty htpasswd exists)
+if [ -s /opt/etc/.htpasswd ]; then
+    printf '{"ok":false,"error":"Setup already complete"}\n'
+    exit 0
+fi
+
+cgi_read_post
+admin_pass=$(get_post_param admin_pass)
+dev_pass=$(get_post_param dev_pass)
+
+if [ "${#admin_pass}" -lt 8 ]; then
+    printf '{"ok":false,"error":"Password must be at least 8 characters"}\n'
+    exit 0
+fi
+
+admin_hash=$(printf '%s' "$admin_pass" | openssl passwd -6 -stdin)
+if [ -z "$admin_hash" ]; then
+    printf '{"ok":false,"error":"Failed to hash password"}\n'
+    exit 0
+fi
+
+printf 'admin:%s\n' "$admin_hash" | /opt/bin/sudo /usrdata/quecdeck/script/write_htpasswd.sh admin
+if [ $? -ne 0 ]; then
+    printf '{"ok":false,"error":"Failed to write password file"}\n'
+    exit 0
+fi
+
+if [ -n "$dev_pass" ]; then
+    if [ "${#dev_pass}" -lt 8 ]; then
+        printf '{"ok":false,"error":"Developer password must be at least 8 characters"}\n'
+        exit 0
+    fi
+    dev_hash=$(printf '%s' "$dev_pass" | openssl passwd -6 -stdin)
+    if [ -n "$dev_hash" ]; then
+        printf 'devadmin:%s\n' "$dev_hash" | /opt/bin/sudo /usrdata/quecdeck/script/write_htpasswd.sh dev
+    fi
+fi
+
+printf '{"ok":true}\n'
+exit 0

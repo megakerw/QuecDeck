@@ -1,0 +1,7 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+
+cgi_output_json
+[ -f /tmp/quecdeck/qscan.active ] && printf '{"scanning":true}\n' || printf '{"scanning":false}\n'

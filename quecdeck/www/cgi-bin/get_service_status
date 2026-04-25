@@ -1,0 +1,57 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+
+cgi_output_json
+
+# Watchcat: read config and check if the process is running
+if [ -f /usrdata/quecdeck/var/watchcat.json ]; then
+    watchcat_config=$(cat /usrdata/quecdeck/var/watchcat.json)
+else
+    watchcat_config='{"enabled":false}'
+fi
+pgrep -f 'watchcat\.sh' > /dev/null 2>&1 && watchcat_running="true" || watchcat_running="false"
+
+# Scheduled restart: read config
+if [ -f /usrdata/quecdeck/var/scheduled_restart.json ]; then
+    sched_config=$(cat /usrdata/quecdeck/var/scheduled_restart.json)
+else
+    sched_config='{"enabled":false,"type":"daily","day":1,"hour":3,"minute":0}'
+fi
+
+# ttyd
+systemctl is-active ttyd > /dev/null 2>&1 && ttyd_running="true" || ttyd_running="false"
+
+# AT command daemon
+systemctl is-active atcmd-daemon > /dev/null 2>&1 && atcmd_running="true" || atcmd_running="false"
+
+# Connection logger
+systemctl is-active connection-logger > /dev/null 2>&1 && connlog_running="true" || connlog_running="false"
+
+# Lean mode (optional — null if not enabled via install menu)
+if [ -L /lib/systemd/system/multi-user.target.wants/lean-mode.service ]; then
+    systemctl is-active lean-mode > /dev/null 2>&1 && lean_active="true" || lean_active="false"
+    lean_mode_json="{\"active\":$lean_active}"
+else
+    lean_mode_json="null"
+fi
+
+# Firewall (optional — null if not installed)
+if [ -f /lib/systemd/system/firewall.service ]; then
+    systemctl is-active firewall > /dev/null 2>&1 && fw_active="true" || fw_active="false"
+    firewall_json="{\"active\":$fw_active}"
+else
+    firewall_json="null"
+fi
+
+# SSHD (optional install — null if not installed)
+if [ -f /lib/systemd/system/sshd.service ]; then
+    systemctl is-active sshd > /dev/null 2>&1 && sshd_active="true" || sshd_active="false"
+    sshd_json="{\"running\":$sshd_active}"
+else
+    sshd_json="null"
+fi
+
+printf '{"watchcat":{"running":%s,"config":%s},"scheduled_restart":%s,"ttyd":{"running":%s},"atcmd_daemon":{"running":%s},"connection_logger":{"running":%s},"lean_mode":%s,"firewall":%s,"sshd":%s}\n' \
+    "$watchcat_running" "$watchcat_config" "$sched_config" "$ttyd_running" "$atcmd_running" "$connlog_running" "$lean_mode_json" "$firewall_json" "$sshd_json"

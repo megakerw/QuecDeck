@@ -1,0 +1,58 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+cgi_read_post
+
+type=$(get_post_param type)
+
+cgi_output_text
+
+is_int() { printf '%s' "$1" | grep -qE '^[0-9]+$'; }
+
+case "$type" in
+    lte)
+        count=$(get_post_param count)
+        pairs=$(get_post_param pairs)
+
+        if ! is_int "$count" || [ "$count" -lt 1 ]; then
+            cgi_error "ERROR: invalid count"
+        fi
+        if ! printf '%s' "$pairs" | grep -qE '^[0-9]+(,[0-9]+)*$'; then
+            cgi_error "ERROR: pairs must be comma-separated integers"
+        fi
+        # pairs must have even number of values (earfcn,pci pairs)
+        pair_count=$(echo "$pairs" | tr ',' '\n' | wc -l)
+        if [ $(( pair_count % 2 )) -ne 0 ]; then
+            cgi_error "ERROR: pairs must have even number of values"
+        fi
+
+        result=$(atcmd_run "AT+QNWLOCK=\"common/4g\",${count},${pairs}") ;;
+
+    nr)
+        earfcn=$(get_post_param earfcn)
+        pci=$(get_post_param pci)
+        scs=$(get_post_param scs)
+        band=$(get_post_param band)
+
+        if ! is_int "$earfcn"; then cgi_error "ERROR: invalid earfcn"; fi
+        if ! is_int "$pci";    then cgi_error "ERROR: invalid pci"; fi
+        if ! is_int "$band";   then cgi_error "ERROR: invalid band"; fi
+        if ! printf '%s' "$scs" | grep -qE '^(15|30|60|120|240)$'; then
+            cgi_error "ERROR: scs must be 15, 30, 60, 120, or 240"
+        fi
+
+        result=$(atcmd_run "AT+QNWLOCK=\"common/5g\",${earfcn},${pci},${scs},${band}") ;;
+
+    unlock_lte)
+        result=$(atcmd_run 'AT+QNWLOCK="common/4g",0') ;;
+
+    unlock_nr)
+        result=$(atcmd_run 'AT+QNWLOCK="common/5g",0') ;;
+
+    *)
+        cgi_error "ERROR: invalid type" ;;
+esac
+echo "$result"
+cache_invalidate "$_CACHE_NETWORK" "$_CACHE_MODEM_ALL"

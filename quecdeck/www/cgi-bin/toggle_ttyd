@@ -1,0 +1,30 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+
+# GET (no body): return current ttyd running state.
+# POST with action=start|stop in body: start or stop the service.
+if [ "$REQUEST_METHOD" = "POST" ]; then
+    cgi_read_post
+    action=$(get_post_param action)
+    if [ "$action" = "start" ]; then
+        cgi_output_json
+        /opt/bin/sudo /bin/systemctl start ttyd
+        echo '{"running": true}'
+    elif [ "$action" = "stop" ]; then
+        cgi_output_json
+        /opt/bin/sudo /bin/systemctl stop ttyd
+        echo '{"running": false}'
+    else
+        printf 'Status: 400 Bad Request\r\nContent-Type: application/json\r\n\r\n'
+        echo '{"error": "action must be start or stop"}'
+    fi
+elif [ "$REQUEST_METHOD" = "GET" ]; then
+    cgi_output_json
+    systemctl is-active ttyd >/dev/null 2>&1 && running="true" || running="false"
+    echo "{\"running\": $running}"
+else
+    printf 'Status: 405 Method Not Allowed\r\nAllow: GET, POST\r\nContent-Type: application/json\r\n\r\n'
+    echo '{"error": "Method Not Allowed"}'
+fi

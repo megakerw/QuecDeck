@@ -1,0 +1,42 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+cgi_read_post
+
+mode_pref=$(get_post_param mode_pref)
+nr5g_mode=$(get_post_param nr5g_mode)
+rat_acq=$(get_post_param rat_acq)
+
+cgi_output_text
+
+# Validate: uppercase alphanumeric and colons only
+if [ -n "$mode_pref" ] && ! printf '%s' "$mode_pref" | grep -qE '^(AUTO|[A-Z0-9]+(:[A-Z0-9]+)*)$'; then
+    cgi_error "ERROR: invalid mode_pref"
+fi
+
+if [ -n "$nr5g_mode" ] && ! printf '%s' "$nr5g_mode" | grep -qE '^[01]$'; then
+    cgi_error "ERROR: invalid nr5g_mode"
+fi
+
+if [ -n "$rat_acq" ] && ! printf '%s' "$rat_acq" | grep -qE '^[A-Z0-9]+(:[A-Z0-9]+)*$'; then
+    cgi_error "ERROR: invalid rat_acq"
+fi
+
+at_parts=""
+append_at() {
+    [ -z "$at_parts" ] && at_parts="$1" || at_parts="${at_parts};${1}"
+}
+
+[ -n "$mode_pref" ] && append_at "+QNWPREFCFG=\"mode_pref\",${mode_pref}"
+[ -n "$nr5g_mode" ] && append_at "+QNWPREFCFG=\"nr5g_disable_mode\",${nr5g_mode}"
+[ -n "$rat_acq" ]   && append_at "+QNWPREFCFG=\"rat_acq_order\",${rat_acq}"
+
+if [ -z "$at_parts" ]; then
+    cgi_error "ERROR: no parameters provided"
+fi
+
+result=$(atcmd_run "AT${at_parts}")
+echo "$result"
+cache_invalidate "$_CACHE_NETWORK" "$_CACHE_MODEM_ALL"

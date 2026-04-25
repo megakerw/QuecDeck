@@ -1,0 +1,70 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+cgi_read_post
+
+ENABLED=$(get_post_param ENABLED)
+TYPE=$(get_post_param TYPE)
+DAY=$(get_post_param DAY)
+HOUR=$(get_post_param HOUR)
+MINUTE=$(get_post_param MINUTE)
+
+# Defaults
+ENABLED="${ENABLED:-disable}"
+TYPE="${TYPE:-daily}"
+DAY="${DAY:-1}"
+HOUR="${HOUR:-3}"
+MINUTE="${MINUTE:-0}"
+
+cgi_output_text
+
+# Validate
+if ! [[ "$ENABLED" =~ ^(enable|disable)$ ]]; then
+    cgi_error "Invalid ENABLED value."
+fi
+if ! [[ "$TYPE" =~ ^(daily|weekly)$ ]]; then
+    cgi_error "TYPE must be 'daily' or 'weekly'."
+fi
+if ! [[ "$DAY" =~ ^[1-7]$ ]]; then
+    cgi_error "DAY must be 1-7 (Mon-Sun)."
+fi
+if ! [[ "$HOUR" =~ ^[0-9]+$ ]] || [ "$HOUR" -lt 0 ] || [ "$HOUR" -gt 23 ]; then
+    cgi_error "HOUR must be 0-23."
+fi
+if ! [[ "$MINUTE" =~ ^[0-9]+$ ]] || [ "$MINUTE" -lt 0 ] || [ "$MINUTE" -gt 59 ]; then
+    cgi_error "MINUTE must be 0-59."
+fi
+
+if [ "$ENABLED" = "enable" ]; then
+    # Write config JSON — the static scheduled_restart.sh in script/ reads this at startup
+    echo "{\"enabled\": true, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" \
+        > /usrdata/quecdeck/var/scheduled_restart.json
+    chmod 640 /usrdata/quecdeck/var/scheduled_restart.json
+
+    /opt/bin/sudo /usrdata/quecdeck/script/create_scheduled_restart.sh
+
+    case "$DAY" in
+        1) day_name="Monday" ;; 2) day_name="Tuesday" ;; 3) day_name="Wednesday" ;;
+        4) day_name="Thursday" ;; 5) day_name="Friday" ;; 6) day_name="Saturday" ;;
+        7) day_name="Sunday" ;;
+    esac
+    time_str=$(printf '%02d:%02d' "$HOUR" "$MINUTE")
+
+    if [ "$TYPE" = "daily" ]; then
+        echo "Scheduled restart enabled — daily at ${time_str}."
+    else
+        echo "Scheduled restart enabled — every ${day_name} at ${time_str}."
+    fi
+else
+    echo "{\"enabled\": false, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" \
+        > /usrdata/quecdeck/var/scheduled_restart.json
+    chmod 640 /usrdata/quecdeck/var/scheduled_restart.json
+
+    /opt/bin/sudo /usrdata/quecdeck/script/remove_scheduled_restart.sh
+
+    echo "Scheduled restart disabled."
+fi
+
+exit 0

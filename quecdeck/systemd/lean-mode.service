@@ -1,0 +1,10 @@
+[Unit]
+Description=Lean Mode — terminate unnecessary modem services after boot
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /usrdata/quecdeck/script/lean_mode.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

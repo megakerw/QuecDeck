@@ -1,0 +1,88 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+
+cgi_output_json
+
+CONFIG_FILE="/etc/data/mobileap_cfg.xml"
+
+# Validate format and octet range (0-255)
+validate_ip() {
+    echo "$1" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+    o1=$(echo "$1" | cut -d'.' -f1)
+    o2=$(echo "$1" | cut -d'.' -f2)
+    o3=$(echo "$1" | cut -d'.' -f3)
+    o4=$(echo "$1" | cut -d'.' -f4)
+    [ "$o1" -le 255 ] && [ "$o2" -le 255 ] && [ "$o3" -le 255 ] && [ "$o4" -le 255 ]
+}
+
+if [ "$REQUEST_METHOD" = "POST" ]; then
+    cgi_read_post
+    new_lan_ip=$(get_post_param lan_ip)
+    new_start=$(get_post_param dhcp_start)
+    new_end=$(get_post_param dhcp_end)
+
+    # Format and octet range
+    if ! validate_ip "$new_lan_ip" || ! validate_ip "$new_start" || ! validate_ip "$new_end"; then
+        echo '{"ok": false, "error": "Invalid IP address format"}'
+        exit 0
+    fi
+
+    # Must be RFC1918 private range
+    lan_first=$(echo "$new_lan_ip" | cut -d'.' -f1)
+    lan_second=$(echo "$new_lan_ip" | cut -d'.' -f2)
+    is_private=0
+    [ "$lan_first" -eq 10 ] && is_private=1
+    [ "$lan_first" -eq 172 ] && [ "$lan_second" -ge 16 ] && [ "$lan_second" -le 31 ] && is_private=1
+    [ "$lan_first" -eq 192 ] && [ "$lan_second" -eq 168 ] && is_private=1
+    if [ "$is_private" -eq 0 ]; then
+        echo '{"ok": false, "error": "LAN IP must be a private RFC1918 address"}'
+        exit 0
+    fi
+
+    # All three IPs must share the same /24 subnet
+    lan_prefix=$(echo "$new_lan_ip" | cut -d'.' -f1-3)
+    start_prefix=$(echo "$new_start" | cut -d'.' -f1-3)
+    end_prefix=$(echo "$new_end" | cut -d'.' -f1-3)
+    if [ "$lan_prefix" != "$start_prefix" ] || [ "$lan_prefix" != "$end_prefix" ]; then
+        echo '{"ok": false, "error": "LAN IP and DHCP range must be in the same /24 subnet"}'
+        exit 0
+    fi
+
+    # DHCP start must be less than DHCP end
+    lan_last=$(echo "$new_lan_ip" | cut -d'.' -f4)
+    start_last=$(echo "$new_start" | cut -d'.' -f4)
+    end_last=$(echo "$new_end" | cut -d'.' -f4)
+    if [ "$start_last" -ge "$end_last" ]; then
+        echo '{"ok": false, "error": "DHCP start must be lower than DHCP end"}'
+        exit 0
+    fi
+
+    # LAN IP must not fall within the DHCP range
+    if [ "$lan_last" -ge "$start_last" ] && [ "$lan_last" -le "$end_last" ]; then
+        echo '{"ok": false, "error": "LAN IP must not be within the DHCP range"}'
+        exit 0
+    fi
+
+    # Send AT command to update LAN IP on modem
+    result=$(atcmd_run "AT+QMAP=\"LANIP\",$new_start,$new_end,$new_lan_ip")
+    if ! at_response_ok "$result"; then
+        echo '{"ok": false, "error": "Modem rejected the IP configuration"}'
+        exit 0
+    fi
+
+    # Reboot after short delay to allow response to reach browser
+    (sleep 5 && atcmd_run 'AT+CFUN=1,1') &
+
+    echo "{\"ok\": true, \"lan_ip\": \"$new_lan_ip\"}"
+else
+    cur_lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' "$CONFIG_FILE" | sed 's/<APIPAddr>//;s/<\/APIPAddr>//' | tr -cd '0-9.')
+    cur_start=$(grep -o '<StartIP>[^<]*</StartIP>' "$CONFIG_FILE" | sed 's/<StartIP>//;s/<\/StartIP>//' | tr -cd '0-9.')
+    cur_end=$(grep -o '<EndIP>[^<]*</EndIP>' "$CONFIG_FILE" | sed 's/<EndIP>//;s/<\/EndIP>//' | tr -cd '0-9.')
+    [ -z "$cur_lan_ip" ] && cur_lan_ip="192.168.225.1"
+    [ -z "$cur_start" ] && cur_start="${cur_lan_ip%.*}.20"
+    [ -z "$cur_end" ] && cur_end="${cur_lan_ip%.*}.170"
+
+    echo "{\"lan_ip\": \"$cur_lan_ip\", \"dhcp_start\": \"$cur_start\", \"dhcp_end\": \"$cur_end\"}"
+fi

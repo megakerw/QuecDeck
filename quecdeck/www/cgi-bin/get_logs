@@ -1,0 +1,23 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_output_json
+
+CONN_LOG="/tmp/quecdeck/logs/connection_events.jsonl"
+ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
+LIMIT=100
+
+jsonl_to_array() {
+    local file="$1"
+    [ -f "$file" ] || { printf '[]'; return; }
+    local lines
+    lines=$(tail -"$LIMIT" "$file" 2>/dev/null)
+    [ -z "$lines" ] && { printf '[]'; return; }
+    printf '%s' "$lines" | awk 'BEGIN{printf "["} NR>1{printf ","} {printf "%s",$0} END{printf "]"}'
+}
+
+conn=$(jsonl_to_array "$CONN_LOG")
+access=$(jsonl_to_array "$ACCESS_LOG")
+
+printf '{"connection_events":%s,"access_events":%s}\n' "$conn" "$access"

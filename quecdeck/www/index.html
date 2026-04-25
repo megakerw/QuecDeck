@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuecDeck</title>
+    <!-- <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css?v=c58a483b"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    /> -->
+    <!-- Import all the bootstrap css files from css folder -->
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=c58a483b" />
+    <link rel="stylesheet" href="css/styles.css?v=c58a483b" />
+
+    <!-- Logo -->
+    <link rel="quecdeck-logo" href="favicon.ico" />
+
+    <!--  Import BootStrap Javascript -->
+    <script src="js/bootstrap.bundle.min.js?v=c58a483b"></script>
+    <script src="js/utils.js?v=c58a483b" defer></script>
+    <script src="js/alpinejs.min.js?v=c58a483b" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="processAllInfos()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=c58a483b"></script>
+
+        <div class="row mt-4 mb-0 g-3">
+          <div class="col-6 col-sm-4 col-lg-2">
+            <div class="panel-section stat-card">
+              <div class="stat-main">
+                <div class="stat-icon-wrap">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512" height="85" width="85">
+                    <path :fill="tempColor" d="M160 64c-26.5 0-48 21.5-48 48V276.5c0 17.3-7.1 31.9-15.3 42.5C86.2 332.6 80 349.5 80 368c0 44.2 35.8 80 80 80s80-35.8 80-80c0-18.5-6.2-35.4-16.7-48.9c-8.2-10.6-15.3-25.2-15.3-42.5V112c0-26.5-21.5-48-48-48zM48 112C48 50.2 98.1 0 160 0s112 50.1 112 112V276.5c0 .1 .1 .3 .2 .6c.2 .6 .8 1.6 1.7 2.8c18.9 24.4 30.1 55 30.1 88.1c0 79.5-64.5 144-144 144S16 447.5 16 368c0-33.2 11.2-63.8 30.1-88.1c.9-1.2 1.5-2.2 1.7-2.8c.1-.3 .2-.5 .2-.6V112zM208 368c0 26.5-21.5 48-48 48s-48-21.5-48-48c0-20.9 13.4-38.7 32-45.3V272c0-8.8 7.2-16 16-16s16 7.2 16 16v50.7c18.6 6.6 32 24.4 32 45.3z"/>
+                  </svg>
+                </div>
+                <div class="stat-value" x-text="temperature + ' \u00b0C'"></div>
+              </div>
+              <div class="stat-label">Temperature</div>
+            </div>
+          </div>
+
+          <div class="col-6 col-sm-4 col-lg-2">
+            <div class="panel-section stat-card">
+              <div class="stat-main">
+                <div class="stat-icon-wrap">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" height="85" width="85">
+                    <path :style="{ fill: simStatus === 'Active' ? 'var(--bs-primary)' : 'var(--status-color-grey)' }" d="M64 0H242.7c17 0 33.3 6.7 45.3 18.7L365.3 96c12 12 18.7 28.3 18.7 45.3V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V64C0 28.7 28.7 0 64 0zM96 192c-17.7 0-32 14.3-32 32v32h64V192H96zM64 352h80 96 80V288H240 144 64v64zM320 224c0-17.7-14.3-32-32-32H256v64h64V224zM160 192v64h64V192H160zM288 448c17.7 0 32-14.3 32-32V384H256v64h32zM160 384v64h64V384H160zM64 416c0 17.7 14.3 32 32 32h32V384H64v32z"/>
+                  </svg>
+                </div>
+                <div class="stat-value" x-text="simStatus"></div>
+              </div>
+              <div class="stat-label">SIM Status</div>
+            </div>
+          </div>
+
+          <div class="col-6 col-sm-4 col-lg-2">
+            <div class="panel-section stat-card">
+              <div class="stat-main">
+                <div class="stat-icon-wrap">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" height="85" width="85">
+                    <path :fill="signalColor" d="M576 0c17.7 0 32 14.3 32 32V480c0 17.7-14.3 32-32 32s-32-14.3-32-32V32c0-17.7 14.3-32 32-32zM448 96c17.7 0 32 14.3 32 32V480c0 17.7-14.3 32-32 32s-32-14.3-32-32V128c0-17.7 14.3-32 32-32zM352 224V480c0 17.7-14.3 32-32 32s-32-14.3-32-32V224c0-17.7 14.3-32 32-32s32 14.3 32 32zM192 288c17.7 0 32 14.3 32 32V480c0 17.7-14.3 32-32 32s-32-14.3-32-32V320c0-17.7 14.3-32 32-32zM96 416v64c0 17.7-14.3 32-32 32s-32-14.3-32-32V416c0-17.7 14.3-32 32-32s32 14.3 32 32z"/>
+                  </svg>
+                </div>
+                <div class="stat-value" x-text="signalPercentage + '%'"></div>
+              </div>
+              <div class="stat-label">Signal</div>
+            </div>
+          </div>
+
+          <div class="col-6 col-sm-4 col-lg-2">
+            <div class="panel-section stat-card">
+              <div class="stat-main">
+                <div class="stat-icon-wrap">
+                  <!-- Happy cloud: connected -->
+                  <svg x-show="internetConnectionStatus === 'Connected'"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 640 560"
+                      height="85"
+                      width="85"
+                      class="cloud-icon"
+                    >
+                    <g style="color: var(--status-color-yellow)">
+                      <circle cx="540" cy="80" r="48" fill="currentColor"/>
+                      <line x1="540" y1="14" x2="540" y2="0"   stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
+                      <line x1="540" y1="146" x2="540" y2="160" stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
+                      <line x1="474" y1="80"  x2="460" y2="80"  stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
+                      <line x1="606" y1="80"  x2="620" y2="80"  stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
+                      <line x1="493" y1="33"  x2="484" y2="24"  stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
+                      <line x1="587" y1="127" x2="596" y2="136" stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
+                      <line x1="587" y1="33"  x2="596" y2="24"  stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
+                      <line x1="493" y1="127" x2="484" y2="136" stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
+                    </g>
+                    <path fill="#ffffff" d="M0 336c0 79.5 64.5 144 144 144H512c70.7 0 128-57.3 128-128c0-61.9-44-113.6-102.4-125.4c4.1-10.7 6.4-22.4 6.4-34.6c0-53-43-96-96-96c-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32C167.6 32 96 103.6 96 192c0 2.7 .1 5.4 .2 8.1C40.2 219.8 0 273.2 0 336z"/>
+                  </svg>
+                  <!-- Sad cloud: disconnected -->
+                  <svg x-show="internetConnectionStatus !== 'Connected'"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 640 560"
+                    height="85"
+                    width="85"
+                    class="cloud-icon"
+                  >
+                    <g style="color: var(--status-color-grey)">
+                      <path fill="currentColor" d="M0 336c0 79.5 64.5 144 144 144H512c70.7 0 128-57.3 128-128c0-61.9-44-113.6-102.4-125.4c4.1-10.7 6.4-22.4 6.4-34.6c0-53-43-96-96-96c-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32C167.6 32 96 103.6 96 192c0 2.7 .1 5.4 .2 8.1C40.2 219.8 0 273.2 0 336z"/>
+                      <line x1="180" y1="492" x2="156" y2="548" stroke="currentColor" stroke-width="14" stroke-linecap="round"/>
+                      <line x1="320" y1="492" x2="296" y2="548" stroke="currentColor" stroke-width="14" stroke-linecap="round"/>
+                      <line x1="460" y1="492" x2="436" y2="548" stroke="currentColor" stroke-width="14" stroke-linecap="round"/>
+                    </g>
+                  </svg>
+                </div>
+                <div class="stat-value" x-text="internetConnectionStatus"></div>
+              </div>
+              <div class="stat-label">Internet Connection</div>
+            </div>
+          </div>
+
+          <div class="col-6 col-sm-4 col-lg-2">
+            <div class="panel-section stat-card">
+              <div class="stat-main">
+                <div class="stat-icon-wrap">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 942 942" height="85" width="85">
+                    <g :fill="cpuLoadColor">
+                      <path d="M579.1,894c0,26.5,21.5,48,48,48s48-21.5,48-48v-77.5H579.2V894H579.1z"/>
+                      <path d="M579.1,48v77.5H675V48c0-26.5-21.5-48-48-48S579.1,21.5,579.1,48z"/>
+                      <path d="M423,48v77.5h96V48c0-26.5-21.5-48-48-48S423,21.5,423,48z"/>
+                      <path d="M423,894c0,26.5,21.5,48,48,48s48-21.5,48-48v-77.5h-96V894z"/>
+                      <path d="M267,48v77.5h95.9V48c0-26.5-21.5-48-48-48S267,21.5,267,48z"/>
+                      <path d="M267,894c0,26.5,21.5,48,48,48s48-21.5,48-48v-77.5h-96V894z"/>
+                      <path d="M0,627c0,26.5,21.5,48,48,48h77.5v-95.9H48C21.5,579.1,0,600.5,0,627z"/>
+                      <path d="M894,579.1h-77.5V675H894c26.5,0,48-21.5,48-48S920.5,579.1,894,579.1z"/>
+                      <path d="M0,471c0,26.5,21.5,48,48,48h77.5v-96H48C21.5,423,0,444.5,0,471z"/>
+                      <path d="M894,423h-77.5v96H894c26.5,0,48-21.5,48-48S920.5,423,894,423z"/>
+                      <path d="M0,315c0,26.5,21.5,48,48,48h77.5v-96H48C21.5,267,0,288.5,0,315z"/>
+                      <path d="M894,267h-77.5v95.9H894c26.5,0,48-21.5,48-48S920.5,267,894,267z"/>
+                      <path d="M171.6,720.4c0,27.6,22.4,50,50,50h498.8c27.6,0,50-22.4,50-50V221.6c0-27.6-22.4-50-50-50H221.6c-27.6,0-50,22.4-50,50V720.4z"/>
+                    </g>
+                  </svg>
+                </div>
+                <div class="stat-value" x-text="cpuLoad"></div>
+                <div class="text-muted small stat-sub">1 min avg</div>
+              </div>
+              <div class="stat-label">Load Avg</div>
+            </div>
+          </div>
+
+          <div class="col-6 col-sm-4 col-lg-2">
+            <div class="panel-section stat-card">
+              <div class="stat-main">
+                <div class="stat-icon-wrap">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" height="85" width="85" class="ram-icon" style="fill: none; stroke: var(--status-color-green); stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round;">
+                    <rect x="4" y="8" width="112" height="42" rx="4" fill="var(--status-color-green)" fill-opacity="1"/>
+                    <rect x="11" y="17" width="20" height="22" rx="3" fill="black"/>
+                    <rect x="37" y="17" width="20" height="22" rx="3" fill="black"/>
+                    <rect x="63" y="17" width="20" height="22" rx="3" fill="black"/>
+                    <rect x="89" y="17" width="20" height="22" rx="3" fill="black"/>
+                    <rect x="10" y="50" width="100" height="12" fill="#FFD700" style="stroke:none"/>
+                    <line x1="10" y1="50" x2="10" y2="62"/><line x1="20" y1="50" x2="20" y2="62"/>
+                    <line x1="30" y1="50" x2="30" y2="62"/><line x1="40" y1="50" x2="40" y2="62"/>
+                    <line x1="50" y1="50" x2="50" y2="62"/><line x1="60" y1="50" x2="60" y2="62"/>
+                    <line x1="70" y1="50" x2="70" y2="62"/><line x1="80" y1="50" x2="80" y2="62"/>
+                    <line x1="90" y1="50" x2="90" y2="62"/><line x1="100" y1="50" x2="100" y2="62"/>
+                    <line x1="110" y1="50" x2="110" y2="62"/>
+                    <line x1="10" y1="62" x2="110" y2="62"/>
+                  </svg>
+                </div>
+                <div class="stat-value" x-text="ramPercent + '%'"></div>
+                <div class="text-muted small stat-sub" x-text="ramUsed + ' / ' + ramTotal + ' MB'"></div>
+              </div>
+              <div class="stat-label">RAM Usage</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row gy-3 mt-2 mb-4 align-items-stretch">
+          <div class="col-12 col-md">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title">Network Information</div>
+              <table>
+                <tbody>
+                      <tr>
+                        <th>Active Sim</th>
+                        <td x-text="activeSim"></td>
+                      </tr>
+                      <tr>
+                        <th>Network Provider</th>
+                        <td class="text-break" x-text="networkProvider"></td>
+                      </tr>
+                      <tr>
+                        <th>MCCMNC</th>
+                        <td x-text="mccmnc"></td>
+                      </tr>
+                      <tr>
+                        <th>APN</th>
+                        <td class="text-break" x-text="apn"></td>
+                      </tr>
+                      <tr>
+                        <th>Network Mode</th>
+                        <td x-text="networkMode"></td>
+                      </tr>
+                      <tr>
+                        <th>Bands</th>
+                        <td class="text-break" x-text="bands"></td>
+                      </tr>
+                      <tr>
+                        <th>Bandwidth</th>
+                        <td x-text="bandwidth"></td>
+                      </tr>
+                      <tr>
+                        <th>E/ARFCN<sup>4G/5G</sup></th>
+                        <td class="text-break" x-text="earfcns"></td>
+                      </tr>
+                      <tr>
+                        <th>PCI</th>
+                        <td
+                          x-show="sccPCI != '-' && sccPCI != ''"
+                          x-text="pccPCI + ', ' + sccPCI"
+                        ></td>
+
+                        <td x-show="sccPCI == '-' || sccPCI == ''" x-text="pccPCI"></td>
+                      </tr>
+                      <tr>
+                        <th>IPv4</th>
+                        <td x-text="ipv4"></td>
+                      </tr>
+                      <tr>
+                        <th>IPv6</th>
+                        <td class="text-break" x-text="ipv6"></td>
+                      </tr>
+                      <tr>
+                        <th>Uptime</th>
+                        <td x-text="uptime"></td>
+                      </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="col-12 col-md">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title">Signal Information</div>
+              <table>
+                <tbody>
+                      <tr>
+                        <th>Assessment</th>
+                        <td x-text="signalAssessment"></td>
+                      </tr>
+                      <tr>
+                        <th>Traffic Stats</th>
+                        <td
+                          x-text="downloadStat + ' DL / ' + uploadStat + ' UL'"
+                        ></td>
+                      </tr>
+                      <tr x-show="csq != 'NR-SA Mode'">
+                        <th>CSQ</th>
+                        <td x-show="csq != '-'" x-text="csq"></td>
+                        <td x-show="csq == '-'" class="fst-italic">None</td>
+                      </tr>
+                      <tr>
+                        <th>CELL ID</th>
+                        <td x-text="cellID"></td>
+                      </tr>
+                      <tr>
+                        <th>eNB ID <sup>4G/5G</sup></th>
+                        <td x-text="eNBID"></td>
+                      </tr>
+                      <tr>
+                        <th>TAC<sup>4G/5G</sup></th>
+                        <td x-text="tac"></td>
+                      </tr>
+                      <!-- <tr x-show="rssi != '-'">
+                        <th>RSSI<sup>4G</sup></th>
+                        <td x-show="rssi != '-'" x-text="rssi"></td>
+                        <td x-show="rssi == '-'" class="fst-italic">None</td>
+                      </tr> -->
+                      <tr x-show="rsrqLTE != '-'">
+                        <th>RSRQ<sup>4G</sup></th>
+                        <td
+                          class="gap-4 align-items-center"
+                        >
+                          <div
+                            x-show="rsrqLTE != '-' && rsrqLTEPercentage != '0'"
+                            class="progress w-100 bar-signal"
+                            role="progressbar"
+                            aria-label="RSRQ BAR"
+                            :aria-valuenow="rsrqLTEPercentage"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                          >
+                            <div
+                              :class="getProgressBarClass(rsrqLTEPercentage)"
+                              :style="{ width: rsrqLTEPercentage + '%' }"
+                            >
+                              <span
+                                x-text="rsrqLTE + ' / ' +  rsrqLTEPercentage + '%'"
+                              ></span>
+                            </div>
+                          </div>
+                          <span
+                            x-show="rsrqLTEPercentage == '0'"
+                            x-text="rsrqLTE"
+                          ></span>
+                          <span x-show="rsrqLTE == '-'" class="fst-italic">
+                            None
+                          </span>
+                        </td>
+                      </tr>
+                      <tr x-show="rsrqNR != '-'">
+                        <th>SS_RSRQ<sup>5G</sup></th>
+                        <td>
+                          <div
+                            x-show="rsrqNR != '-' && rsrqNRPercentage != '0'"
+                            class="progress w-100 bar-signal"
+                            role="progressbar"
+                            aria-label="RSRQ BAR"
+                            :aria-valuenow="rsrqNRPercentage"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                          >
+                            <div
+                              :class="getProgressBarClass(rsrqNRPercentage)"
+                              :style="{ width: rsrqNRPercentage + '%' }"
+                            >
+                              <span
+                                x-text="rsrqNR + ' / ' + rsrqNRPercentage + '%'"
+                              ></span>
+                            </div>
+                          </div>
+                          <span
+                            x-show="rsrqNRPercentage == '0'"
+                            x-text="rsrqNR"
+                          ></span>
+                          <span x-show="rsrqNR == '-'" class="fst-italic">
+                            None
+                          </span>
+                        </td>
+                      </tr>
+                      <tr x-show="rsrpLTE != '-'">
+                        <th>RSRP<sup>4G</sup></th>
+                        <td
+                          class="gap-4 align-items-center"
+                        >
+                          <div
+                            x-show="rsrpLTE != '-' && rsrpLTEPercentage != '0'"
+                            class="progress w-100 bar-signal"
+                            role="progressbar"
+                            aria-label="RSRP BAR"
+                            :aria-valuenow="rsrpLTEPercentage"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                          >
+                            <div
+                              :class="getProgressBarClass(rsrpLTEPercentage)"
+                              :style="{ width: rsrpLTEPercentage + '%' }"
+                            >
+                              <span
+                                x-text="rsrpLTE + ' / ' + rsrpLTEPercentage + '%'"
+                              ></span>
+                            </div>
+                          </div>
+                          <span
+                            x-show="rsrpLTEPercentage == '0'"
+                            x-text="rsrpLTE"
+                          ></span>
+                          <span x-show="rsrpLTE == '-'" class="fst-italic">
+                            None
+                          </span>
+                        </td>
+                      </tr>
+                      <tr x-show="rsrpNR != '-'">
+                        <th>SS_RSRP<sup>5G</sup></th>
+                        <td
+                          class="gap-4 align-items-center"
+                        >
+                          <div
+                            x-show="rsrpNR != '-' && rsrpNRPercentage != '0'"
+                            class="progress w-100 bar-signal"
+                            role="progressbar"
+                            aria-label="RSRP BAR"
+                            :aria-valuenow="rsrpNRPercentage"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                          >
+                            <div
+                              :class="getProgressBarClass(rsrpNRPercentage)"
+                              :style="{ width: rsrpNRPercentage + '%' }"
+                            >
+                              <span
+                                x-text="rsrpNR + ' / ' + rsrpNRPercentage + '%'"
+                              ></span>
+                            </div>
+                          </div>
+                          <span
+                            x-show="rsrpNRPercentage == '0'"
+                            x-text="rsrpNR"
+                          ></span>
+                          <span x-show="rsrpNR == '-'" class="fst-italic">
+                            None
+                          </span>
+                        </td>
+                      </tr>
+                      <tr x-show="sinrLTE != '-'">
+                        <th>SINR<sup>4G</sup></th>
+                        <td
+                          class="gap-4 align-items-center"
+                        >
+                          <div
+                            x-show="sinrLTE != '-' && sinrLTEPercentage != '0'"
+                            class="progress w-100 bar-signal"
+                            role="progressbar"
+                            aria-label="SINR BAR"
+                            :aria-valuenow="sinrLTEPercentage"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                          >
+                            <div
+                              :class="getProgressBarClass(sinrLTEPercentage)"
+                              :style="{ width: sinrLTEPercentage + '%' }"
+                            >
+                              <span
+                                x-text="sinrLTE + ' / ' + sinrLTEPercentage +'%'"
+                              ></span>
+                            </div>
+                          </div>
+                          <span
+                            x-text="sinrLTE"
+                            x-show="sinrLTEPercentage == '0'"
+                          ></span>
+                          <span x-show="sinrLTE == '-'" class="fst-italic">
+                            None
+                          </span>
+                        </td>
+                      </tr>
+                      <tr x-show="sinrNR != '-'">
+                        <th>SINR<sup>5G</sup></th>
+                        <td
+                          class="gap-4 align-items-center"
+                        >
+                          <div
+                            x-show="sinrNR != '-' && sinrNRPercentage != '0'"
+                            class="progress w-100 bar-signal"
+                            role="progressbar"
+                            aria-label="SINR BAR"
+                            :aria-valuenow="sinrNRPercentage"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                          >
+                            <div
+                              :class="getProgressBarClass(sinrNRPercentage)"
+                              :style="{ width: sinrNRPercentage + '%' }"
+                            >
+                              <span
+                                x-text="sinrNR + ' / ' + sinrNRPercentage +'%'"
+                              ></span>
+                            </div>
+                          </div>
+                          <span
+                            x-text="sinrNR"
+                            x-show="sinrNRPercentage == '0'"
+                          ></span>
+                          <span x-show="sinrNR == '-'" class="fst-italic">
+                            None
+                          </span>
+                        </td>
+                      </tr>
+                </tbody>
+              </table>
+              <div class="mt-auto pt-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <p class="mb-0 small text-muted">Updated: <span x-text="lastUpdate"></span></p>
+                <div class="input-group input-group-sm w-auto">
+                  <span class="input-group-text">Refresh Rate</span>
+                  <input
+                    x-model="newRefreshRate"
+                    class="form-control"
+                    type="number"
+                    min="3"
+                    max="60"
+                    x-bind:placeholder="refreshRate + 's'"
+                  />
+                  <button
+                    @click="updateRefreshRate()"
+                    class="btn btn-primary"
+                    type="button"
+                  >
+                    Set
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script src="js/dark-mode.js?v=c58a483b"></script>
+
+    <script src="js/home.js?v=c58a483b"></script>
+  </body>
+</html>

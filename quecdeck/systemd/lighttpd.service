@@ -1,0 +1,24 @@
+[Unit]
+Description=Lighttpd Daemon
+# firewall.service is listed last intentionally. It waits 15 seconds on boot
+# for QCMAP to finish its async network/routing setup before applying iptables rules.
+# Depending on it here ensures lighttpd only starts once the network is fully stable,
+# preventing the first login request from failing due to routing not being ready.
+After=network.target opt.mount QCMAP_ConnectionManagerd.service firewall.service
+
+[Service]
+Type=simple
+PIDFile=/opt/var/run/lighttpd.pid
+ExecStartPre=/bin/sh /usrdata/quecdeck/script/update_lan_ip.sh
+ExecStartPre=/bin/rm -rf /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
+ExecStartPre=/bin/mkdir -p /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
+ExecStartPre=/bin/chown www-data /tmp/quecdeck /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
+ExecStartPre=/bin/chmod 750 /tmp/quecdeck
+ExecStartPre=/bin/chmod 700 /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
+ExecStartPre=/opt/sbin/lighttpd -tt -f /usrdata/quecdeck/lighttpd.conf
+ExecStart=/opt/sbin/lighttpd -D -f /usrdata/quecdeck/lighttpd.conf
+ExecReload=/bin/kill -USR1 $MAINPID
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

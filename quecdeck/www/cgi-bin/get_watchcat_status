@@ -1,0 +1,11 @@
+#!/bin/bash
+
+echo "Content-type: application/json"
+echo ""
+
+if [ -f /usrdata/quecdeck/var/watchcat.json ]; then
+    cat /usrdata/quecdeck/var/watchcat.json
+else
+    ps | grep -q '[w]atchcat.sh' && active="true" || active="false"
+    echo "{\"enabled\": $active}"
+fi

@@ -1,0 +1,59 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+cgi_read_post
+
+apn=$(get_post_param apn)
+ip_type=$(get_post_param ip_type)
+sim=$(get_post_param sim)
+roam_pref=$(get_post_param roam_pref)
+mbn=$(get_post_param mbn)
+
+cgi_output_text
+
+# Validate each provided param
+if [ -n "$apn" ] && ! printf '%s' "$apn" | grep -qE '^[a-zA-Z0-9._-]{1,100}$'; then
+    cgi_error "ERROR: invalid APN"
+fi
+
+if [ -n "$ip_type" ] && ! printf '%s' "$ip_type" | grep -qE '^(IP|IPV6|IPV4V6)$'; then
+    cgi_error "ERROR: invalid ip_type"
+fi
+
+# apn and ip_type must be provided together
+if { [ -n "$apn" ] && [ -z "$ip_type" ]; } || { [ -z "$apn" ] && [ -n "$ip_type" ]; }; then
+    cgi_error "ERROR: apn and ip_type must both be provided"
+fi
+
+if [ -n "$sim" ] && ! printf '%s' "$sim" | grep -qE '^[12]$'; then
+    cgi_error "ERROR: invalid sim slot"
+fi
+
+if [ -n "$roam_pref" ] && ! printf '%s' "$roam_pref" | grep -qE '^[0-9]$'; then
+    cgi_error "ERROR: invalid roam_pref"
+fi
+
+if [ -n "$mbn" ] && ! printf '%s' "$mbn" | grep -qE '^[01]$'; then
+    cgi_error "ERROR: invalid mbn"
+fi
+
+# Build AT command from validated parts
+at_parts=""
+append_at() {
+    [ -z "$at_parts" ] && at_parts="$1" || at_parts="${at_parts};${1}"
+}
+
+[ -n "$apn" ]       && append_at "+CGDCONT=1,\"${ip_type}\",\"${apn}\""
+[ -n "$sim" ]       && append_at "+QUIMSLOT=${sim}"
+[ -n "$roam_pref" ] && append_at "+QNWPREFCFG=\"roam_pref\",${roam_pref}"
+[ -n "$mbn" ]       && append_at "+QMBNCFG=\"AutoSel\",${mbn}"
+
+if [ -z "$at_parts" ]; then
+    cgi_error "ERROR: no parameters provided"
+fi
+
+result=$(atcmd_run "AT${at_parts}")
+echo "$result"
+cache_invalidate "$_CACHE_MODEM_ALL" "$_CACHE_NETWORK"

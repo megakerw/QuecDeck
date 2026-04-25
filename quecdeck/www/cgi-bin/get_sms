@@ -1,0 +1,9 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+
+cgi_output_text
+
+atcmd_run 'AT+CSMS=1;+CSDH=0;+CNMI=2,1,0,0,0;+CMGF=1;+CSCA?;+CSMP=17,167,0,8;+CPMS="ME","ME","ME";+CSCS="UCS2";+CMGL="ALL"'

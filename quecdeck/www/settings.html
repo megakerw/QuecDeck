@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuecDeck</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=c58a483b" />
+    <link rel="stylesheet" href="css/styles.css?v=c58a483b" />
+
+    <!-- Logo -->
+    <link rel="quecdeck-logo" href="favicon.ico" />
+
+    <!--  Import BootStrap Javascript -->
+    <script src="js/bootstrap.bundle.min.js?v=c58a483b"></script>
+    <script src="js/utils.js?v=c58a483b" defer></script>
+    <script src="js/alpinejs.min.js?v=c58a483b" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="quecdeckSettings()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=c58a483b"></script>
+
+        <div class="row gy-3 mt-4 mb-4 align-items-stretch">
+          <div class="col-md-6 form-narrow">
+            <div class="panel-section">
+              <div class="panel-title">LAN Configuration</div>
+              <div class="mb-3">
+                <label class="form-label">LAN IP</label>
+                <input type="text" class="form-control" x-model="lanIp" @input="syncDhcpPrefix()" placeholder="192.168.225.1">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">DHCP Start</label>
+                <input type="text" class="form-control" x-model="dhcpStart" placeholder="192.168.225.20">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">DHCP End</label>
+                <input type="text" class="form-control" x-model="dhcpEnd" placeholder="192.168.225.170">
+              </div>
+              <div class="mt-auto pt-3">
+                <button type="button" class="btn btn-primary" @click="confirmLanChange()" :disabled="isLoading || $store.scanBanner.active">Save</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title">One Click Utilities</div>
+              <ul class="list-group list-group-flush">
+                  <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span>Reboot</span>
+                    <button
+                      type="button"
+                      class="btn btn-danger"
+                      @click="rebootDevice()"
+                      :disabled="isLoading || $store.scanBanner.active"
+                    >
+                      Reboot
+                    </button>
+                  </li>
+                  <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span>Onboard DNS IPv4 Proxy</span>
+                    <button
+                      type="button"
+                      class="btn"
+                      :class="dnsV4ProxyStatus ? 'btn-danger' : 'btn-primary'"
+                      @click="dnsV4ProxyStatus ? onBoardDNSV4ProxyDisable() : onBoardDNSV4ProxyEnable()"
+                      :disabled="isLoading || $store.scanBanner.active || dnsV4ProxyStatus === null"
+                      x-text="dnsV4ProxyStatus ? 'Disable' : 'Enable'"
+                    ></button>
+                  </li>
+                  <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span>Onboard DNS IPv6 Proxy</span>
+                    <button
+                      type="button"
+                      class="btn"
+                      :class="dnsV6ProxyStatus ? 'btn-danger' : 'btn-primary'"
+                      @click="dnsV6ProxyStatus ? onBoardDNSV6ProxyDisable() : onBoardDNSV6ProxyEnable()"
+                      :disabled="isLoading || $store.scanBanner.active || dnsV6ProxyStatus === null"
+                      x-text="dnsV6ProxyStatus ? 'Disable' : 'Enable'"
+                    ></button>
+                  </li>
+                  <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span>IPPT</span>
+                    <button
+                      type="button"
+                      class="btn"
+                      :class="ipptEnabled ? 'btn-danger' : 'btn-primary'"
+                      @click="ipptEnabled ? ipptDisable() : ipptEnable()"
+                      :disabled="isLoading || $store.scanBanner.active || ipptEnabled === null"
+                      x-text="ipptEnabled ? 'Disable' : 'Enable'"
+                    ></button>
+                  </li>
+                  <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span>Auto Connect (QMAPWAC)</span>
+                    <button
+                      type="button"
+                      class="btn"
+                      :class="autoConnectEnabled ? 'btn-danger' : 'btn-primary'"
+                      @click="autoConnectEnabled ? autoConnectDisable() : autoConnectEnable()"
+                      :disabled="isLoading || $store.scanBanner.active || autoConnectEnabled === null"
+                      x-text="autoConnectEnabled ? 'Disable' : 'Enable'"
+                    ></button>
+                  </li>
+                  <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span>GNSS</span>
+                    <button
+                      type="button"
+                      class="btn"
+                      :class="gnssEnabled ? 'btn-danger' : 'btn-primary'"
+                      @click="gnssEnabled ? gnssDisable() : gnssEnable()"
+                      :disabled="isLoading || $store.scanBanner.active || gnssEnabled === null"
+                      x-text="gnssEnabled ? 'Disable' : 'Enable'"
+                    ></button>
+                  </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+    <script src="js/dark-mode.js?v=c58a483b"></script>
+    <script src="js/settings.js?v=c58a483b"></script>
+  </body>
+</html>

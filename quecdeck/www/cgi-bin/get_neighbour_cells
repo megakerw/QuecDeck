@@ -1,0 +1,10 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+
+cgi_output_text
+
+cache_get_or_fetch "$_CACHE_NEIGHBOUR" 5 \
+    'AT+QENG="neighbourcell";+QNWCFG="nr5g_meas_info",1;+QNWCFG="nr5g_meas_info"'

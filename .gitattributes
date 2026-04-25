@@ -1,0 +1,30 @@
+# Keep hook scripts as LF — CRLF breaks the shebang on Linux/Git for Windows
+.githooks/* text eol=lf
+
+# All device-deployed text files must be LF so checksums match between
+# Windows dev machine and the Linux device that downloads them from GitHub.
+*.sh        text eol=lf
+*.lua       text eol=lf
+*.html      text eol=lf
+*.conf      text eol=lf
+*.css       text eol=lf
+*.js        text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+
+# CGI scripts and other text files without extensions (quecdeck/www/cgi-bin/*)
+quecdeck/www/cgi-bin/* text eol=lf
+quecdeck/quecdeckdevpasswd text eol=lf
+quecdeck/console/.profile text eol=lf
+quecdeck/console/ttyd.bash text eol=lf
+quecdeck/console/menu/start_menu.sh text eol=lf
+
+# Binary files — never touch line endings
+*.woff2     binary
+*.ico       binary
+*.woff      binary
+*.ttf       binary
+*.eot       binary
+*.png       binary
+*.jpg       binary
+*.gif       binary

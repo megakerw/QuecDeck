@@ -1,0 +1,165 @@
+#!/bin/bash
+
+urldecode() {
+    printf '%s' "${1//+/ }" | awk '
+    BEGIN { for (i=0; i<=255; i++) _h[sprintf("%02X",i)] = sprintf("%c",i) }
+    { s=$0; o=""
+      while (match(s, /%[0-9A-Fa-f][0-9A-Fa-f]/)) {
+          o = o substr(s,1,RSTART-1) _h[toupper(substr(s,RSTART+1,2))]
+          s = substr(s,RSTART+RLENGTH)
+      }
+      printf "%s%s", o, s }'
+}
+
+get_param() {
+    local raw
+    raw=$(printf '%s' "$1" | tr '&' '\n' | grep "^${2}=" | head -1 | cut -d'=' -f2-)
+    urldecode "$raw"
+}
+
+validate_htpasswd() {
+    local htpasswd_file="$1"
+    local username="$2"
+    local password="$3"
+
+    [ -f "$htpasswd_file" ] || return 1
+
+    local line
+    line=$(grep "^${username}:" "$htpasswd_file" 2>/dev/null | head -1)
+    [ -n "$line" ] || return 1
+
+    local stored_hash="${line#*:}"
+    local salt computed
+    salt=$(printf '%s' "$stored_hash" | awk -F'[$]' '{print $3}')
+    computed=$(printf '%s' "$password" | openssl passwd -6 -salt "$salt" -stdin 2>/dev/null)
+    [ "$computed" = "$stored_hash" ]
+}
+
+# Only accept POST — redirect GET requests (e.g. iOS Safari BFCache restoring this URL) to home.
+# auth.lua will then forward valid sessions through or redirect to login if the session is expired.
+if [ "$REQUEST_METHOD" != "POST" ]; then
+    printf 'Status: 303 See Other\r\nLocation: /\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n'
+    exit 0
+fi
+
+# Reject cross-origin requests (CSRF protection). Browsers always send Origin
+# on cross-origin POSTs; absent Origin (same-origin form, curl) is allowed.
+if [ -n "$HTTP_ORIGIN" ]; then
+    case "$HTTP_ORIGIN" in
+        "https://${HTTP_HOST}"|"http://${HTTP_HOST}") ;;
+        *)
+            printf 'Status: 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nForbidden\n'
+            exit 1
+            ;;
+    esac
+fi
+
+# Read POST body (cap at 4 KB)
+# head -c reads exactly N bytes, blocking until all bytes arrive — more reliable
+# than dd bs=N count=1, which may return a short read on keep-alive connections.
+post_data=""
+if [ -n "$CONTENT_LENGTH" ] && [ "$CONTENT_LENGTH" -gt 0 ] && [ "$CONTENT_LENGTH" -le 4096 ]; then
+    post_data=$(head -c "$CONTENT_LENGTH")
+fi
+
+username=$(get_param "$post_data" "username")
+password=$(get_param "$post_data" "password")
+
+json_error()  { printf 'Status: 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n\r\n{"ok":false,"error":"%s"}' "$1"; }
+
+ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
+log_access_event() {
+    mkdir -p "$(dirname "$ACCESS_LOG")"
+    printf '%s\n' "$1" >> "$ACCESS_LOG"
+    local count
+    count=$(wc -l < "$ACCESS_LOG" 2>/dev/null || echo 0)
+    if [ "$count" -gt 500 ]; then
+        tail -500 "$ACCESS_LOG" > "${ACCESS_LOG}.tmp" && mv "${ACCESS_LOG}.tmp" "$ACCESS_LOG"
+    fi
+}
+
+# Brute-force protection — 5 attempts, then 15-minute lockout per IP
+FAILURE_DIR="/tmp/quecdeck/auth_failures"
+mkdir -p "$FAILURE_DIR" && chmod 700 "$FAILURE_DIR"
+
+# Opportunistic cleanup: remove failure records older than 1 day (~1% of requests).
+# Lockouts last 15 minutes, so any record older than a day is guaranteed expired.
+[ $(( RANDOM % 100 )) -eq 0 ] && find "$FAILURE_DIR" -maxdepth 1 -type f -mtime +1 -delete 2>/dev/null
+MAX_ATTEMPTS=5
+LOCKOUT_SECS=900
+
+client_ip=$(printf '%s' "${REMOTE_ADDR:-unknown}" | tr -cd 'A-Fa-f0-9.:')
+[ -z "$client_ip" ] && client_ip="unknown"
+failure_file="$FAILURE_DIR/${client_ip//:/_}"
+wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $1; exit}')
+[ -z "$wan_ip" ] && wan_ip=""
+
+now=$(date +%s)
+
+# Reject immediately if locked out
+if [ -f "$failure_file" ]; then
+    lockout_until=$(grep '^lockout_until=' "$failure_file" | cut -d= -f2)
+    if [ -n "$lockout_until" ] && [ "$lockout_until" -gt "$now" ]; then
+        log_access_event "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+        json_error "locked"; exit 0
+    fi
+fi
+
+# Validate username: alphanumeric, underscore, or hyphen — 1 to 64 chars
+if ! printf '%s' "$username" | grep -qE '^[a-zA-Z0-9_-]{1,64}$'; then
+    json_error "invalid"; exit 0
+fi
+
+# Validate password: non-empty, max 256 chars
+if [ -z "$password" ] || [ "${#password}" -gt 256 ]; then
+    json_error "invalid"; exit 0
+fi
+
+# Check credentials against admin htpasswd
+role=""
+if validate_htpasswd "/opt/etc/.htpasswd" "$username" "$password"; then
+    role="admin"
+fi
+
+if [ -z "$role" ]; then
+    sleep 1    # per-attempt delay
+
+    # Increment failure count
+    count=0
+    if [ -f "$failure_file" ]; then
+        count=$(grep '^count=' "$failure_file" | cut -d= -f2)
+    fi
+    count=$(( ${count:-0} + 1 ))
+
+    if [ "$count" -ge "$MAX_ATTEMPTS" ]; then
+        lockout_until=$(( now + LOCKOUT_SECS ))
+        printf 'count=0\nlockout_until=%s\n' "$lockout_until" > "$failure_file"
+        log_access_event "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+        json_error "locked"
+    else
+        printf 'count=%s\nlockout_until=0\n' "$count" > "$failure_file"
+        log_access_event "{\"ts\":$now,\"type\":\"login_failure\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+        json_error "invalid"
+    fi
+    exit 0
+fi
+
+# Successful login — clear failure record
+rm -f "$failure_file"
+
+# Create session — directory must be 700 so other local users cannot list tokens.
+# Use umask to set permissions atomically on creation rather than a separate chmod.
+(umask 077; mkdir -p /tmp/quecdeck/sessions)
+token=$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 64)
+now=$(date +%s)
+log_access_event "{\"ts\":$now,\"type\":\"login_success\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+
+(umask 077; printf 'user=%s\nrole=%s\ncreated=%s\nlast_access=%s\n' \
+    "$username" "$role" "$now" "$now" > "/tmp/quecdeck/sessions/$token")
+
+printf 'Status: 200 OK\r\n'
+printf 'Content-Type: application/json\r\n'
+printf 'Set-Cookie: session=%s; Path=/; HttpOnly; Secure; SameSite=Strict\r\n' "$token"
+printf 'Cache-Control: no-store\r\n'
+printf '\r\n'
+printf '{"ok":true}'

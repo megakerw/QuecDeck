@@ -1,0 +1,30 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+cgi_read_post
+
+action=$(get_post_param action)
+indices=$(get_post_param indices)
+
+cgi_output_text
+
+if [ "$action" = "all" ]; then
+    atcmd_run 'AT+CMGD=,4'
+elif [ -n "$indices" ]; then
+    # Validate: comma-separated positive integers only
+    if ! printf '%s' "$indices" | grep -qE '^[0-9]+(,[0-9]+)*$'; then
+        cgi_error "ERROR: indices must be comma-separated integers"
+    fi
+    # Build semicolon-joined delete command
+    at_cmd=$(echo "$indices" | awk -F',' '
+    {
+        out = "AT+CMGD=" $1
+        for (i = 2; i <= NF; i++) out = out ";+CMGD=" $i
+        print out
+    }')
+    atcmd_run "$at_cmd"
+else
+    cgi_error "ERROR: provide action=all or indices=N,N,..."
+fi

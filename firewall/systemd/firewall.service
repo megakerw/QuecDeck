@@ -1,0 +1,11 @@
+[Unit]
+Description=Firewall Setup
+After=network.target opt.mount QCMAP_ConnectionManagerd.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usrdata/firewall/firewall.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

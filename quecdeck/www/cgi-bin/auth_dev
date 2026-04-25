@@ -1,0 +1,138 @@
+#!/bin/bash
+# Developer session unlock endpoint.
+#
+# Requires an active admin session (enforced by auth.lua before this script
+# runs). Checks the provided password against /opt/etc/.htpasswd_dev using
+# the fixed "devadmin" username.
+#
+# GET  — returns {"unlocked": true/false} for the current session.
+# POST — validates password; on success sets dev_unlocked=1 in the session
+#        file and returns {"unlocked": true}.
+#
+# Brute-force protection: 5 failed attempts trigger a 15-minute lockout,
+# tracked via dev_fail_count and dev_lockout_until in the session file.
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+
+validate_htpasswd() {
+    local htpasswd_file="$1"
+    local username="$2"
+    local password="$3"
+
+    [ -f "$htpasswd_file" ] || return 1
+
+    local line
+    line=$(grep "^${username}:" "$htpasswd_file" 2>/dev/null | head -1)
+    [ -n "$line" ] || return 1
+
+    local stored_hash="${line#*:}"
+    local salt computed
+    salt=$(printf '%s' "$stored_hash" | awk -F'[$]' '{print $3}')
+    computed=$(printf '%s' "$password" | openssl passwd -6 -salt "$salt" -stdin 2>/dev/null)
+    [ "$computed" = "$stored_hash" ]
+}
+
+# Extract session token from Cookie header.
+token=$(printf '%s' "${HTTP_COOKIE:-}" | tr ';' '\n' | sed 's/^ *//' | \
+    grep '^session=' | head -1 | cut -d= -f2)
+
+# Validate token format before using in a file path — defense in depth;
+# auth.lua enforces the same constraint before this script runs.
+if ! printf '%s' "$token" | grep -qE '^[A-Za-z0-9]{1,128}$'; then
+    cgi_output_json
+    printf '{"unlocked":false}\n'
+    exit 0
+fi
+
+SESSION_FILE="/tmp/quecdeck/sessions/${token}"
+
+if [ ! -f "$SESSION_FILE" ]; then
+    cgi_output_json
+    printf '{"unlocked":false}\n'
+    exit 0
+fi
+
+dev_unlocked=$(grep '^dev_unlocked=' "$SESSION_FILE" | cut -d= -f2)
+
+# GET: return current unlock status and whether a dev password has been configured.
+if [ "$REQUEST_METHOD" = "GET" ]; then
+    cgi_output_json
+    configured="false"
+    [ -s /opt/etc/.htpasswd_dev ] && configured="true"
+    if [ "$dev_unlocked" = "1" ]; then
+        printf '{"unlocked":true,"configured":%s}\n' "$configured"
+    else
+        printf '{"unlocked":false,"configured":%s}\n' "$configured"
+    fi
+    exit 0
+fi
+
+# POST: attempt to unlock.
+cgi_require_post
+cgi_read_post
+password=$(get_post_param "password")
+
+if [ -z "$password" ] || [ "${#password}" -gt 256 ]; then
+    cgi_output_json
+    printf '{"unlocked":false,"error":"invalid"}\n'
+    exit 0
+fi
+
+MAX_ATTEMPTS=5
+LOCKOUT_SECS=900
+now=$(date +%s)
+
+dev_lockout_until=$(grep '^dev_lockout_until=' "$SESSION_FILE" | cut -d= -f2)
+dev_fail_count=$(grep '^dev_fail_count=' "$SESSION_FILE" | cut -d= -f2)
+
+# Reject immediately if locked out.
+if [ -n "$dev_lockout_until" ] && [ "$dev_lockout_until" -gt "$now" ]; then
+    cgi_output_json
+    printf '{"unlocked":false,"error":"locked"}\n'
+    exit 0
+fi
+
+ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
+log_access_event() {
+    mkdir -p "$(dirname "$ACCESS_LOG")"
+    printf '%s\n' "$1" >> "$ACCESS_LOG"
+    local count
+    count=$(wc -l < "$ACCESS_LOG" 2>/dev/null || echo 0)
+    if [ "$count" -gt 500 ]; then
+        tail -500 "$ACCESS_LOG" > "${ACCESS_LOG}.tmp" && mv "${ACCESS_LOG}.tmp" "$ACCESS_LOG"
+    fi
+}
+
+client_ip=$(printf '%s' "${REMOTE_ADDR:-unknown}" | tr -cd 'A-Fa-f0-9.:')
+[ -z "$client_ip" ] && client_ip="unknown"
+wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $1; exit}')
+[ -z "$wan_ip" ] && wan_ip=""
+
+_session_write() {
+    local tmp="${SESSION_FILE}.tmp.$$"
+    grep -vE '^(dev_unlocked|dev_fail_count|dev_lockout_until)=' "$SESSION_FILE" > "$tmp"
+    cat >> "$tmp"
+    mv "$tmp" "$SESSION_FILE" && chmod 600 "$SESSION_FILE"
+}
+
+if validate_htpasswd "/opt/etc/.htpasswd_dev" "devadmin" "$password"; then
+    # Success — clear lockout state and mark session as dev-unlocked.
+    printf 'dev_unlocked=1\n' | _session_write
+    log_access_event "{\"ts\":$now,\"type\":\"dev_unlock_success\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+    cgi_output_json
+    printf '{"unlocked":true}\n'
+else
+    sleep 1
+    count=$(( ${dev_fail_count:-0} + 1 ))
+    if [ "$count" -ge "$MAX_ATTEMPTS" ]; then
+        printf 'dev_fail_count=0\ndev_lockout_until=%s\n' "$(( now + LOCKOUT_SECS ))" | _session_write
+        log_access_event "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+        cgi_output_json
+        printf '{"unlocked":false,"error":"locked"}\n'
+    else
+        printf 'dev_fail_count=%s\ndev_lockout_until=0\n' "$count" | _session_write
+        log_access_event "{\"ts\":$now,\"type\":\"dev_unlock_failure\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+        cgi_output_json
+        printf '{"unlocked":false,"error":"wrong"}\n'
+    fi
+fi

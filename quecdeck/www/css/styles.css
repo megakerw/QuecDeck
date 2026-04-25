@@ -1,0 +1,603 @@
+/* ============================================================
+   QuecDeck — Custom Styles
+   ============================================================ */
+
+/* import poppins */
+/* poppins-300 - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 300;
+  src: url('../fonts/poppins-v23-latin-300.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* poppins-300italic - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 300;
+  src: url('../fonts/poppins-v23-latin-300italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* poppins-regular - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 400;
+  src: url('../fonts/poppins-v23-latin-regular.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* poppins-italic - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 400;
+  src: url('../fonts/poppins-v23-latin-italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* poppins-500 - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  src: url('../fonts/poppins-v23-latin-500.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* poppins-500italic - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 500;
+  src: url('../fonts/poppins-v23-latin-500italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* poppins-600 - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  src: url('../fonts/poppins-v23-latin-600.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* poppins-600italic - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 600;
+  src: url('../fonts/poppins-v23-latin-600italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* poppins-700 - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 700;
+  src: url('../fonts/poppins-v23-latin-700.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+/* poppins-700italic - latin */
+@font-face {
+  font-display: swap; /* Check https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-display for other options. */
+  font-family: 'Poppins';
+  font-style: italic;
+  font-weight: 700;
+  src: url('../fonts/poppins-v23-latin-700italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+* {
+  font-family: "Poppins", sans-serif;
+}
+
+.custom-checkbox .form-check-input {
+  margin-right: 1px;
+}
+
+
+.loader {
+  width: 64px;
+  height: 64px;
+  border: 3px dotted #000;
+  border-style: solid solid dotted dotted;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+  box-sizing: border-box;
+  animation: rotation 2s linear infinite;
+  margin-bottom: 2rem;
+}
+
+.loader::after {
+  content: "";
+  box-sizing: border-box;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  margin: auto;
+  border: 3px dotted #0b5ed7;
+  border-style: solid solid dotted;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  animation: rotationBack 1s linear infinite;
+  transform-origin: center center;
+}
+
+@keyframes rotation {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+@keyframes rotationBack {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(-360deg);
+  }
+}
+
+.stat-card svg {
+  overflow: visible;
+}
+
+.stat-card svg path,
+.stat-card svg circle {
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 16;
+  paint-order: stroke fill;
+}
+
+.stat-card svg.ram-icon {
+  width: 82px !important;
+  height: auto !important;
+  margin-top: 15px;
+}
+
+.stat-card svg.cloud-icon {
+  margin-top: 6px;
+}
+
+.stat-card svg.ram-icon path,
+.stat-card svg.ram-icon rect,
+.stat-card svg.ram-icon line {
+  stroke: var(--status-color-green);
+  stroke-width: 4.5;
+  paint-order: normal;
+}
+
+.progress-bar.bg-success,
+.badge.bg-success,
+.text-bg-success {
+  background-color: var(--status-color-green) !important;
+}
+
+.progress-bar.bg-danger,
+.badge.bg-danger,
+.text-bg-danger {
+  background-color: var(--status-color-red) !important;
+}
+
+.badge.bg-warning,
+.is-warning {
+  background-color: var(--status-color-yellow) !important;
+  color: #000 !important;
+}
+
+.is-medium {
+  font-weight: 600;
+}
+
+/* ============================================================
+   BRAND COLORS
+   ============================================================ */
+:root {
+  --status-color-green: #198754;
+  --status-color-yellow: #ffc107;
+  --status-color-red:   #dc3545;
+  --status-color-grey:  #6c757d;
+  --status-color-blue:  #60a5fa;
+}
+
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root {
+  --sa-bg: #f0f2f5;
+  --sa-card-radius: 12px;
+  --sa-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.05);
+  --sa-card-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.08), 0 12px 24px rgba(0, 0, 0, 0.08);
+  --sa-navbar-border: rgba(0, 0, 0, 0.08);
+  --sa-transition: 0.15s ease;
+}
+
+[data-bs-theme="dark"] {
+  --sa-bg: #0f1117;
+  --sa-navbar-border: rgba(255, 255, 255, 0.08);
+  --sa-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.2);
+  --sa-card-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+body {
+  background-color: var(--sa-bg);
+}
+
+/* ============================================================
+   NAVBAR
+   ============================================================ */
+.navbar {
+  background: #ffffff !important;
+  border: none;
+  box-shadow: var(--sa-card-shadow);
+  border-radius: 8px;
+}
+
+.navbar + .row {
+  margin-top: 1.25rem !important;
+}
+
+.navbar-brand span {
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.2px;
+}
+
+.nav-link {
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: color var(--sa-transition);
+}
+
+#darkModeToggle {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.35em;
+  border: 1px solid var(--bs-border-color) !important;
+  border-radius: 20px !important;
+  padding: 0.25rem 1rem 0.25rem 0.65rem !important;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-decoration: none !important;
+  color: var(--bs-body-color) !important;
+  transition: background-color var(--sa-transition);
+  line-height: 1.6;
+}
+
+#darkModeToggle:hover {
+  background-color: var(--bs-secondary-bg) !important;
+  text-decoration: none !important;
+}
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+.card {
+  border-radius: var(--sa-card-radius) !important;
+  box-shadow: var(--sa-card-shadow);
+  transition: box-shadow var(--sa-transition);
+  overflow: hidden;
+}
+
+.card:hover {
+  box-shadow: var(--sa-card-shadow-hover);
+}
+
+.card-header {
+  font-weight: 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.01em;
+}
+
+/* ============================================================
+   STAT CARDS (homepage overview cards)
+   ============================================================ */
+.stat-card {
+  text-align: center;
+  padding-top: 1.5rem !important;
+  padding-bottom: 2.5rem !important;
+  margin-bottom: 0 !important;
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  aspect-ratio: 9 / 10;
+  height: auto !important;
+}
+
+.stat-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+}
+
+.stat-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stat-card .stat-sub {
+  position: absolute;
+  top: calc(100% - 0.2rem);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.stat-card .stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.stat-card .stat-sub {
+  margin-top: 0.2rem;
+}
+
+.stat-card .stat-label {
+  position: absolute;
+  bottom: 0.65rem;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+.stat-card svg {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
+  height: 64px !important;
+  width: 64px !important;
+}
+
+.stat-card .stat-icon {
+  font-size: 3.75rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
+}
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+.table th[scope="row"] {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+  white-space: nowrap;
+}
+
+.table td {
+  font-size: 0.9rem;
+}
+
+/* ============================================================
+   PROGRESS BARS
+   ============================================================ */
+.progress {
+  border-radius: 6px;
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  border-radius: 7px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: transform 0.1s ease, box-shadow var(--sa-transition), opacity var(--sa-transition);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-primary:not(:disabled):not(.disabled),
+.btn-danger:not(:disabled):not(.disabled),
+.btn-info:not(:disabled):not(.disabled),
+.btn-success:not(:disabled):not(.disabled) {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-danger:hover:not(:disabled),
+.btn-info:hover:not(:disabled),
+.btn-success:hover:not(:disabled) {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================================
+   FORM CONTROLS
+   ============================================================ */
+.form-control,
+.form-select {
+  border-radius: 7px;
+  font-size: 0.9rem;
+}
+
+.form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* ============================================================
+   LIST GROUP
+   ============================================================ */
+.list-group-item {
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+/* ============================================================
+   MODALS
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.loading-modal {
+  background-color: var(--bs-body-bg) !important;
+  padding: 1.5rem 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  border: 1px solid var(--bs-border-color);
+}
+
+.loading-text {
+  font-size: 15px;
+  color: var(--bs-body-color) !important;
+}
+
+/* ============================================================
+   DARK MODE — overrides / fixes
+   ============================================================ */
+[data-bs-theme="dark"] body {
+  background-color: var(--sa-bg);
+}
+
+[data-bs-theme="dark"] .navbar {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* ============================================================
+   PANEL SECTIONS (D style)
+   ============================================================ */
+.panel-section {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: var(--sa-card-shadow);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Prevent last child's margin from doubling up with panel padding.
+   !important needed to override Bootstrap's mb-* utility classes. */
+.panel-section > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+.panel-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  margin-bottom: 1rem;
+}
+
+.panel-title .badge {
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+[data-bs-theme="dark"] .panel-section {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Tables inside panel-sections (info/data tables without .table class) */
+.panel-section table:not(.table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.panel-section table:not(.table) th,
+.panel-section table:not(.table) td {
+  height: 2.25rem;
+}
+
+.panel-section table:not(.table) th {
+  width: 35%;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+  padding: 0.45rem 1rem 0.45rem 0;
+  border-bottom: 1px solid var(--bs-border-color);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.panel-section table:not(.table) td {
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--bs-border-color);
+  vertical-align: middle;
+}
+
+.panel-section table:not(.table) tr:last-child th,
+.panel-section table:not(.table) tr:last-child td {
+  border-bottom: none;
+}
+
+/* Bootstrap tables inside panel-sections: strip the white table background
+   so rows blend into the panel's own background colour */
+.panel-section .table {
+  --bs-table-bg: transparent;
+}
+
+/* List-group items inside panel-sections blend into the panel background
+   and align horizontally with table rows on the home page */
+.panel-section .list-group-item {
+  background-color: transparent;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 0.9rem;
+}
+
+/* Scale up form switches so they're easier to tap */
+.panel-section .form-switch {
+  font-size: 1.25rem;
+}
+
+/* When the last direct child is a list-group (no button row below), remove the
+   panel's own bottom padding — the last item's natural padding provides the
+   visual breathing room. */
+.panel-section:has(> ul.list-group:last-child) {
+  padding-bottom: 0;
+}
+
+/* ============================================================
+   INLINE STYLE REPLACEMENTS
+   ============================================================ */
+.table-fixed  { table-layout: fixed; width: 100%; }
+.col-label    { width: 35%; }
+.col-value    { width: 65%; }
+.progress.bar-signal { height: 18px; }
+.progress.bar-xs     { height: 6px; }
+.chart-box    { height: 210px !important; }
+.footer-tall  { min-height: 4rem; }
+.input-mw-180 { max-width: 180px; }
+.input-mw-160 { max-width: 160px; }
+.sms-inbox-scroll { max-height: 400px; overflow-y: scroll; overflow-x: hidden; }

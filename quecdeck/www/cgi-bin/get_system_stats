@@ -1,0 +1,15 @@
+#!/bin/bash
+
+echo "Content-type: application/json"
+echo ""
+
+load=$(cut -d' ' -f1 /proc/loadavg)
+
+mem_total=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+mem_available=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+mem_used=$((mem_total - mem_available))
+mem_total_mb=$((mem_total / 1024))
+mem_used_mb=$((mem_used / 1024))
+mem_percent=$((mem_used * 100 / mem_total))
+
+echo "{\"load_avg\":$load,\"mem_total_mb\":$mem_total_mb,\"mem_used_mb\":$mem_used_mb,\"mem_percent\":$mem_percent}"

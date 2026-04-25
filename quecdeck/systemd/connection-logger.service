@@ -1,0 +1,23 @@
+[Unit]
+Description=QuecDeck connection event logger
+After=atcmd-daemon.service
+
+[Service]
+Type=simple
+User=www-data
+ExecStart=/bin/bash /usrdata/quecdeck/script/connection_logger.sh
+Restart=always
+RestartSec=5s
+StandardOutput=null
+StandardError=null
+NoNewPrivileges=yes
+ProtectHome=yes
+LockPersonality=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+
+[Install]
+WantedBy=multi-user.target

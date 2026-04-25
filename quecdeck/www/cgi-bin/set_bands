@@ -1,0 +1,31 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+cgi_read_post
+
+mode=$(get_post_param mode)
+bands=$(get_post_param bands)
+
+cgi_output_text
+
+# Validate bands if provided: colon-separated integers only
+if [ -n "$bands" ] && ! printf '%s' "$bands" | grep -qE '^[0-9]+(:[0-9]+)*$'; then
+    cgi_error "ERROR: bands must be colon-separated integers"
+fi
+
+case "$mode" in
+    LTE)
+        result=$(atcmd_run "AT+QNWPREFCFG=\"lte_band\"${bands:+,${bands}}") ;;
+    NSA)
+        result=$(atcmd_run "AT+QNWPREFCFG=\"nsa_nr5g_band\"${bands:+,${bands}}") ;;
+    SA)
+        result=$(atcmd_run "AT+QNWPREFCFG=\"nr5g_band\"${bands:+,${bands}}") ;;
+    restore)
+        result=$(atcmd_run 'AT+QNWPREFCFG="restore_band"') ;;
+    *)
+        cgi_error "ERROR: invalid mode" ;;
+esac
+echo "$result"
+cache_invalidate "$_CACHE_NETWORK" "$_CACHE_MODEM_ALL"

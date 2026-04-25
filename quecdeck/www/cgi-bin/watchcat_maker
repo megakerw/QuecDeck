@@ -1,0 +1,98 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+cgi_read_post
+
+WATCHCAT_ENABLED=$(get_post_param WATCHCAT_ENABLED)
+PING_INTERVAL=$(get_post_param PING_INTERVAL)
+PING_FAILURE_COUNT=$(get_post_param PING_FAILURE_COUNT)
+DISABLE_ON_NO_SIM=$(get_post_param DISABLE_ON_NO_SIM)
+
+cgi_output_text
+
+# Collect and validate IPs
+TRACK_IPS_COLON=""
+for i in 1 2 3 4 5; do
+    ip=$(get_post_param "TRACK_IP_${i}")
+    if [ -n "$ip" ]; then
+        if [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && \
+           { IFS='.' read -r o1 o2 o3 o4 <<< "$ip"; [ "$o1" -le 255 ] && [ "$o2" -le 255 ] && [ "$o3" -le 255 ] && [ "$o4" -le 255 ]; }; then
+            [ -n "$TRACK_IPS_COLON" ] && TRACK_IPS_COLON="${TRACK_IPS_COLON}:${ip}" || TRACK_IPS_COLON="$ip"
+        else
+            cgi_error "Invalid IP address: $ip"
+        fi
+    fi
+done
+
+# Defaults
+WATCHCAT_ENABLED="${WATCHCAT_ENABLED:-disable}"
+PING_INTERVAL="${PING_INTERVAL:-30}"
+PING_FAILURE_COUNT="${PING_FAILURE_COUNT:-3}"
+DISABLE_ON_NO_SIM="${DISABLE_ON_NO_SIM:-1}"
+
+# Validate
+if ! [[ "$WATCHCAT_ENABLED" =~ ^(enable|disable)$ ]]; then
+    cgi_error "Invalid value for WATCHCAT_ENABLED."
+fi
+
+if [ "$WATCHCAT_ENABLED" = "enable" ] && [ -z "$TRACK_IPS_COLON" ]; then
+    cgi_error "At least one valid IP address is required to enable Watchcat."
+fi
+
+if ! [[ "$PING_INTERVAL" =~ ^[0-9]+$ ]] || [ "$PING_INTERVAL" -lt 10 ] || [ "$PING_INTERVAL" -gt 600 ]; then
+    cgi_error "Ping interval must be between 10 and 600 seconds."
+fi
+
+if ! [[ "$PING_FAILURE_COUNT" =~ ^[0-9]+$ ]] || [ "$PING_FAILURE_COUNT" -lt 1 ] || [ "$PING_FAILURE_COUNT" -gt 10 ]; then
+    cgi_error "Failure count must be between 1 and 10."
+fi
+
+if ! [[ "$DISABLE_ON_NO_SIM" =~ ^[01]$ ]]; then
+    cgi_error "DISABLE_ON_NO_SIM must be 0 or 1."
+fi
+
+if [ "$WATCHCAT_ENABLED" = "enable" ]; then
+    ips_space=$(echo "$TRACK_IPS_COLON" | tr ':' ' ')
+
+    # Build JSON array of IPs
+    ips_json="["
+    first=1
+    for ip in $ips_space; do
+        [ "$first" = "1" ] && first=0 || ips_json="$ips_json,"
+        ips_json="$ips_json\"$ip\""
+    done
+    ips_json="$ips_json]"
+
+    sim_val=$([ "$DISABLE_ON_NO_SIM" = "1" ] && echo "true" || echo "false")
+
+    # Write config JSON — the static watchcat.sh in script/ reads this at startup
+    echo "{\"enabled\": true, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val}" > /usrdata/quecdeck/var/watchcat.json
+    chmod 640 /usrdata/quecdeck/var/watchcat.json
+
+    # Enable and restart watchcat service (systemd ops need root)
+    /opt/bin/sudo /usrdata/quecdeck/script/create_watchcat.sh
+
+    echo "Watchcat started. Targets: $ips_space | Interval: ${PING_INTERVAL}s | Failures: $PING_FAILURE_COUNT | SIM check: $DISABLE_ON_NO_SIM"
+else
+    # Save settings as disabled
+    ips_json="["
+    first=1
+    for ip in $(echo "$TRACK_IPS_COLON" | tr ':' ' '); do
+        [ "$first" = "1" ] && first=0 || ips_json="$ips_json,"
+        ips_json="$ips_json\"$ip\""
+    done
+    ips_json="$ips_json]"
+    sim_val=$([ "$DISABLE_ON_NO_SIM" = "1" ] && echo "true" || echo "false")
+
+    echo "{\"enabled\": false, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val}" > /usrdata/quecdeck/var/watchcat.json
+    chmod 640 /usrdata/quecdeck/var/watchcat.json
+
+    # Stop and disable watchcat service (systemd ops need root)
+    /opt/bin/sudo /usrdata/quecdeck/script/remove_watchcat.sh
+
+    echo "Watchcat disabled."
+fi
+
+exit 0

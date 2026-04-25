@@ -1,0 +1,17 @@
+[Unit]
+Description=Watchcat Ping Watchdog
+After=network.target opt.mount
+
+[Service]
+Type=simple
+User=www-data
+SupplementaryGroups=dialout
+ExecStart=/bin/sh /usrdata/quecdeck/script/watchcat.sh
+Restart=on-failure
+TimeoutStopSec=5
+ProtectHome=yes
+LockPersonality=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuecDeck</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=c58a483b" />
+    <link rel="stylesheet" href="css/styles.css?v=c58a483b" />
+    <link rel="quecdeck-logo" href="favicon.ico" />
+    <script src="js/bootstrap.bundle.min.js?v=c58a483b"></script>
+    <script src="js/utils.js?v=c58a483b" defer></script>
+    <script src="js/alpinejs.min.js?v=c58a483b" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="logsPage()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=c58a483b"></script>
+
+        <div class="row gy-3 mt-4 mb-4 align-items-stretch">
+
+          <div class="col-12 col-lg-6">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title d-flex align-items-center gap-2 mb-3">
+                Connection Events
+                <span x-show="loadingConn" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
+                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" @click="refreshConnection()">Refresh</button>
+              </div>
+              <div x-show="connectionEvents.length === 0 && !loadingConn" class="text-muted small">No connection events recorded yet.</div>
+              <div x-show="connectionEvents.length > 0" style="max-height:420px; overflow-y:auto">
+                <table class="table table-sm mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col" style="width:1%;white-space:nowrap">Time</th>
+                      <th scope="col" style="width:1%;white-space:nowrap">Event</th>
+                      <th scope="col">Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="ev in connectionEvents" :key="ev.ts + '-' + ev.type">
+                      <tr>
+                        <td class="text-muted text-nowrap" x-text="formatTs(ev.ts)"></td>
+                        <td><span class="badge" :class="connBadgeClass(ev.type)" x-text="connLabel(ev.type)"></span></td>
+                        <td x-text="connDetail(ev)"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div x-show="connectionEvents.length > 0" class="small mt-auto pt-2">Last 500 entries. Cleared on reboot.</div>
+            </div>
+          </div>
+
+          <div class="col-12 col-lg-6">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title d-flex align-items-center gap-2 mb-3">
+                Access Events
+                <span x-show="loadingAccess" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
+                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" @click="refreshAccess()">Refresh</button>
+              </div>
+              <div x-show="accessEvents.length === 0 && !loadingAccess" class="text-muted small">No access events recorded yet.</div>
+              <div x-show="accessEvents.length > 0" style="max-height:420px; overflow-y:auto">
+                <table class="table table-sm mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col" style="width:1%;white-space:nowrap">Time</th>
+                      <th scope="col" style="width:1%;white-space:nowrap">Event</th>
+                      <th scope="col">Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="ev in accessEvents" :key="ev.ts + '-' + ev.type">
+                      <tr>
+                        <td class="text-muted text-nowrap" x-text="formatTs(ev.ts)"></td>
+                        <td><span class="badge" :class="accessBadgeClass(ev.type)" x-text="accessLabel(ev.type)"></span></td>
+                        <td x-text="accessDetail(ev)"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div x-show="accessEvents.length > 0" class="small mt-auto pt-2">Last 500 entries. Cleared on reboot.</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </main>
+
+    <script src="js/logs.js?v=c58a483b"></script>
+    <script src="js/dark-mode.js?v=c58a483b"></script>
+  </body>
+</html>

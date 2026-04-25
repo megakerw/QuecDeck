@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuecDeck</title>
+  <link rel="stylesheet" href="css/bootstrap.min.css?v=c58a483b" />
+  <link rel="stylesheet" href="css/styles.css?v=c58a483b" />
+  <link rel="icon" href="favicon.ico" />
+  <script src="js/bootstrap.bundle.min.js?v=c58a483b"></script>
+  <script src="js/utils.js?v=c58a483b" defer></script>
+  <script src="js/alpinejs.min.js?v=c58a483b" defer></script>
+</head>
+
+<body>
+  <main>
+    <div class="container my-4" x-data="fetchSMS()">
+      <div id="nav-placeholder"></div>
+      <script src="js/nav.js?v=c58a483b"></script>
+      <div class="row gy-3 mt-4 mb-4 align-items-stretch">
+        <div class="col">
+          <div class="panel-section">
+            <div class="panel-title d-flex align-items-center gap-2">
+              SMS Inbox
+              <span x-show="isLoading" class="spinner-border spinner-border-sm text-secondary" role="status" aria-label="Loading"></span>
+            </div>
+            <div class="sms-inbox-scroll">
+                <table class="table table-hover">
+                  <tbody>
+                    <template x-if="messages.length === 0 && !isLoading">
+                      <tr><td class="text-muted">Inbox is empty.</td></tr>
+                    </template>
+                    <template x-for="(message, index) in messages" :key="index">
+                      <tr>
+                        <td>
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" :value="index"
+                              x-model="selectedMessages" />
+                            <div class="row column-gap-1 mb-2">
+                              <div class="col-md-3">
+                                <p x-text="'Sender: ' + senders[index]"></p>
+                              </div>
+                              <div class="col">
+                                <p x-text="'Date and Time: ' + dates[index]"></p>
+                              </div>
+                            </div>
+                            <div class="col-md-9">
+                              <p x-text="message.text"></p>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+            </div>
+            <div class="mt-auto pt-3 d-flex align-items-center gap-3 flex-wrap">
+              <div class="form-check mb-0" x-show="messages.length > 0">
+                <input id="selectAllCheckbox" class="form-check-input" type="checkbox" @change="toggleAll($event)" />
+                <label class="form-check-label" for="selectAllCheckbox">Select All</label>
+              </div>
+              <div class="d-flex gap-2 ms-auto">
+                <button class="btn btn-primary" type="button" @click="init()" :disabled="isLoading">Refresh</button>
+                <button class="btn btn-danger" type="button" @click="deleteSelectedSMS()" :disabled="isLoading || selectedMessages.length === 0">Delete Selected</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="js/dark-mode.js?v=c58a483b"></script>
+  <script src="js/sms.js?v=c58a483b"></script>
+</body>
+
+</html>

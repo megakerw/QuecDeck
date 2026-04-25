@@ -1,0 +1,18 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+
+cgi_output_json
+
+device_tz_offset=$(date '+%z')
+
+CONFIG=/usrdata/quecdeck/var/scheduled_restart.json
+if [ -f "$CONFIG" ]; then
+    base=$(cat "$CONFIG")
+else
+    base='{"enabled": false, "type": "daily", "day": 1, "hour": 3, "minute": 0}'
+fi
+
+printf '%s' "${base%\}}"
+printf ', "device_tz_offset": "%s"}' "$device_tz_offset"

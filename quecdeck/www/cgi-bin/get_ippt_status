@@ -1,0 +1,22 @@
+#!/bin/sh
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+
+cgi_output_json
+
+CONFIG_FILE="/etc/data/mobileap_cfg.xml"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo '{"ippt_enabled": false, "error": "config not found"}'
+    exit 0
+fi
+
+val=$(grep -o '<IPPassthroughEnable>[^<]*</IPPassthroughEnable>' "$CONFIG_FILE" | head -1 | sed 's/<IPPassthroughEnable>//;s/<\/IPPassthroughEnable>//' | tr -cd '0-9')
+
+case "$val" in
+    1)
+        echo '{"ippt_enabled": true}' ;;
+    *)
+        echo '{"ippt_enabled": false}' ;;
+esac

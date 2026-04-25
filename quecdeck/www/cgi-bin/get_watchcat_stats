@@ -1,0 +1,10 @@
+#!/bin/bash
+
+echo "Content-type: application/json"
+echo ""
+
+if [ -f /tmp/quecdeck/watchcat_stats.json ]; then
+    cat /tmp/quecdeck/watchcat_stats.json
+else
+    echo "{}"
+fi

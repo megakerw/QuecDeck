@@ -1,0 +1,20 @@
+#!/bin/sh
+
+echo "Content-type: application/json"
+echo ""
+
+CONFIG_FILE="/etc/data/mobileap_cfg.xml"
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo '{"upnp": false, "error": "config not found"}'
+    exit 0
+fi
+
+val=$(grep -o '<UPnP>[^<]*</UPnP>' "$CONFIG_FILE" | sed 's/<UPnP>//;s/<\/UPnP>//')
+
+case "$val" in
+    1|true|TRUE|yes|YES|enable|ENABLE)
+        echo '{"upnp": true}' ;;
+    *)
+        echo '{"upnp": false}' ;;
+esac

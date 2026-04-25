@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuecDeck</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=c58a483b" />
+    <link rel="stylesheet" href="css/styles.css?v=c58a483b" />
+    <link rel="quecdeck-logo" href="favicon.ico" />
+    <script src="js/bootstrap.bundle.min.js?v=c58a483b"></script>
+    <script src="js/utils.js?v=c58a483b" defer></script>
+    <script src="js/alpinejs.min.js?v=c58a483b" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="quecdeckWatchCat()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=c58a483b"></script>
+
+        <div class="row gy-3 mt-4 mb-4 align-items-stretch">
+
+          <!-- Left column: Watchcat -->
+          <div class="col-md-6">
+
+            <div class="panel-section mb-3">
+              <div class="panel-title d-flex justify-content-between align-items-center">
+                <span>Watchcat</span>
+                <span
+                  class="badge"
+                  :class="serviceActive ? 'text-bg-success' : 'text-bg-secondary'"
+                  x-text="serviceActive ? 'Enabled' : 'Disabled'"
+                ></span>
+              </div>
+
+                <!-- Enable / Disable -->
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div>
+                    <div class="fw-semibold" style="font-size: 0.875rem">Enable Watchcat</div>
+                    <div class="text-muted small" x-show="enabled">Reboots the modem if all ping targets fail.</div>
+                    <div class="text-muted small" x-show="!enabled">Currently disabled.</div>
+                  </div>
+                  <div class="form-check form-switch ms-3">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                      x-model="enabled"
+                    />
+                  </div>
+                </div>
+
+                <fieldset :disabled="!enabled" :style="!enabled ? 'opacity: 0.45' : ''">
+
+                  <hr />
+
+                  <!-- Disable on no SIM -->
+                  <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                      <div class="fw-semibold" style="font-size: 0.875rem">Disable if no SIM detected</div>
+                      <div class="text-muted small">Resets the failure counter when no SIM is detected, preventing reboots when the SIM card is removed.</div>
+                    </div>
+                    <div class="form-check form-switch ms-3">
+                      <input class="form-check-input" type="checkbox" role="switch" x-model="disableOnNoSim" />
+                    </div>
+                  </div>
+
+                  <hr />
+
+                  <!-- IP Addresses -->
+                  <div class="mb-4">
+                    <label class="form-label fw-semibold">Ping Targets</label>
+                    <div class="text-muted small mb-2">At least one IP is required. Success if any IP responds.</div>
+                    <template x-for="(ip, index) in ips" :key="index">
+                      <div class="d-flex gap-2 mb-2 align-items-center">
+                        <span class="text-muted small" style="width:1.2rem;text-align:right" x-text="index + 1 + '.'"></span>
+                        <input
+                          type="text"
+                          class="form-control input-mw-180"
+                          placeholder="IP address"
+                          x-model="ips[index]"
+                        />
+                        <button
+                          type="button"
+                          class="btn btn-outline-danger"
+                          @click="removeIp(index)"
+                          :disabled="ips.length === 1"
+                        >✕</button>
+                      </div>
+                    </template>
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      @click="addIp()"
+                      :disabled="!canAddIp()"
+                    >+ Add IP</button>
+                  </div>
+
+                  <hr />
+
+                  <!-- Interval and Failure count -->
+                  <div class="row">
+                    <div class="col-sm-6 mb-3">
+                      <label class="form-label fw-semibold">Time Between Tries (seconds)</label>
+                      <input
+                        type="number"
+                        class="form-control"
+                        x-model.number="pingInterval"
+                        min="10"
+                        max="600"
+                        placeholder="10 – 600"
+                      />
+                      <div class="text-muted small mt-1">Between 10 and 600 seconds.</div>
+                    </div>
+                    <div class="col-sm-6 mb-3">
+                      <label class="form-label fw-semibold">Failures Before Reboot</label>
+                      <input
+                        type="number"
+                        class="form-control"
+                        x-model.number="pingFailureCount"
+                        min="1"
+                        max="10"
+                        placeholder="1 – 10"
+                      />
+                      <div class="text-muted small mt-1">Between 1 and 10 consecutive failures.</div>
+                    </div>
+                  </div>
+                  <div class="text-muted small" x-show="canSave">
+                    Will reboot after
+                    <span x-text="pingFailureCount"></span> failed
+                    <span x-text="pingFailureCount === 1 ? 'ping' : 'pings'"></span>
+                    (~<span x-text="pingInterval * pingFailureCount >= 60
+                      ? Math.round(pingInterval * pingFailureCount / 60) + ' min'
+                      : (pingInterval * pingFailureCount) + ' sec'"></span> without response).
+                  </div>
+
+                </fieldset>
+
+              <div class="mt-auto pt-3">
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  @click="saveSettings()"
+                  :disabled="isLoading || !canSave"
+                  x-text="isLoading ? 'Saving...' : 'Save'"
+                ></button>
+                <span class="ms-3 text-muted small" x-text="response"></span>
+              </div>
+            </div>
+
+            <!-- Ping Statistics (only shown when watchcat service is running) -->
+            <div class="panel-section" x-show="serviceActive">
+              <div class="panel-title d-flex justify-content-between align-items-center">
+                <span>Ping Statistics</span>
+                <span class="text-muted small" x-text="statsUpdatedAt ? 'Updated ' + statsUpdatedAt : ''"></span>
+              </div>
+                <table class="table table-sm mb-0">
+                  <thead>
+                    <tr>
+                      <th class="fw-semibold" style="font-size: 0.875rem">IP Address</th>
+                      <th class="fw-semibold" style="font-size: 0.875rem">Missed Pings</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-if="stats.length === 0">
+                      <tr><td colspan="2" class="text-muted">No data yet.</td></tr>
+                    </template>
+                    <template x-for="row in stats" :key="row.ip">
+                      <tr>
+                        <td x-text="row.ip"></td>
+                        <td>
+                          <span x-text="row.miss"></span>
+                          <span x-show="row.miss > 0" class="ms-1 text-danger small">&#9679;</span>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              <div class="mt-auto pt-3">
+                <div class="d-flex justify-content-between small text-muted mb-1">
+                  <span>Consecutive failures</span>
+                  <span x-text="consecutiveFailures + ' / ' + pingFailureCount"></span>
+                </div>
+                <div class="progress bar-xs">
+                  <div
+                    class="progress-bar"
+                    :class="consecutiveFailures >= pingFailureCount ? 'bg-danger' : consecutiveFailures > 0 ? 'bg-warning' : 'bg-success'"
+                    :style="'width: ' + Math.min(100, (consecutiveFailures / Math.max(pingFailureCount, 1)) * 100) + '%'"
+                  ></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Right column: Scheduled Restart -->
+          <div class="col-md-6">
+
+            <div class="panel-section">
+              <div class="panel-title d-flex justify-content-between align-items-center">
+                <span>Scheduled Restart</span>
+                <span
+                  class="badge"
+                  :class="srServiceActive ? 'text-bg-success' : 'text-bg-secondary'"
+                  x-text="srServiceActive ? 'Enabled' : 'Disabled'"
+                ></span>
+              </div>
+
+                <!-- Enable / Disable -->
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div>
+                    <div class="fw-semibold" style="font-size: 0.875rem">Enable Scheduled Restart</div>
+                    <div class="text-muted small" x-show="srEnabled">Reboots the modem on a schedule.</div>
+                    <div class="text-muted small" x-show="!srEnabled">Currently disabled.</div>
+                  </div>
+                  <div class="form-check form-switch ms-3">
+                    <input class="form-check-input" type="checkbox" role="switch" x-model="srEnabled" />
+                  </div>
+                </div>
+
+                <fieldset :disabled="!srEnabled" :style="!srEnabled ? 'opacity: 0.45' : ''">
+
+                  <hr />
+
+                  <!-- Frequency -->
+                  <div class="mb-4">
+                    <label class="form-label fw-semibold">Frequency</label>
+                    <div class="d-flex gap-3">
+                      <div class="form-check">
+                        <input class="form-check-input" type="radio" id="srDaily" value="daily" x-model="srType" />
+                        <label class="form-check-label" for="srDaily">Daily</label>
+                      </div>
+                      <div class="form-check">
+                        <input class="form-check-input" type="radio" id="srWeekly" value="weekly" x-model="srType" />
+                        <label class="form-check-label" for="srWeekly">Weekly</label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Day of week (weekly only) -->
+                  <div class="mb-4" x-show="srType === 'weekly'">
+                    <label class="form-label fw-semibold">Day of Week</label>
+                    <select class="form-select" x-model.number="srDay">
+                      <option value="1">Monday</option>
+                      <option value="2">Tuesday</option>
+                      <option value="3">Wednesday</option>
+                      <option value="4">Thursday</option>
+                      <option value="5">Friday</option>
+                      <option value="6">Saturday</option>
+                      <option value="7">Sunday</option>
+                    </select>
+                  </div>
+
+                  <hr />
+
+                  <!-- Time -->
+                  <div class="mb-3">
+                    <label class="form-label fw-semibold">Time</label>
+                    <input type="time" class="form-control input-mw-160" x-model="srTime" lang="en-GB" />
+                    <div class="text-muted small mt-2">
+                      Will restart at
+                      <span x-text="String(srHour).padStart(2,'0') + ':' + String(srMinute).padStart(2,'0')"></span>
+                      <span x-show="srType === 'weekly'" x-text="' every ' + ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][srDay - 1]"></span>
+                      <span x-show="srType === 'daily'"> every day</span>
+                      (your local time).
+                    </div>
+                  </div>
+
+                </fieldset>
+
+              <div class="mt-auto pt-3">
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  @click="saveScheduledRestart()"
+                  :disabled="srLoading || !srCanSave"
+                  x-text="srLoading ? 'Saving...' : 'Save'"
+                ></button>
+                <span class="ms-3 text-muted small" x-text="srResponse"></span>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+    </main>
+    <script src="js/dark-mode.js?v=c58a483b"></script>
+    <script src="js/watchcat.js?v=c58a483b"></script>
+  </body>
+</html>

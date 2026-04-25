@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuecDeck</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=c58a483b" />
+    <link rel="stylesheet" href="css/styles.css?v=c58a483b" />
+    <script src="js/bootstrap.bundle.min.js?v=c58a483b"></script>
+    <script src="js/utils.js?v=c58a483b" defer></script>
+    <script src="js/alpinejs.min.js?v=c58a483b" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="developerPage()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=c58a483b"></script>
+
+        <!-- Developer unlock prompt — shown once status is known and dev is not yet unlocked -->
+        <div class="row gy-3 mt-4 justify-content-center" x-show="devStatusLoaded && !devUnlocked">
+          <div class="col-md-6 col-xl-5">
+            <div class="panel-section">
+              <div class="panel-title">Developer Access</div>
+              <template x-if="!devConfigured">
+                <p class="text-muted small mb-0">No developer password has been set. Run <code>quecdeckdevpasswd</code> in the console to configure one.</p>
+              </template>
+              <template x-if="devConfigured">
+                <div>
+                  <p class="text-muted small mb-3">Enter your developer password to unlock this section.</p>
+                  <div x-show="devAuthError" class="alert alert-danger py-2 small mb-3" x-text="devAuthError"></div>
+                  <div class="mb-3">
+                    <label for="devPasswordInput" class="form-label">Developer Password</label>
+                    <input
+                      type="password"
+                      class="form-control"
+                      id="devPasswordInput"
+                      x-model="devPassword"
+                      @keydown.enter="unlockDev()"
+                      autocomplete="current-password"
+                    />
+                  </div>
+                  <button
+                    class="btn btn-primary"
+                    type="button"
+                    @click="unlockDev()"
+                    :disabled="devUnlocking || !devPassword"
+                  >
+                    <span x-show="devUnlocking">Unlocking...</span>
+                    <span x-show="!devUnlocking">Unlock</span>
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div class="row gy-3 mt-4 mb-0 align-items-stretch" x-show="devUnlocked">
+          <div class="col">
+            <div class="panel-section">
+              <div class="panel-title">AT Terminal</div>
+              <div class="form-floating">
+                <textarea
+                  class="form-control chart-box"
+                  placeholder="ATI"
+                  id="atOutputBox"
+                  x-text="atCommandResponse"
+                  readonly
+                ></textarea>
+              </div>
+              <div class="mt-auto pt-3">
+                <div class="mb-3">
+                  <label for="atCommandInput" class="form-label">AT Command</label>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="atCommandInput"
+                    placeholder="ATI"
+                    aria-describedby="atCommandInputHelper"
+                    x-model="atcmd"
+                    @keydown.enter="sendATCommand()"
+                  />
+                  <div id="atCommandInputHelper" class="form-text">
+                    Separate multiple commands with a semicolon (;).
+                  </div>
+                </div>
+                <div class="d-flex gap-2">
+                  <button
+                    class="btn btn-primary"
+                    type="button"
+                    @click="sendATCommand()"
+                    :disabled="isLoading || $store.scanBanner.active"
+                  >Submit</button>
+                  <button
+                    class="btn btn-danger"
+                    type="button"
+                    @click="clearResponses()"
+                    :disabled="isClean"
+                  >Clear</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row gy-3 mt-4 mb-4 align-items-stretch" x-show="devUnlocked">
+          <div class="col-md-6">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title">Cell Locking</div>
+                <div class="mb-3">
+                  <select class="form-select" x-model="networkModeCell" aria-label="Cell lock mode">
+                    <option selected x-text="'Cell Lock: ' + cellLockStatus"></option>
+                    <option>LTE</option>
+                    <option>NR5G-SA</option>
+                    <option>Unlock LTE</option>
+                    <option>Unlock NR5G-SA</option>
+                  </select>
+                </div>
+
+                <div x-show="networkModeCell == 'LTE'">
+                  <div class="input-group mb-3">
+                    <span class="input-group-text">Num Cells</span>
+                    <input type="number" class="form-control" placeholder="1-10" min="1" max="10" aria-label="NumCells" x-model="cellNum" />
+                  </div>
+                  <template x-for="(cell, index) in cells" :key="index">
+                    <div class="input-group mb-3" x-show="cellNum > index">
+                      <input type="text" aria-label="EARFCN" placeholder="EARFCN" class="form-control" x-model="cell.earfcn" />
+                      <input type="text" aria-label="PCI" placeholder="PCI" class="form-control" x-model="cell.pci" />
+                    </div>
+                  </template>
+                </div>
+
+                <div x-show="networkModeCell == 'NR5G-SA'">
+                  <div class="input-group mb-3">
+                    <input type="text" aria-label="EARFCN" placeholder="EARFCN" class="form-control" x-model="cells[0].earfcn" />
+                    <input type="text" aria-label="PCI" placeholder="PCI" class="form-control" x-model="cells[0].pci" />
+                  </div>
+                  <div class="input-group mb-3">
+                    <select class="form-select" x-model="scs" aria-label="SCS">
+                      <option selected>SCS</option>
+                      <option>15</option>
+                      <option>30</option>
+                      <option>60</option>
+                      <option>120</option>
+                      <option>240</option>
+                    </select>
+                    <input type="text" aria-label="Band" placeholder="Band" class="form-control" x-model="band" />
+                  </div>
+                </div>
+              <div class="mt-auto pt-3">
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-primary" x-show="networkModeCell == 'LTE'" @click="cellLockEnableLTE()">Lock LTE Cells</button>
+                  <button type="button" class="btn btn-primary" x-show="networkModeCell == 'NR5G-SA'" @click="cellLockEnableNR()">Lock NR5G-SA Cells</button>
+                  <button type="button" class="btn btn-danger" x-show="networkModeCell == 'Unlock LTE'" @click="cellLockDisableLTE()">Unlock LTE Cells</button>
+                  <button type="button" class="btn btn-danger" x-show="networkModeCell == 'Unlock NR5G-SA'" @click="cellLockDisableNR()">Unlock NR5G-SA Cells</button>
+                </div>
+                <div class="form-text mt-2">Cell locking only works for the primary cell and is not persistent across reboots.</div>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="col-md-6">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title">Web Console (ttyd)</div>
+              <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <div>
+                    <div class="fw-semibold">Status</div>
+                    <div class="text-muted small" x-text="ttydRunning ? 'Running — stop to free RAM when not in use.' : 'Stopped'"></div>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    @click="toggleTtyd('start')"
+                    x-show="!ttydRunning"
+                    :disabled="isLoading"
+                  >
+                    Start
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-danger"
+                    @click="toggleTtyd('stop')"
+                    x-show="ttydRunning"
+                    :disabled="isLoading"
+                  >
+                    Stop
+                  </button>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                  <span class="text-muted small">Must be running first.</span>
+                  <a
+                    href="/console"
+                    target="_blank"
+                    :class="ttydRunning ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm disabled'"
+                  >Open Console</a>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+    <script src="js/dark-mode.js?v=c58a483b"></script>
+    <script src="js/developer.js?v=c58a483b"></script>
+  </body>
+</html>

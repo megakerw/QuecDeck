@@ -1,0 +1,20 @@
+[Unit]
+Description=quecdeck AT command queue daemon
+
+[Service]
+Type=simple
+User=www-data
+ExecStart=/bin/bash /usrdata/quecdeck/script/atcmd_queue_daemon.sh
+ExecStopPost=/bin/rm -f /tmp/quecdeck/atcmd.notify
+Restart=always
+RestartSec=2s
+StandardOutput=null
+StandardError=null
+ProtectHome=yes
+LockPersonality=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+PrivateNetwork=yes
+
+[Install]
+WantedBy=multi-user.target

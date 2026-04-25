@@ -1,0 +1,80 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+cgi_read_post
+
+# AT+QSCAN mode: 1=LTE only, 2=NR5G only, 3=both (default).
+scan_mode=$(get_post_param mode)
+case "$scan_mode" in
+    1|2|3) ;;
+    *) scan_mode=3 ;;
+esac
+
+cgi_output_text
+
+# Pause watchcat for the duration of the scan.
+# AT+QSCAN drops the modem's network connection, so watchcat would rack up
+# ping failures and potentially trigger a modem reboot mid-scan.
+CONN_LOG="/tmp/quecdeck/logs/connection_events.jsonl"
+log_scan_event() {
+    mkdir -p "$(dirname "$CONN_LOG")"
+    printf '%s\n' "$1" >> "$CONN_LOG"
+    local count
+    count=$(wc -l < "$CONN_LOG" 2>/dev/null || echo 0)
+    if [ "$count" -gt 500 ]; then
+        tail -500 "$CONN_LOG" > "${CONN_LOG}.tmp" && mv "${CONN_LOG}.tmp" "$CONN_LOG"
+    fi
+}
+
+watchcat_was_running=0
+if /opt/bin/sudo /bin/systemctl is-active watchcat > /dev/null 2>&1; then
+    watchcat_was_running=1
+    /opt/bin/sudo /bin/systemctl stop watchcat 2>/dev/null
+fi
+
+log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_start\",\"watchcat_paused\":$([ "$watchcat_was_running" = "1" ] && echo true || echo false)}"
+
+# Signal to cache_get_or_fetch that the modem is busy — CGIs will serve
+# existing cached data rather than attempting live AT commands.
+touch /tmp/quecdeck/qscan.active
+
+# On exit: remove scan flag and temp file, invalidate stale modem caches, and
+# restart watchcat if it was running before the scan.
+scan_tmp=$(mktemp)
+_scan_exit() {
+    log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_end\",\"watchcat_paused\":$([ "$watchcat_was_running" = "1" ] && echo true || echo false)}"
+    rm -f "$scan_tmp" /tmp/quecdeck/qscan.active
+    # Invalidate all caches. AT+QSCAN drops the cellular connection, causing the
+    # modem to emit registration URCs on reconnect that can mix into subsequent AT
+    # responses and poison any cache written immediately after the scan. A full
+    # flush ensures every page gets a clean fetch once the modem has settled.
+    cache_invalidate "$_CACHE_MODEM_ALL" "$_CACHE_NETWORK" "$_CACHE_NEIGHBOUR" \
+        "$_CACHE_DEVICE_INFO" "$_CACHE_SETTINGS"
+}
+if [ "$watchcat_was_running" = "1" ]; then
+    trap '_scan_exit; /opt/bin/sudo /bin/systemctl start watchcat' EXIT
+else
+    trap '_scan_exit' EXIT
+fi
+
+# Run the cell scan in the background. AT+QSCAN streams +QSCAN: URCs as cells
+# are found, then sends OK when complete. atcmd_handler.sh breaks on OK immediately.
+# Outer timeout = 215 s (180 s max scan + 35 s handler overhead).
+# The optional third AT+QSCAN parameter (firmware scan duration) is omitted —
+# on this firmware it causes some scan modes to return immediate OK with no results.
+#
+# The scan runs in the background so we can emit keepalive newlines every second.
+# Without this, lighttpd's max-keep-alive-idle=2 closes the connection before the
+# first +QSCAN: URC arrives (2+ seconds into the scan). JS filters empty lines
+# (lines[i] !== "") so keepalive newlines are invisible to the parser.
+atcmd_run "AT+QSCAN=${scan_mode},1" 215000 > "$scan_tmp" &
+scan_pid=$!
+
+while kill -0 "$scan_pid" 2>/dev/null; do
+    printf '\n'
+    sleep 1
+done
+
+cat "$scan_tmp"
