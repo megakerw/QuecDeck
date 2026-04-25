@@ -10,6 +10,18 @@ This software modifies system files and settings on your modem. It is provided a
 
 **QuecDeck has only been tested on the Quectel RM520N-GL. Running it on any other device is unsupported and may not work or could cause unintended behavior.**
 
+## Installation
+
+Run the following command on your modem (via SSH, ADB, or the web console):
+
+```sh
+cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDeck/main/quecdeck.sh && chmod +x quecdeck.sh && ./quecdeck.sh && cd /
+```
+
+Select **Install/Update QuecDeck** from the menu. On first access, a setup wizard will guide you through setting your passwords.
+
+To update, run the same command and select **Install/Update QuecDeck** again — your settings and service state are preserved across updates.
+
 ## Features
 
 ### Home

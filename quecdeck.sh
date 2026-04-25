@@ -171,24 +171,27 @@ install_quecdeck() {
 
 # Function to Uninstall QuecDeck and dependencies
 uninstall_quecdeck_components() {
-    echo -e "\e[1;32mStarting the uninstallation process for QuecDeck components.\e[0m"
-    echo -e "\e[1;32mNote: Uninstalling certain components may affect the functionality of others.\e[0m"
+    echo -e "\e[1;31mThis will completely uninstall QuecDeck and all its components.\e[0m"
+    read -p "Are you sure? (y/n): " confirm
+    case "$confirm" in
+        y|Y) ;;
+        *) echo -e "\e[1;33mUninstallation cancelled.\e[0m"; return ;;
+    esac
+
     trap 'mount -o remount,ro /' EXIT
     remount_rw
 
     # Uninstall watchcat
-    echo -e "\e[1;32mUninstalling watchcat...\e[0m"
     systemctl stop watchcat > /dev/null 2>&1
     rm -f /lib/systemd/system/watchcat.service
     rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
 
     # Uninstall scheduled restart
-    echo -e "\e[1;32mUninstalling scheduled restart...\e[0m"
     systemctl stop scheduled_restart > /dev/null 2>&1
     rm -f /lib/systemd/system/scheduled_restart.service
     rm -f /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
 
-    # Uninstall lean mode if installed
+    # Uninstall lean mode
     rm -f /lib/systemd/system/lean-mode.service
     rm -f /lib/systemd/system/multi-user.target.wants/lean-mode.service
 
@@ -207,38 +210,17 @@ uninstall_quecdeck_components() {
     rm -f /lib/systemd/system/simpleupdated.service
     rm -f /lib/systemd/system/multi-user.target.wants/simpleupdated.service
 
-    # Uninstall Firewall
-    echo -e "\e[1;32mDo you want to uninstall Firewall?\e[0m"
-    echo -e "\e[1;32m1) Yes\e[0m"
-    echo -e "\e[1;31m2) No\e[0m"
-    read -p "Enter your choice (1 or 2): " choice_firewall
-    if [ "$choice_firewall" -eq 1 ]; then
-        echo "Uninstalling Firewall..."
-        systemctl stop firewall > /dev/null 2>&1
-        systemctl stop ttl-override > /dev/null 2>&1
-        rm -f /lib/systemd/system/firewall.service
-        rm -f /lib/systemd/system/multi-user.target.wants/firewall.service
-        rm -f /lib/systemd/system/ttl-override.service
-        rm -f /lib/systemd/system/multi-user.target.wants/ttl-override.service
-        systemctl daemon-reload
-        rm -rf "$FIREWALL_DIR"
-        echo "Firewall uninstalled."
-    fi
+    # Uninstall firewall
+    systemctl stop firewall > /dev/null 2>&1
+    rm -f /lib/systemd/system/firewall.service
+    rm -f /lib/systemd/system/multi-user.target.wants/firewall.service
+    rm -rf "$FIREWALL_DIR"
 
-	# Uninstall ttyd
-    echo -e "\e[1;32mDo you want to uninstall ttyd (quecdeck console)?\e[0m"
-	echo -e "\e[1;31mWarning: Do not uninstall if you are currently using ttyd to do this!!!\e[0m"
-    echo -e "\e[1;32m1) Yes\e[0m"
-    echo -e "\e[1;31m2) No\e[0m"
-    read -p "Enter your choice (1 or 2): " choice_ttyd
-    if [ "$choice_ttyd" -eq 1 ]; then
-		echo -e "\e[1;34mUninstalling ttyd...\e[0m"
-        systemctl stop ttyd > /dev/null 2>&1
-        rm -f /lib/systemd/system/ttyd.service
-        rm -f /lib/systemd/system/multi-user.target.wants/ttyd.service
-        rm -f /bin/ttyd
-        echo -e "\e[1;32mttyd has been uninstalled.\e[0m"
-	fi
+    # Uninstall ttyd
+    systemctl stop ttyd > /dev/null 2>&1
+    rm -f /lib/systemd/system/ttyd.service
+    rm -f /lib/systemd/system/multi-user.target.wants/ttyd.service
+    rm -f /bin/ttyd
 
 	echo "Uninstalling the rest of QuecDeck..."
 
@@ -472,15 +454,12 @@ else
 fi
 
 while true; do
-    echo -e "\e[92m"
-    echo "Welcome to the QuecDeck installer!"
+    echo -e "\e[92mWelcome to the QuecDeck installer!\e[0m"
     echo ""
-    echo -e "\e[0m"
     echo "Select an option:"
-    echo -e "\e[0m"
     echo -e "\e[93m1) Install/Update QuecDeck\e[0m" # Yellow
-    echo -e "\e[93m2) Lean Mode (install/uninstall)\e[0m" # Yellow
-    echo -e "\e[93m3) SSHD (install/uninstall)\e[0m" # Yellow
+    echo -e "\e[93m2) SSHD (install/uninstall)\e[0m" # Yellow
+    echo -e "\e[33m3) Lean Mode (install/uninstall) [EXPERIMENTAL]\e[0m" # Dark Yellow/Orange
     echo -e "\e[91m4) Remove monitoring services (Watchcat & Scheduled Restart)\e[0m" # Light Red
     echo -e "\e[91m5) Uninstall QuecDeck\e[0m" # Light Red
     echo -e "\e[91m6) Uninstall Entware/OPKG\e[0m" # Light Red
@@ -501,10 +480,10 @@ while true; do
 			echo
 			;;
 		2)
-			lean_mode_service
+			sshd_service
 			;;
 		3)
-			sshd_service
+			lean_mode_service
 			;;
 		4)
 			remove_watchcat_service
