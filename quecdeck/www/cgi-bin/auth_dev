@@ -110,9 +110,9 @@ wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $
 
 _session_write() {
     local tmp="${SESSION_FILE}.tmp.$$"
-    grep -vE '^(dev_unlocked|dev_fail_count|dev_lockout_until)=' "$SESSION_FILE" > "$tmp"
+    (umask 077; grep -vE '^(dev_unlocked|dev_fail_count|dev_lockout_until)=' "$SESSION_FILE" > "$tmp")
     cat >> "$tmp"
-    mv "$tmp" "$SESSION_FILE" && chmod 600 "$SESSION_FILE"
+    mv "$tmp" "$SESSION_FILE"
 }
 
 if validate_htpasswd "/opt/etc/.htpasswd_dev" "devadmin" "$password"; then

@@ -208,9 +208,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   navbarText.classList.add('d-flex', 'align-items-center', 'gap-2');
 
-  const link = document.createElement('a');
-  link.href = '/cgi-bin/auth_logout';
+  const link = document.createElement('button');
+  link.type = 'button';
   link.className = 'btn btn-link text-reset';
   link.textContent = 'Log out';
+  link.addEventListener('click', () => {
+    fetch('/cgi-bin/auth_logout', { method: 'POST' }).finally(() => {
+      window.location.href = '/login.html';
+    });
+  });
   navbarText.appendChild(link);
 });

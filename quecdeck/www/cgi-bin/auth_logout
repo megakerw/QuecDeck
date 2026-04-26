@@ -1,5 +1,22 @@
 #!/bin/bash
 
+# Reject cross-origin requests (CSRF protection).
+if [ -n "$HTTP_ORIGIN" ]; then
+    case "$HTTP_ORIGIN" in
+        "https://${HTTP_HOST}"|"http://${HTTP_HOST}") ;;
+        *)
+            printf 'Status: 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nForbidden\n'
+            exit 1
+            ;;
+    esac
+fi
+
+# Only accept POST — silently redirect GET (e.g. BFCache restores) to login.
+if [ "$REQUEST_METHOD" != "POST" ]; then
+    printf 'Status: 303 See Other\r\nLocation: /login.html\r\nContent-Length: 0\r\n\r\n'
+    exit 0
+fi
+
 # Extract session token from Cookie header
 cookie="${HTTP_COOKIE:-}"
 token=$(printf '%s' "$cookie" | sed 's/.*[^A-Za-z0-9]session=\([A-Za-z0-9]*\).*/\1/;s/^session=\([A-Za-z0-9]*\).*/\1/')

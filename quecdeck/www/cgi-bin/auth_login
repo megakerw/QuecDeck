@@ -96,6 +96,16 @@ wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $
 
 now=$(date +%s)
 
+# Validate username and password before any lockout check or logging — ensures
+# $username is safe to embed in JSON log strings.
+if ! printf '%s' "$username" | grep -qE '^[a-zA-Z0-9_-]{1,64}$'; then
+    json_error "invalid"; exit 0
+fi
+
+if [ -z "$password" ] || [ "${#password}" -gt 256 ]; then
+    json_error "invalid"; exit 0
+fi
+
 # Reject immediately if locked out
 if [ -f "$failure_file" ]; then
     lockout_until=$(grep '^lockout_until=' "$failure_file" | cut -d= -f2)
@@ -103,16 +113,6 @@ if [ -f "$failure_file" ]; then
         log_access_event "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
         json_error "locked"; exit 0
     fi
-fi
-
-# Validate username: alphanumeric, underscore, or hyphen — 1 to 64 chars
-if ! printf '%s' "$username" | grep -qE '^[a-zA-Z0-9_-]{1,64}$'; then
-    json_error "invalid"; exit 0
-fi
-
-# Validate password: non-empty, max 256 chars
-if [ -z "$password" ] || [ "${#password}" -gt 256 ]; then
-    json_error "invalid"; exit 0
 fi
 
 # Check credentials against admin htpasswd

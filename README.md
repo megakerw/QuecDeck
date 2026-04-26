@@ -31,7 +31,11 @@ AT+QCFG="pcie/mode",1
 AT+QCFG="usbnet",1
 ```
 
-Reboot the modem after sending these commands.
+Then reboot the modem:
+
+```
+AT+CFUN=1,1
+```
 
 **3. Enable ADB**
 
@@ -109,7 +113,7 @@ A lightweight iptables-based firewall restricts access to ports 80, 443, and opt
 
 QuecDeck runs on a device that inherently operates as root, so several layers of mitigation are in place to limit exposure.
 
-**Network exposure** is reduced through defense in depth: the web server and SSH both bind exclusively to the LAN IP at runtime and never listen on the WAN interface — the firewall provides a second layer on top of this.
+**Network exposure** is reduced through defense in depth: at startup, the web server rewrites its configuration to bind to the current LAN IP before starting, and SSH does the same — neither listens on the WAN interface. The firewall provides a second layer on top of this.
 
 **Privilege minimization**: the only component that requires elevated access to the modem's serial interface (`/dev/smd11`) is the `atcli` binary, which runs setuid. CGI scripts themselves do not run as root.
 
