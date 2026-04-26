@@ -66,9 +66,7 @@ function quecdeckSettings() {
         this.isLoading = false;
         this.fetchCurrentSettings();
       });
-      this.sendSetting('cfun0')
-        .then(() => this.wait(6000))
-        .then(() => this.sendSetting(action))
+      this.sendSetting(action)
         .then(() => this.wait(2000))
         .then(() => this.sendSetting('reboot').catch(() => {}))
         .catch((err) => {

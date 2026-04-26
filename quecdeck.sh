@@ -421,16 +421,14 @@ lean_mode_service() {
     esac
 }
 
-remove_watchcat_service() {
+disable_monitoring_services() {
     systemctl stop watchcat 2>/dev/null
     systemctl stop scheduled_restart 2>/dev/null
 
     trap 'mount -o remount,ro /' EXIT
     mount -o remount,rw /
 
-    rm -f /lib/systemd/system/watchcat.service
     rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
-    rm -f /lib/systemd/system/scheduled_restart.service
     rm -f /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
 
     mount -o remount,ro /
@@ -439,7 +437,7 @@ remove_watchcat_service() {
     rm -f /usrdata/quecdeck/var/watchcat.json
     rm -f /usrdata/quecdeck/var/scheduled_restart.json
     systemctl daemon-reload
-    echo -e "\e[1;32mWatchcat and scheduled restart removed successfully.\e[0m"
+    echo -e "\e[1;32mWatchcat and scheduled restart disabled successfully.\e[0m"
 }
 
 # Main menu
@@ -454,13 +452,17 @@ else
 fi
 
 while true; do
-    echo -e "\e[92mWelcome to the QuecDeck installer!\e[0m"
+    echo ""
+    echo ""
+    echo -e "\e[92m============================================================\e[0m"
+    echo -e "\e[92m  QuecDeck Installer\e[0m"
+    echo -e "\e[92m============================================================\e[0m"
     echo ""
     echo "Select an option:"
     echo -e "\e[93m1) Install/Update QuecDeck\e[0m" # Yellow
     echo -e "\e[93m2) SSHD (install/uninstall)\e[0m" # Yellow
     echo -e "\e[33m3) Lean Mode (install/uninstall) [EXPERIMENTAL]\e[0m" # Dark Yellow/Orange
-    echo -e "\e[91m4) Remove monitoring services (Watchcat & Scheduled Restart)\e[0m" # Light Red
+    echo -e "\e[91m4) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m" # Light Red
     echo -e "\e[91m5) Uninstall QuecDeck\e[0m" # Light Red
     echo -e "\e[91m6) Uninstall Entware/OPKG\e[0m" # Light Red
 	echo -e "\e[95m7) Set QuecDeck (admin) password\e[0m" # Light Purple
@@ -486,30 +488,26 @@ while true; do
 			lean_mode_service
 			;;
 		4)
-			remove_watchcat_service
+			echo -e "\e[1;31mThis will disable Watchcat and Scheduled Restart.\e[0m"
+			read -p "Are you sure? (y/n): " confirm
+			case "$confirm" in
+				y|Y) disable_monitoring_services ;;
+				*) echo -e "\e[1;33mCancelled.\e[0m" ;;
+			esac
 			;;
 		5)
 			uninstall_quecdeck_components
 			;;
 		6)
-			echo -e "\033[31mAre you sure you want to uninstall entware?\033[0m"
-			echo -e "\033[31m1) Yes\033[0m"
-			echo -e "\033[31m2) No\033[0m"
-			read -p "Select an option (1 or 2): " user_choice
-
-			case $user_choice in
-				1)
-					# If yes, uninstall existing entware
-					echo -e "\033[31mUninstalling existing entware...\033[0m"
+			echo -e "\e[1;31mAre you sure you want to uninstall Entware/OPKG?\e[0m"
+			read -p "Continue? (y/n): " user_choice
+			case "$user_choice" in
+				y|Y)
 					uninstall_entware
-					echo -e "\033[31mEntware has been uninstalled.\033[0m"
-					;;
-				2)
-					echo -e "\033[31mUninstallation cancelled.\033[0m"
+					echo -e "\e[1;32mEntware has been uninstalled.\e[0m"
 					;;
 				*)
-					# Handle invalid input
-					echo -e "\033[31mInvalid option. Please select 1 or 2.\033[0m"
+					echo -e "\e[1;33mUninstallation cancelled.\e[0m"
 					;;
 			esac
 			;;

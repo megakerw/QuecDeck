@@ -4,16 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck — Sign In</title>
-    <link rel="stylesheet" href="/css/bootstrap.min.css?v=c58a483b" />
-    <link rel="stylesheet" href="/css/styles.css?v=c58a483b" />
-    <script src="/js/bootstrap.bundle.min.js?v=c58a483b"></script>
-    <script src="/js/dark-mode.js?v=c58a483b" defer></script>
-    <script src="/js/alpinejs.min.js?v=c58a483b" defer></script>
+    <link rel="stylesheet" href="/css/bootstrap.min.css?v=c2b05b44" />
+    <link rel="stylesheet" href="/css/styles.css?v=c2b05b44" />
+    <script src="/js/bootstrap.bundle.min.js?v=c2b05b44"></script>
+    <script src="/js/dark-mode.js?v=c2b05b44" defer></script>
+    <script src="/js/alpinejs.min.js?v=c2b05b44" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="loginPage()">
-        <nav class="navbar navbar-expand-lg mb-5">
+        <nav class="navbar navbar-expand-lg">
           <div class="container-fluid">
             <span class="navbar-brand mb-0 h4">QuecDeck</span>
           </div>
@@ -22,7 +22,7 @@
         <div class="row justify-content-center">
           <div class="col-sm-8 col-md-5 col-lg-4">
             <div class="panel-section">
-              <h5 class="mb-4">Sign In</h5>
+              <h5 class="mb-3">Sign In</h5>
 
                 <div x-show="expired" class="alert alert-warning" role="alert">
                   Your session expired due to inactivity. Please sign in again.
@@ -38,7 +38,7 @@
                 </div>
 
                 <form @submit.prevent="submitLogin($event)">
-                  <div class="mb-4">
+                  <div class="mb-0">
                     <label for="password" class="form-label">Password</label>
                     <input
                       type="password"
@@ -50,7 +50,7 @@
                       required
                     />
                   </div>
-                  <button type="submit" class="btn btn-primary w-100" :disabled="submitting">
+                  <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;" :disabled="submitting">
                     <span x-show="!submitting">Sign In</span>
                     <span x-show="submitting">Signing in...</span>
                   </button>
@@ -61,6 +61,6 @@
       </div>
     </main>
 
-    <script src="/js/login.js?v=c58a483b"></script>
+    <script src="/js/login.js?v=c2b05b44"></script>
   </body>
 </html>

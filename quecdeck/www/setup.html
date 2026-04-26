@@ -4,16 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck — Setup</title>
-    <link rel="stylesheet" href="/css/bootstrap.min.css?v=c58a483b" />
-    <link rel="stylesheet" href="/css/styles.css?v=c58a483b" />
-    <script src="/js/bootstrap.bundle.min.js?v=c58a483b"></script>
-    <script src="/js/dark-mode.js?v=c58a483b" defer></script>
-    <script src="/js/alpinejs.min.js?v=c58a483b" defer></script>
+    <link rel="stylesheet" href="/css/bootstrap.min.css?v=c2b05b44" />
+    <link rel="stylesheet" href="/css/styles.css?v=c2b05b44" />
+    <script src="/js/bootstrap.bundle.min.js?v=c2b05b44"></script>
+    <script src="/js/dark-mode.js?v=c2b05b44" defer></script>
+    <script src="/js/alpinejs.min.js?v=c2b05b44" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="setupWizard()">
-        <nav class="navbar navbar-expand-lg mb-5">
+        <nav class="navbar navbar-expand-lg">
           <div class="container-fluid">
             <span class="navbar-brand mb-0 h4">QuecDeck</span>
           </div>
@@ -27,18 +27,18 @@
               <template x-if="step === 1">
                 <div>
                   <h5 class="mb-1">Welcome</h5>
-                  <p class="text-muted small mb-4">Set a password for the admin account to get started.</p>
+                  <p class="text-muted small mb-3">Set a password for the admin account to get started.</p>
                   <div x-show="error" class="alert alert-danger mb-3" x-text="error"></div>
                   <form @submit.prevent="nextStep()">
                     <div class="mb-3">
                       <label class="form-label">Password</label>
                       <input type="password" class="form-control" x-model="adminPass" autocomplete="new-password" autofocus required />
                     </div>
-                    <div class="mb-4">
+                    <div class="mb-0">
                       <label class="form-label">Confirm password</label>
                       <input type="password" class="form-control" x-model="adminPassConfirm" autocomplete="new-password" required />
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">Continue</button>
+                    <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;">Continue</button>
                   </form>
                 </div>
               </template>
@@ -47,18 +47,18 @@
               <template x-if="step === 2">
                 <div>
                   <h5 class="mb-1">Developer Access</h5>
-                  <p class="text-muted small mb-4">Optionally set a password for developer access (AT commander, terminal). You can skip this and set it later via the console.</p>
+                  <p class="text-muted small mb-3">Optionally set a password for developer access (AT commander, terminal). You can skip this and set it later via the console.</p>
                   <div x-show="error" class="alert alert-danger mb-3" x-text="error"></div>
                   <form @submit.prevent="submit()">
                     <div class="mb-3">
                       <label class="form-label">Developer password</label>
                       <input type="password" class="form-control" x-model="devPass" autocomplete="new-password" />
                     </div>
-                    <div class="mb-4">
+                    <div class="mb-0">
                       <label class="form-label">Confirm password</label>
                       <input type="password" class="form-control" x-model="devPassConfirm" autocomplete="new-password" />
                     </div>
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-2" style="margin-top: 2rem;">
                       <button type="button" class="btn btn-secondary flex-fill" @click="skipDev()" :disabled="submitting">Skip</button>
                       <button type="submit" class="btn btn-primary flex-fill" :disabled="submitting">
                         <span x-show="!submitting">Finish</span>
@@ -73,7 +73,7 @@
               <template x-if="step === 3">
                 <div class="text-center">
                   <h5 class="mb-2">Setup Complete</h5>
-                  <p class="text-muted small mb-4">You're all set. Sign in to get started.</p>
+                  <p class="text-muted small mb-3">You're all set. Sign in to get started.</p>
                   <a href="/login.html" class="btn btn-primary w-100">Sign In</a>
                 </div>
               </template>
@@ -83,6 +83,6 @@
         </div>
       </div>
     </main>
-    <script src="/js/setup.js?v=c58a483b"></script>
+    <script src="/js/setup.js?v=c2b05b44"></script>
   </body>
 </html>
