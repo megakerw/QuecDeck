@@ -101,9 +101,9 @@ install_firewall() {
     mount -o remount,rw /
     mkdir -p "$FIREWALL_DIR"
     mkdir -p "$FIREWALL_SYSTEMD_DIR"
-    wget -O "$FIREWALL_DIR/firewall.sh" $GITROOT/firewall/firewall.sh
+    wget -O "$FIREWALL_DIR/firewall.sh" $GITROOT/components/firewall/firewall.sh
     chmod +x "$FIREWALL_DIR/firewall.sh"
-    wget -O "$FIREWALL_SYSTEMD_DIR/firewall.service" $GITROOT/firewall/systemd/firewall.service
+    wget -O "$FIREWALL_SYSTEMD_DIR/firewall.service" $GITROOT/components/firewall/systemd/firewall.service
     cp -f $FIREWALL_SYSTEMD_DIR/firewall.service /lib/systemd/system
     ln -sf "/lib/systemd/system/firewall.service" "/lib/systemd/system/multi-user.target.wants/"
     systemctl daemon-reload

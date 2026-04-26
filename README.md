@@ -12,7 +12,33 @@ This software modifies system files and settings on your modem. It is provided a
 
 ## Installation
 
-Run the following command on your modem (via SSH, ADB, or the web console):
+### Pre-Setup
+
+Before installing QuecDeck, the modem needs to be configured for RGMII Ethernet and ADB access.
+
+**1. Install drivers**
+
+Install the NDIS and ECM drivers from Quectel. Uninstall all other Quectel drivers before proceeding — do **not** use the RNDIS driver. The latest drivers are available from the [Quectel Download Zone](https://www.quectel.com/download-zone).
+
+**2. Configure the modem**
+
+Use Qnavigator to send the following AT commands:
+
+```
+AT+QCFG="data_interface",0,0
+AT+QETH="eth_driver","r8125",1
+AT+QCFG="pcie/mode",1
+AT+QCFG="usbnet",1
+```
+
+Reboot the modem after sending these commands.
+
+**3. Enable ADB**
+
+Follow [iamromulan's guide](https://github.com/iamromulan/cellular-modem-wiki/blob/main/quectel/sdxlemur/sdxlemur_m.2_to_eth.md#unlocking-adb) to unlock ADB access on the modem.
+### Installing QuecDeck
+
+Run the following command on your modem (via ADB shell, SSH, or the web console):
 
 ```sh
 cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDeck/main/quecdeck.sh && chmod +x quecdeck.sh && ./quecdeck.sh && cd /

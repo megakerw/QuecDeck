@@ -152,15 +152,15 @@ set_root_passwd() {
 install_quecdeck() {
 	echo -e "\e[1;32mInstalling/updating QuecDeck...\e[0m"
 	ensure_entware_installed
-	mkdir -p /usrdata/updates/scripts
+	mkdir -p /usrdata/updates
 	echo -e "\e[1;32mInstalling/updating dependency: firewall\e[0m"
-	wget -q -O /usrdata/updates/scripts/update_firewall.sh $GITROOT/updates/scripts/update_firewall.sh && chmod +x /usrdata/updates/scripts/update_firewall.sh
-	/usrdata/updates/scripts/update_firewall.sh
+	wget -q -O /usrdata/updates/update_firewall.sh $GITROOT/updates/update_firewall.sh && chmod +x /usrdata/updates/update_firewall.sh
+	/usrdata/updates/update_firewall.sh
 	echo -e "\e[1;32mFirewall updated.\e[0m"
 	set_quecdeck_passwd
 	echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
-	wget -q -O /usrdata/updates/scripts/update_quecdeck.sh $GITROOT/updates/scripts/update_quecdeck.sh && chmod +x /usrdata/updates/scripts/update_quecdeck.sh
-	/usrdata/updates/scripts/update_quecdeck.sh
+	wget -q -O /usrdata/updates/update_quecdeck.sh $GITROOT/updates/update_quecdeck.sh && chmod +x /usrdata/updates/update_quecdeck.sh
+	/usrdata/updates/update_quecdeck.sh
 	echo -e "\e[1;32mQuecDeck installed.\e[0m"
 	if [ ! -f /opt/etc/.htpasswd ]; then
 		lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
@@ -334,7 +334,7 @@ sshd_service() {
 
             # Download and install service file
             mkdir -p /usrdata/sshd
-            wget -q -O /usrdata/sshd/sshd.service "$GITROOT/sshd/sshd.service"
+            wget -q -O /usrdata/sshd/sshd.service "$GITROOT/components/sshd/sshd.service"
             trap 'mount -o remount,ro /' EXIT
             mount -o remount,rw /
             cp -f /usrdata/sshd/sshd.service /lib/systemd/system/sshd.service
