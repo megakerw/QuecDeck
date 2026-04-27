@@ -1,11 +1,3 @@
-// Warm up the TLS connection as soon as the login page loads.
-// lighttpd 1.4.82 has a bug where a POST as the very first request on a fresh
-// TLS connection hangs indefinitely. A preceding GET on the same keep-alive
-// connection avoids the bug. favicon.ico is exempt from auth and always fast.
-// The promise is kept so submitLogin can await it — iOS autocomplete can
-// trigger a submit before the warmup completes, which would hit the same bug.
-const tlsWarmup = fetch('/favicon.ico', { method: 'HEAD', cache: 'no-store' }).catch(() => {});
-
 function loginPage() {
   const params = new URLSearchParams(location.search);
 
@@ -31,7 +23,7 @@ function loginPage() {
       body.append('username', 'admin');
       body.append('password', form.password.value);
 
-      tlsWarmup.then(() => fetch('/cgi-bin/auth_login', { method: 'POST', body }))
+      fetch('/cgi-bin/auth_login', { method: 'POST', body })
         .then(r => r.json())
         .then(data => {
           if (data.ok) {

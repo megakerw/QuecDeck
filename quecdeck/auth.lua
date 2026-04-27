@@ -27,7 +27,7 @@ if setup_needed then
         and not path:match("^/css/")
         and not path:match("^/js/")
         and not path:match("^/fonts/")
-        and path ~= "/favicon.ico"
+        and path ~= "/favicon.png"
     then
         lighty.header["Location"] = "/setup.html"
         lighty.header["Cache-Control"] = "no-store"
@@ -50,7 +50,7 @@ local exempt = {
     ["/login.html"]         = true,
     ["/cgi-bin/auth_login"] = true,
     ["/cgi-bin/auth_logout"]= true,
-    ["/favicon.ico"]        = true,
+    ["/favicon.png"]        = true,
 }
 if exempt[path]
     or path:match("^/css/")
