@@ -149,7 +149,7 @@ function quecdeckWatchCat() {
             this.ips = data.track_ips && data.track_ips.length > 0 ? data.track_ips : ['8.8.8.8', '1.1.1.1', '9.9.9.9'];
             this.pingInterval = data.ping_interval || 30;
             this.pingFailureCount = data.ping_failure_count || 3;
-            this.disableOnNoSim = data.disable_on_no_sim === true;
+            this.disableOnNoSim = data.disable_on_no_sim !== false;
           }
         })
         .catch(() => this.$store.errorModal.open('Failed to load watchcat settings.'));
