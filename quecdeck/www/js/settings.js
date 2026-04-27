@@ -58,7 +58,7 @@ function quecdeckSettings() {
 
     applyIpptChange(action) {
       this.isLoading = true;
-      this.$store.waitModal.start('Applying...', 65, () => {
+      this.$store.waitModal.start('Rebooting modem...', 65, () => {
         this.isLoading = false;
         this.fetchCurrentSettings();
       });

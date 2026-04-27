@@ -152,9 +152,9 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="loading-text d-flex flex-column">
         <h3 x-text="$store.waitModal.title"></h3>
         <p class="mt-2">
-          Please wait for
+          Refreshing in
           <span x-text="$store.waitModal.countdown" class="fw-medium"></span>
-          seconds.
+          seconds...
         </p>
       </div>
     </div>
