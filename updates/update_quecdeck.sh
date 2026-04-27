@@ -158,7 +158,7 @@ install_lighttpd() {
 
     if [ ! -f "$QUECDECK_DIR/server.crt" ] || [ ! -f "$QUECDECK_DIR/server.key" ]; then
         openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 \
-            -subj "/CN=localhost" \
+            -subj "/O=QuecDeck/CN=QuecDeck" \
             -keyout $QUECDECK_DIR/server.key -out $QUECDECK_DIR/server.crt
     fi
     chmod 600 "$QUECDECK_DIR/server.key"
