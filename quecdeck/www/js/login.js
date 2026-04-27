@@ -18,7 +18,6 @@ function loginPage() {
     error:      false,
     locked:     false,
     expired:    params.get('expired')   === '1',
-    forbidden:  params.get('forbidden') === '1',
     submitting: false,
     nextUrl:    next,
 

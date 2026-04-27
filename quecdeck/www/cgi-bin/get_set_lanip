@@ -72,8 +72,11 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
         exit 0
     fi
 
-    # Reboot after short delay to allow response to reach browser
-    (sleep 5 && atcmd_run 'AT+CFUN=1,1') &
+    # Reboot after short delay. LAN IP change resets the network stack so the
+    # HTTP response may not make it back — detach fully so the reboot fires
+    # regardless of whether the connection survives.
+    ( sleep 5; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
+    disown $!
 
     echo "{\"ok\": true, \"lan_ip\": \"$new_lan_ip\"}"
 else

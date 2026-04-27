@@ -56,24 +56,16 @@ function quecdeckSettings() {
       this.sendSetting('dns_v6_disable').then(() => { this.dnsV6ProxyStatus = false; }).catch(() => this.$store.errorModal.open('Failed to disable IPv6 DNS proxy. Please try again.'));
     },
 
-    wait(ms) {
-      return new Promise(resolve => setTimeout(resolve, ms));
-    },
-
     applyIpptChange(action) {
       this.isLoading = true;
       this.$store.waitModal.start('Applying...', 65, () => {
         this.isLoading = false;
         this.fetchCurrentSettings();
       });
-      this.sendSetting(action)
-        .then(() => this.wait(2000))
-        .then(() => this.sendSetting('reboot').catch(() => {}))
-        .catch((err) => {
-          this.$store.waitModal.stop();
-          this.$store.errorModal.open(err?.message || 'An error occurred.', 'IPPT Error');
-          this.isLoading = false;
-        });
+      // The QMAP command resets the network stack, so the HTTP connection may
+      // drop before a response arrives. The CGI schedules AT+CFUN=1,1 server-side
+      // so the modem reboots regardless — swallow any network error here.
+      this.sendSetting(action).catch(() => {});
     },
 
     ipptEnable() {

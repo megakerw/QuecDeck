@@ -37,6 +37,14 @@ if setup_needed then
     return 0
 end
 
+-- Setup page is only valid before setup; redirect away once it's done
+if path == "/setup.html" then
+    lighty.header["Location"] = "/"
+    lighty.header["Cache-Control"] = "no-store"
+    lighty.status = 302
+    return 302
+end
+
 -- Paths that do not require an active session
 local exempt = {
     ["/login.html"]         = true,
@@ -97,15 +105,6 @@ local created     = tonumber(sess.created)     or 0
 if (now - last_access) > TIMEOUT or (now - created) > MAX_AGE then
     os.remove(sf)
     return redirect(LOGIN .. "?expired=1&next=" .. safe_path)
-end
-
--- Developer paths require admin role (must be logged in to main login first)
-local is_dev = path:match("^/console") or path == "/developer.html"
-    or path == "/cgi-bin/user_atcommand" or path == "/cgi-bin/get_atcommand"
-    or path == "/cgi-bin/toggle_ttyd"   or path == "/cgi-bin/auth_dev"
-    or path == "/cgi-bin/set_cell_lock"
-if is_dev and sess.role ~= "admin" then
-    return redirect(LOGIN .. "?forbidden=1&next=" .. safe_path)
 end
 
 -- Developer CGIs additionally require the session to be unlocked via auth_dev

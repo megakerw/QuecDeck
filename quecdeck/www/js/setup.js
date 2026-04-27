@@ -48,7 +48,7 @@ function setupWizard() {
         .then(r => r.json())
         .then(data => {
           if (data.ok) {
-            this.step = 3;
+            window.location.href = '/login.html';
           } else {
             this.error = data.error || 'Setup failed. Please try again.';
           }

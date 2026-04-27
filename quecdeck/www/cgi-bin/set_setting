@@ -31,9 +31,13 @@ case "$action" in
     gnss_disable)
         atcmd_run 'AT+QGPSEND' ;;
     ippt_enable)
-        atcmd_run 'AT+QMAP="MPDN_rule",0,1,0,1,1,"FF:FF:FF:FF:FF:FF"' 15000 ;;
+        atcmd_run 'AT+QMAP="MPDN_rule",0,1,0,1,1,"FF:FF:FF:FF:FF:FF"' 15000
+        ( sleep 2; . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
+        disown $! ;;
     ippt_disable)
-        atcmd_run 'AT+QMAP="MPDN_rule",0' 15000 ;;
+        atcmd_run 'AT+QMAP="MPDN_rule",0' 15000
+        ( sleep 2; . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
+        disown $! ;;
     *)
         cgi_error "ERROR: invalid action" ;;
 esac

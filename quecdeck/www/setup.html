@@ -4,22 +4,25 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck — Setup</title>
-    <link rel="stylesheet" href="/css/bootstrap.min.css?v=500a706e" />
-    <link rel="stylesheet" href="/css/styles.css?v=500a706e" />
-    <script src="/js/bootstrap.bundle.min.js?v=500a706e"></script>
-    <script src="/js/dark-mode.js?v=500a706e" defer></script>
-    <script src="/js/alpinejs.min.js?v=500a706e" defer></script>
+    <link rel="stylesheet" href="/css/bootstrap.min.css?v=1d3cccbc" />
+    <link rel="stylesheet" href="/css/styles.css?v=1d3cccbc" />
+    <script src="/js/bootstrap.bundle.min.js?v=1d3cccbc"></script>
+    <script src="/js/dark-mode.js?v=1d3cccbc" defer></script>
+    <script src="/js/alpinejs.min.js?v=1d3cccbc" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="setupWizard()">
         <nav class="navbar navbar-expand-lg">
           <div class="container-fluid">
-            <span class="navbar-brand mb-0 h4">QuecDeck</span>
+            <span class="navbar-brand"><span class="mb-0 h4">QuecDeck</span></span>
+            <span class="navbar-text">
+              <button class="btn btn-link text-reset" id="darkModeToggle"></button>
+            </span>
           </div>
         </nav>
 
-        <div class="row justify-content-center">
+        <div class="row gy-3 justify-content-center">
           <div class="col-sm-8 col-md-5 col-lg-4">
             <div class="panel-section">
 
@@ -38,7 +41,7 @@
                       <label class="form-label">Confirm password</label>
                       <input type="password" class="form-control" x-model="adminPassConfirm" autocomplete="new-password" required />
                     </div>
-                    <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;">Continue</button>
+                    <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;" :disabled="!adminPass || !adminPassConfirm">Continue</button>
                   </form>
                 </div>
               </template>
@@ -60,7 +63,7 @@
                     </div>
                     <div class="d-flex gap-2" style="margin-top: 2rem;">
                       <button type="button" class="btn btn-secondary flex-fill" @click="skipDev()" :disabled="submitting">Skip</button>
-                      <button type="submit" class="btn btn-primary flex-fill" :disabled="submitting">
+                      <button type="submit" class="btn btn-primary flex-fill" :disabled="submitting || !devPass || !devPassConfirm">
                         <span x-show="!submitting">Finish</span>
                         <span x-show="submitting">Setting up...</span>
                       </button>
@@ -69,20 +72,11 @@
                 </div>
               </template>
 
-              <!-- Step 3: Done -->
-              <template x-if="step === 3">
-                <div class="text-center">
-                  <h5 class="mb-2">Setup Complete</h5>
-                  <p class="text-muted small mb-3">You're all set. Sign in to get started.</p>
-                  <a href="/login.html" class="btn btn-primary w-100">Sign In</a>
-                </div>
-              </template>
-
             </div>
           </div>
         </div>
       </div>
     </main>
-    <script src="/js/setup.js?v=500a706e"></script>
+    <script src="/js/setup.js?v=1d3cccbc"></script>
   </body>
 </html>

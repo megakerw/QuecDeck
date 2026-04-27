@@ -4,31 +4,31 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck — Sign In</title>
-    <link rel="stylesheet" href="/css/bootstrap.min.css?v=500a706e" />
-    <link rel="stylesheet" href="/css/styles.css?v=500a706e" />
-    <script src="/js/bootstrap.bundle.min.js?v=500a706e"></script>
-    <script src="/js/dark-mode.js?v=500a706e" defer></script>
-    <script src="/js/alpinejs.min.js?v=500a706e" defer></script>
+    <link rel="stylesheet" href="/css/bootstrap.min.css?v=1d3cccbc" />
+    <link rel="stylesheet" href="/css/styles.css?v=1d3cccbc" />
+    <script src="/js/bootstrap.bundle.min.js?v=1d3cccbc"></script>
+    <script src="/js/dark-mode.js?v=1d3cccbc" defer></script>
+    <script src="/js/alpinejs.min.js?v=1d3cccbc" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="loginPage()">
         <nav class="navbar navbar-expand-lg">
           <div class="container-fluid">
-            <span class="navbar-brand mb-0 h4">QuecDeck</span>
+            <span class="navbar-brand"><span class="mb-0 h4">QuecDeck</span></span>
+            <span class="navbar-text">
+              <button class="btn btn-link text-reset" id="darkModeToggle"></button>
+            </span>
           </div>
         </nav>
 
-        <div class="row justify-content-center">
+        <div class="row gy-3 justify-content-center">
           <div class="col-sm-8 col-md-5 col-lg-4">
             <div class="panel-section">
               <h5 class="mb-3">Sign In</h5>
 
                 <div x-show="expired" class="alert alert-warning" role="alert">
                   Your session expired due to inactivity. Please sign in again.
-                </div>
-                <div x-show="forbidden" class="alert alert-danger" role="alert">
-                  Access denied. Developer credentials are required for that page.
                 </div>
                 <div x-show="locked" class="alert alert-danger" role="alert">
                   Too many failed attempts. Try again in 15 minutes.
@@ -61,6 +61,6 @@
       </div>
     </main>
 
-    <script src="/js/login.js?v=500a706e"></script>
+    <script src="/js/login.js?v=1d3cccbc"></script>
   </body>
 </html>
