@@ -13,6 +13,7 @@ function quecdeckWatchCat() {
     consecutiveFailures: 0,
     statsUpdatedAt: '',
     statsTimer: null,
+    statsFetching: false,
 
     // Scheduled restart
     srEnabled: false,
@@ -156,7 +157,11 @@ function quecdeckWatchCat() {
     },
 
     fetchStats() {
-      authFetch('/cgi-bin/get_watchcat_stats')
+      if (this.statsFetching) return;
+      this.statsFetching = true;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      authFetch('/cgi-bin/get_watchcat_stats', { signal: controller.signal })
         .then((r) => r.json())
         .then((data) => {
           if (data && data.stats) {
@@ -166,7 +171,8 @@ function quecdeckWatchCat() {
             this.statsUpdatedAt = now.toLocaleString([], { hour12: false });
           }
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => { clearTimeout(timer); this.statsFetching = false; });
     },
 
     startStatsPolling() {

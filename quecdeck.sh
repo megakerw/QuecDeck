@@ -24,7 +24,9 @@ ensure_entware_installed() {
     mount -o remount,rw /
     if [ ! -f "/opt/bin/opkg" ]; then
         echo -e "\e[1;32mInstalling Entware/OPKG\e[0m"
-        cd /tmp && wget -O installentware.sh "$GITROOT/installentware.sh" && chmod +x installentware.sh && ./installentware.sh
+        cd /tmp && wget -O installentware.sh "$GITROOT/installentware.sh"
+        echo "1aee25947e06afeb9fad890a5b2eeff6ef59db20d3ec6e027eea5b23145fa65d  installentware.sh" | sha256sum -c || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; exit 1; }
+        chmod +x installentware.sh && ./installentware.sh
         if [ "$?" -ne 0 ]; then
             echo -e "\e[1;31mEntware/OPKG installation failed. Please check your internet connection or the repository URL.\e[0m"
             exit 1
@@ -327,6 +329,8 @@ sshd_service() {
             grep -q "^UsePAM" /opt/etc/ssh/sshd_config || echo "UsePAM yes" >> /opt/etc/ssh/sshd_config
             sed -i "s/^.*PermitRootLogin .*/PermitRootLogin yes/" /opt/etc/ssh/sshd_config
             grep -q "^PermitRootLogin" /opt/etc/ssh/sshd_config || echo "PermitRootLogin yes" >> /opt/etc/ssh/sshd_config
+            sed -i "s/^.*MaxAuthTries .*/MaxAuthTries 3/" /opt/etc/ssh/sshd_config
+            grep -q "^MaxAuthTries" /opt/etc/ssh/sshd_config || echo "MaxAuthTries 3" >> /opt/etc/ssh/sshd_config
 
             # Ensure the sshd privilege-separation user exists
             grep -q "sshd:x:106" /opt/etc/passwd || \

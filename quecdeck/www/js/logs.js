@@ -101,7 +101,11 @@ function logsPage() {
       const parts = [];
       if (ev.user) parts.push('User: ' + ev.user);
       if (ev.ip) {
-        const local = ev.wan_ip && ev.ip === ev.wan_ip;
+        const isPrivate = /^10\./.test(ev.ip)
+          || /^192\.168\./.test(ev.ip)
+          || /^172\.(1[6-9]|2\d|3[01])\./.test(ev.ip)
+          || /^127\./.test(ev.ip);
+        const local = isPrivate || (ev.wan_ip && ev.ip === ev.wan_ip);
         parts.push((local ? 'Local' : 'External') + ' (' + ev.ip + ')');
       }
       return parts.join(' | ');

@@ -175,20 +175,36 @@ document.addEventListener('DOMContentLoaded', () => {
   if (main) main.parentNode.insertBefore(banner, main);
 
   let scanFetching = false;
+  let scanIntervalId = null;
+
   function pollScanStatus() {
-    if (document.hidden || scanFetching) return;
+    if (scanFetching) return;
     scanFetching = true;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4000);
-    fetch('/cgi-bin/get_scan_status', { cache: 'no-store', signal: controller.signal })
+    authFetch('/cgi-bin/get_scan_status', { signal: controller.signal })
       .then(r => r.json())
       .then(data => { Alpine.store('scanBanner').active = !!data.scanning; })
       .catch(() => {})
       .finally(() => { clearTimeout(timer); scanFetching = false; });
   }
 
-  pollScanStatus();
-  setInterval(pollScanStatus, 5000);
+  function startScanPoll() {
+    if (scanIntervalId) return;
+    pollScanStatus();
+    scanIntervalId = setInterval(pollScanStatus, 5000);
+  }
+
+  function stopScanPoll() {
+    clearInterval(scanIntervalId);
+    scanIntervalId = null;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopScanPoll(); else startScanPoll();
+  });
+
+  startScanPoll();
 });
 
 // Returns "-" for unassigned IP addresses (0.0.0.0 or all-zero IPv6 like ::)
@@ -216,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const link = document.createElement('button');
   link.type = 'button';
-  link.className = 'btn btn-link text-reset p-0 ms-2';
+  link.className = 'btn btn-link text-reset p-0 ms-2 me-2';
   link.title = 'Log out';
   link.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z"/><path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708z"/></svg>';
   link.addEventListener('click', () => {

@@ -37,6 +37,8 @@ function processAllInfos() {
   return {
     isFetching: false,
     isPinging: false,
+    isUpTimeFetching: false,
+    isStatsFetching: false,
     internetConnectionStatus: "Disconnected",
     temperature: "0",
     simStatus: "No SIM",
@@ -979,10 +981,11 @@ function processAllInfos() {
     },
 
     fetchUpTime() {
-      // Content-Type: text/plain
-      //
-      // 1 hour 44, minute
-      authFetch("/cgi-bin/get_uptime")
+      if (this.isUpTimeFetching) return;
+      this.isUpTimeFetching = true;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      authFetch("/cgi-bin/get_uptime", { signal: controller.signal })
         .then((response) => response.text())
         .then((data) => {
           // Example result
@@ -1128,7 +1131,9 @@ function processAllInfos() {
           } else {
             this.uptime = "Unknown Time";
           }
-        });
+        })
+        .catch(() => {})
+        .finally(() => { clearTimeout(timer); this.isUpTimeFetching = false; });
     },
 
     updateRefreshRate() {
@@ -1152,7 +1157,11 @@ function processAllInfos() {
     },
 
     fetchSystemStats() {
-      authFetch("/cgi-bin/get_system_stats")
+      if (this.isStatsFetching) return;
+      this.isStatsFetching = true;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      authFetch("/cgi-bin/get_system_stats", { signal: controller.signal })
         .then((r) => r.json())
         .then((data) => {
           this.cpuLoad = data.load_avg;
@@ -1160,7 +1169,8 @@ function processAllInfos() {
           this.ramUsed = data.mem_used_mb;
           this.ramTotal = data.mem_total_mb;
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => { clearTimeout(timer); this.isStatsFetching = false; });
     },
 
     init() {
@@ -1231,6 +1241,8 @@ function processAllInfos() {
             this.intervalId = null;
             this.isFetching = false;
             this.isPinging = false;
+            this.isUpTimeFetching = false;
+            this.isStatsFetching = false;
             this.init();
           }
         });
