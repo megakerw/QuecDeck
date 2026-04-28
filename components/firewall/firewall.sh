@@ -10,7 +10,7 @@ PORTS=("80" "443") # Default ports, will be modified by the install script
 # Wait for QCMAP to finish its async iptables setup before touching anything.
 # Skipped if the system has been up for more than 60 seconds (e.g. during install/update).
 uptime_secs=$(awk '{print int($1)}' /proc/uptime)
-[ "$uptime_secs" -lt 60 ] && sleep 15
+[ "$uptime_secs" -lt 60 ] && sleep 20
 
 # Read LAN IP from mobileap config, fall back to default
 LAN_IP=""

@@ -174,15 +174,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const main = document.querySelector('main');
   if (main) main.parentNode.insertBefore(banner, main);
 
+  let scanFetching = false;
   function pollScanStatus() {
-    authFetch('/cgi-bin/get_scan_status')
+    if (document.hidden || scanFetching) return;
+    scanFetching = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    fetch('/cgi-bin/get_scan_status', { cache: 'no-store', signal: controller.signal })
       .then(r => r.json())
       .then(data => { Alpine.store('scanBanner').active = !!data.scanning; })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { clearTimeout(timer); scanFetching = false; });
   }
 
   pollScanStatus();
-  const _scanPollInterval = setInterval(pollScanStatus, 5000);
+  setInterval(pollScanStatus, 5000);
 });
 
 // Returns "-" for unassigned IP addresses (0.0.0.0 or all-zero IPv6 like ::)
