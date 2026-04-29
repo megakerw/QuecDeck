@@ -25,7 +25,8 @@ ensure_entware_installed() {
     if [ ! -f "/opt/bin/opkg" ]; then
         echo -e "\e[1;32mInstalling Entware/OPKG\e[0m"
         cd /tmp && wget -O installentware.sh "$GITROOT/installentware.sh"
-        echo "fc8772a1a8686b73721c7bf7adcccc7c5425930151b5c1a40e533db4374dfb44  installentware.sh" | sha256sum -c || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; exit 1; }
+        echo "fc8772a1a8686b73721c7bf7adcccc7c5425930151b5c1a40e533db4374dfb44  installentware.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; exit 1; }
+        echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
         chmod +x installentware.sh && ./installentware.sh
         if [ "$?" -ne 0 ]; then
             echo -e "\e[1;31mEntware/OPKG installation failed. Please check your internet connection or the repository URL.\e[0m"
@@ -138,10 +139,12 @@ uninstall_entware() {
 set_quecdeck_passwd(){
 	mkdir -p /usrdata/root/bin
 	wget -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
-	echo "a8a54427b71e33ba79fc63d1281fea059a91bcd9c986aef2d399f5394f84ee1e  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
+	echo "a8a54427b71e33ba79fc63d1281fea059a91bcd9c986aef2d399f5394f84ee1e  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
+	echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
 	chmod +x /usrdata/root/bin/quecdeckpasswd
 	wget -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
-	echo "d57de363de9fa3e8936762bfd6fae56e474cb5649fc7dedc99f2ce776f355844  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
+	echo "d57de363de9fa3e8936762bfd6fae56e474cb5649fc7dedc99f2ce776f355844  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
+	echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
 	chmod +x /usrdata/root/bin/quecdeckdevpasswd
 	echo -e "\e[1;32mTo change your quecdeck password in the future, run: quecdeckpasswd\e[0m"
 	echo -e "\e[1;32mTo change your developer password in the future, run: quecdeckdevpasswd\e[0m"
@@ -166,14 +169,16 @@ install_quecdeck() {
 	mkdir -p /usrdata/updates
 	echo -e "\e[1;32mInstalling/updating dependency: firewall\e[0m"
 	wget -q -O /usrdata/updates/update_firewall.sh $GITROOT/updates/update_firewall.sh || { echo -e "\e[1;31mFailed to download update_firewall.sh.\e[0m"; return 1; }
-	echo "df64b9e8d59557a6faf24372dd82a6ee1ce552f37e4a85156408c7d06e34382e  /usrdata/updates/update_firewall.sh" | sha256sum -c || { echo -e "\e[1;31mIntegrity check failed for update_firewall.sh.\e[0m"; return 1; }
+	echo "df64b9e8d59557a6faf24372dd82a6ee1ce552f37e4a85156408c7d06e34382e  /usrdata/updates/update_firewall.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_firewall.sh.\e[0m"; return 1; }
+	echo -e "\e[1;32mIntegrity verified: update_firewall.sh\e[0m"
 	chmod +x /usrdata/updates/update_firewall.sh
 	/usrdata/updates/update_firewall.sh || { echo -e "\e[1;31mFirewall update failed.\e[0m"; return 1; }
 	echo -e "\e[1;32mFirewall updated.\e[0m"
 	set_quecdeck_passwd || return 1
 	echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
 	wget -q -O /usrdata/updates/update_quecdeck.sh $GITROOT/updates/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-	echo "1fcfcc46e3aea938d846fab6914d347a26577b88af1be9e0042631fb48be877b  /usrdata/updates/update_quecdeck.sh" | sha256sum -c || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
+	echo "1fcfcc46e3aea938d846fab6914d347a26577b88af1be9e0042631fb48be877b  /usrdata/updates/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
+	echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
 	chmod +x /usrdata/updates/update_quecdeck.sh
 	/usrdata/updates/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }
 	echo -e "\e[1;32mQuecDeck installed.\e[0m"
@@ -353,7 +358,8 @@ sshd_service() {
             # Download and install service file
             mkdir -p /usrdata/sshd
             wget -q -O /usrdata/sshd/sshd.service "$GITROOT/components/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
-            echo "9a1e5b5fd1030dea0b11f601249f8932ac615051dad3bf2081ab00423afac1a5  /usrdata/sshd/sshd.service" | sha256sum -c || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; return; }
+            echo "9a1e5b5fd1030dea0b11f601249f8932ac615051dad3bf2081ab00423afac1a5  /usrdata/sshd/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; return; }
+            echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
             trap 'mount -o remount,ro /' EXIT
             mount -o remount,rw /
             cp -f /usrdata/sshd/sshd.service /lib/systemd/system/sshd.service
