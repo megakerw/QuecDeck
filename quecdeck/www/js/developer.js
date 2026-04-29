@@ -18,6 +18,7 @@ function developerPage() {
     band: null,
     cellNum: null,
     cellLockStatus: 'Unknown',
+    cellLockLoading: false,
 
     sendSetting(action) {
       return authFetch('/cgi-bin/set_setting', { method: 'POST', body: new URLSearchParams({ action }) })
@@ -64,8 +65,17 @@ function developerPage() {
         return;
       }
       const pairs = validPairs.map((pair) => `${pair.earfcn},${pair.pci}`).join(',');
-      this.postCellLockAction({ type: 'lte', count: cellNum, pairs });
-      this.$store.waitModal.start('Applying Settings...', 3, () => this.fetchCellLockStatus());
+      this.$store.confirmModal.open(
+        'Locking cells may briefly interrupt your connection.',
+        () => {
+          this.cellLockLoading = true;
+          this.postCellLockAction({ type: 'lte', count: cellNum, pairs })
+            .then(() => this.fetchCellLockStatus())
+            .catch(err => this.$store.errorModal.open(err.message || 'Failed to apply cell lock settings.'))
+            .finally(() => { this.cellLockLoading = false; });
+        },
+        'Lock LTE Cells?'
+      );
     },
 
     cellLockEnableNR() {
@@ -81,26 +91,45 @@ function developerPage() {
         this.$store.errorModal.open('EARFCN and PCI must be integers');
         return;
       }
-      this.postCellLockAction({ type: 'nr', earfcn, pci, scs, band });
-      this.$store.waitModal.start('Applying Settings...', 3, () => this.fetchCellLockStatus());
+      this.$store.confirmModal.open(
+        'Locking cells may briefly interrupt your connection.',
+        () => {
+          this.cellLockLoading = true;
+          this.postCellLockAction({ type: 'nr', earfcn, pci, scs, band })
+            .then(() => this.fetchCellLockStatus())
+            .catch(err => this.$store.errorModal.open(err.message || 'Failed to apply cell lock settings.'))
+            .finally(() => { this.cellLockLoading = false; });
+        },
+        'Lock NR5G-SA Cell?'
+      );
     },
 
     cellLockDisableLTE() {
-      this.postCellLockAction({ type: 'unlock_lte' });
-      this.$store.waitModal.start('Applying Settings...', 3, () => this.fetchCellLockStatus());
+      this.cellLockLoading = true;
+      this.postCellLockAction({ type: 'unlock_lte' })
+        .then(() => this.fetchCellLockStatus())
+        .catch(err => this.$store.errorModal.open(err.message || 'Failed to unlock LTE cells.'))
+        .finally(() => { this.cellLockLoading = false; });
     },
 
     cellLockDisableNR() {
-      this.postCellLockAction({ type: 'unlock_nr' });
-      this.$store.waitModal.start('Applying Settings...', 3, () => this.fetchCellLockStatus());
+      this.cellLockLoading = true;
+      this.postCellLockAction({ type: 'unlock_nr' })
+        .then(() => this.fetchCellLockStatus())
+        .catch(err => this.$store.errorModal.open(err.message || 'Failed to unlock NR5G-SA cells.'))
+        .finally(() => { this.cellLockLoading = false; });
     },
 
     postCellLockAction(params) {
       return authFetch('/cgi-bin/set_cell_lock', {
         method: 'POST',
         body: new URLSearchParams(params),
-      }).then(r => r.text())
-        .catch(() => this.$store.errorModal.open('Failed to apply cell lock settings. Please try again.'));
+      })
+        .then(r => r.text())
+        .then(text => {
+          if (text.includes('ERROR')) throw new Error(text.trim());
+          return text;
+        });
     },
 
     checkDevStatus() {
