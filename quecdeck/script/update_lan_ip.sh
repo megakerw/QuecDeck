@@ -2,6 +2,7 @@
 
 CONFIG_FILE="/etc/data/mobileap_cfg.xml"
 LIGHTTPD_CONF="/usrdata/quecdeck/lighttpd.conf"
+QUECDECK_DIR="/usrdata/quecdeck"
 
 LAN_IP=""
 if [ -f "$CONFIG_FILE" ]; then
@@ -22,6 +23,16 @@ fi
 LAN_IP_ESC=$(printf '%s' "$LAN_IP" | sed 's/[\/&]/\\&/g')
 sed -i "s/server\.bind = \"[0-9.]*\"/server.bind = \"$LAN_IP_ESC\"/" "$LIGHTTPD_CONF"
 sed -i "s/== \"[0-9.]*:443\"/== \"$LAN_IP_ESC:443\"/" "$LIGHTTPD_CONF"
+
+# Regenerate TLS cert so the SAN matches the new IP
+_tmpconf=$(mktemp)
+printf '[req]\ndistinguished_name=dn\n[dn]\n[san]\nsubjectAltName=IP:%s\n' "$LAN_IP" > "$_tmpconf"
+openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 \
+    -subj "/O=QuecDeck/CN=QuecDeck" \
+    -config "$_tmpconf" -extensions san \
+    -keyout "$QUECDECK_DIR/server.key" -out "$QUECDECK_DIR/server.crt"
+rm -f "$_tmpconf"
+chmod 600 "$QUECDECK_DIR/server.key"
 
 # Restart sshd if running so it rebinds to the new LAN IP
 systemctl is-active sshd >/dev/null 2>&1 && systemctl restart sshd

@@ -157,9 +157,21 @@ install_lighttpd() {
     echo "www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /bin/systemctl is-active watchcat, /usrdata/quecdeck/script/write_htpasswd.sh" > /opt/etc/sudoers.d/www-data
 
     if [ ! -f "$QUECDECK_DIR/server.crt" ] || [ ! -f "$QUECDECK_DIR/server.key" ]; then
+        _cert_ip="192.168.225.1"
+        if [ -f "/etc/data/mobileap_cfg.xml" ]; then
+            _extracted=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' "/etc/data/mobileap_cfg.xml" | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
+            if printf '%s' "$_extracted" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' && \
+               printf '%s' "$_extracted" | awk -F. '$1<=255&&$2<=255&&$3<=255&&$4<=255{exit 0} {exit 1}'; then
+                _cert_ip="$_extracted"
+            fi
+        fi
+        _tmpconf=$(mktemp)
+        printf '[req]\ndistinguished_name=dn\n[dn]\n[san]\nsubjectAltName=IP:%s\n' "$_cert_ip" > "$_tmpconf"
         openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 \
             -subj "/O=QuecDeck/CN=QuecDeck" \
-            -keyout $QUECDECK_DIR/server.key -out $QUECDECK_DIR/server.crt
+            -config "$_tmpconf" -extensions san \
+            -keyout "$QUECDECK_DIR/server.key" -out "$QUECDECK_DIR/server.crt"
+        rm -f "$_tmpconf"
     fi
     chmod 600 "$QUECDECK_DIR/server.key"
     systemctl daemon-reload

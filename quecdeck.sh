@@ -173,7 +173,7 @@ install_quecdeck() {
 	set_quecdeck_passwd || return 1
 	echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
 	wget -q -O /usrdata/updates/update_quecdeck.sh $GITROOT/updates/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-	echo "6b379f280f60a0523e8861cd7fb62bc203f6efb58292356f902b5f1753fc5203  /usrdata/updates/update_quecdeck.sh" | sha256sum -c || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
+	echo "1fcfcc46e3aea938d846fab6914d347a26577b88af1be9e0042631fb48be877b  /usrdata/updates/update_quecdeck.sh" | sha256sum -c || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
 	chmod +x /usrdata/updates/update_quecdeck.sh
 	/usrdata/updates/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }
 	echo -e "\e[1;32mQuecDeck installed.\e[0m"
