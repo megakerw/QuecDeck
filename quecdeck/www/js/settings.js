@@ -157,7 +157,7 @@ function quecdeckSettings() {
     setLanConfig() {
       this.isLoading = true;
       const newIp = this.lanIp;
-      this.$store.waitModal.start(`Rebooting... Please wait, you will be automatically redirected to https://${newIp}`, REBOOT_WAIT_SECS, () => {
+      this.$store.waitModal.start(`Rebooting... Please wait, you will be automatically redirected to https://${newIp}`, REBOOT_WAIT_SECS + 5, () => {
         window.location.href = 'https://' + newIp + '/';
       });
       authFetch('/cgi-bin/get_set_lanip', {

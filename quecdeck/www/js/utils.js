@@ -1,5 +1,5 @@
 // Seconds from AT+CFUN=1,1 being sent until the modem is reachable again.
-const REBOOT_WAIT_SECS = 60;
+const REBOOT_WAIT_SECS = 55;
 
 // Auth-aware fetch wrapper — redirects to login if the session has expired.
 // auth.lua returns a 302 to /login.html which fetch() follows silently;
