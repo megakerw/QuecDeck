@@ -3,6 +3,7 @@ function developerPage() {
     isLoading: false,
     isClean: true,
     atcmd: "",
+    atTimeout: 5,
     atCommandResponse: "",
     ttydRunning: false,
     devUnlocked: false,
@@ -150,7 +151,7 @@ function developerPage() {
     sendATCommand() {
       if (!this.atcmd) this.atcmd = "ATI";
       this.isLoading = true;
-      authFetch('/cgi-bin/user_atcommand', { method: 'POST', body: new URLSearchParams({ atcmd: this.atcmd }) })
+      authFetch('/cgi-bin/user_atcommand', { method: 'POST', body: new URLSearchParams({ atcmd: this.atcmd, timeout: (this.atTimeout || 5) * 1000 }) })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
           return res.text();

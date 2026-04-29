@@ -1,3 +1,6 @@
+// Seconds from AT+CFUN=1,1 being sent until the modem is reachable again.
+const REBOOT_WAIT_SECS = 60;
+
 // Auth-aware fetch wrapper — redirects to login if the session has expired.
 // auth.lua returns a 302 to /login.html which fetch() follows silently;
 // response.redirected lets us detect this and navigate instead of parsing HTML.
@@ -48,10 +51,12 @@ document.addEventListener('alpine:init', () => {
     show: false,
     title: 'Are you sure?',
     message: '',
+    detail: '',
     _onConfirm: null,
-    open(message, onConfirm, title = 'Are you sure?') {
+    open(message, onConfirm, title = 'Are you sure?', detail = '') {
       this.title = title;
       this.message = message;
+      this.detail = detail;
       this._onConfirm = onConfirm;
       this.show = true;
     },
@@ -59,10 +64,12 @@ document.addEventListener('alpine:init', () => {
       this.show = false;
       if (this._onConfirm) this._onConfirm();
       this._onConfirm = null;
+      this.detail = '';
     },
     cancel() {
       this.show = false;
       this._onConfirm = null;
+      this.detail = '';
     }
   });
 
@@ -107,7 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="mb-3">
         <h5 class="mb-0 fw-semibold" x-text="$store.confirmModal.title"></h5>
       </div>
-      <p class="mb-3 text-muted" x-text="$store.confirmModal.message"></p>
+      <p class="mb-2 text-muted" x-text="$store.confirmModal.message"></p>
+      <p x-show="$store.confirmModal.detail" class="mb-3 font-monospace small rounded px-2 py-1" style="background:var(--bs-secondary-bg)" x-text="$store.confirmModal.detail"></p>
       <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-secondary btn-sm" @click="$store.confirmModal.cancel()">Cancel</button>
         <button type="button" class="btn btn-primary btn-sm" @click="$store.confirmModal.confirm()">Confirm</button>
@@ -223,22 +231,3 @@ window.addEventListener('pageshow', (event) => {
   if (event.persisted) window.location.reload();
 });
 
-// Inject a "Log out" link into the navbar on every page
-document.addEventListener('DOMContentLoaded', () => {
-  const navbarText = document.querySelector('.navbar-text');
-  if (!navbarText) return;
-
-  navbarText.classList.add('d-flex', 'align-items-center', 'gap-2');
-
-  const link = document.createElement('button');
-  link.type = 'button';
-  link.className = 'btn btn-link text-reset p-0 ms-2';
-  link.title = 'Log out';
-  link.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z"/><path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708z"/></svg>';
-  link.addEventListener('click', () => {
-    fetch('/cgi-bin/auth_logout', { method: 'POST' }).finally(() => {
-      window.location.href = '/login.html';
-    });
-  });
-  navbarText.appendChild(link);
-});

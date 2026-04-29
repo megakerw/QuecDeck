@@ -6,9 +6,15 @@ cgi_require_post
 cgi_read_post
 
 x=$(get_post_param atcmd)
+t=$(get_post_param timeout)
+
+# Clamp timeout to 1000–60000 ms; default 5000.
+if ! echo "$t" | grep -qE '^[0-9]+$' || [ "$t" -lt 1000 ] || [ "$t" -gt 60000 ]; then
+    t=5000
+fi
 
 if [ -n "$x" ] && [ ${#x} -le 512 ]; then
-    runcmd=$(atcmd_run "$x" | awk '{ gsub(/\x1B\[[0-9;]*[mG]/, "") }1')
+    runcmd=$(atcmd_run "$x" "$t" | awk '{ gsub(/\x1B\[[0-9;]*[mG]/, "") }1')
 fi
 
 cgi_output_text

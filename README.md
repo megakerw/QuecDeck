@@ -54,6 +54,8 @@ To update, run the same command and select **Install/Update QuecDeck** again —
 
 ## Features
 
+Features are organised by page.
+
 ### Home
 Real-time overview of the modem's current status: signal strength, temperature, SIM status, internet connectivity, and more.
 
@@ -101,7 +103,7 @@ Requires a separate developer password to unlock. Provides access to:
 QuecDeck is designed to run entirely on-device with minimal dependencies. The web server, backend, and services live on the modem's writable `/usrdata` partition, with systemd service files installed to the root filesystem during setup.
 
 ### Web Server
-[Lighttpd](https://www.lighttpd.net/) serves the frontend and CGI backend on port 443 (HTTPS). Port 80 redirects to HTTPS. Before starting, the server dynamically binds to the current LAN IP by reading it from the modem's configuration and rewriting `lighttpd.conf` at runtime. Authentication uses a custom session-based login with SHA-512 hashed passwords and a two-tier credential system — a standard admin account and a developer account for advanced access. Sessions are managed via secure cookies, with a 15-minute lockout enforced after 5 failed login attempts.
+[Lighttpd](https://www.lighttpd.net/) serves the frontend and CGI backend on port 443 (HTTPS). Port 80 redirects to HTTPS. Before starting, the server reads the current LAN IP from the modem's configuration, rewrites `lighttpd.conf` to bind to that IP, and regenerates a self-signed TLS certificate with a Subject Alternative Name matching the IP — this allows browsers (including iOS Safari) to store the trust exception durably. The certificate is regenerated automatically whenever the LAN IP changes. Authentication uses a custom session-based login with SHA-512 hashed passwords and a two-tier credential system — a standard admin account and a developer account for advanced access. Sessions are managed via secure cookies, with a 15-minute lockout enforced after 5 failed login attempts.
 
 ### AT Command Layer
 All modem communication goes through [atcli](https://github.com/megakerw/atcli_rust) (a fork of [atcli_rust](https://github.com/1alessandro1/atcli_rust)), a Rust-based AT command CLI running as a setuid binary. A queue daemon (`atcmd_queue_daemon.sh`) serializes all AT command requests through named pipes, preventing race conditions when multiple CGI requests arrive simultaneously. Responses are cached per endpoint to reduce modem load: modem stats at 3 seconds, and all other endpoints at 5 seconds.

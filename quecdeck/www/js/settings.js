@@ -34,7 +34,7 @@ function quecdeckSettings() {
         'This will reboot the modem. Continue?',
         () => {
           this.sendSetting('reboot').catch(() => {});
-          this.$store.waitModal.start("Rebooting...", 55, () => this.init());
+          this.$store.waitModal.start("Rebooting...", REBOOT_WAIT_SECS, () => this.init());
         },
         'Reboot'
       );
@@ -58,7 +58,7 @@ function quecdeckSettings() {
 
     applyIpptChange(action) {
       this.isLoading = true;
-      this.$store.waitModal.start('Rebooting modem...', 65, () => {
+      this.$store.waitModal.start('Rebooting modem...', REBOOT_WAIT_SECS + 5, () => {
         this.isLoading = false;
         this.fetchCurrentSettings();
       });
@@ -147,17 +147,18 @@ function quecdeckSettings() {
 
     confirmLanChange() {
       this.$store.confirmModal.open(
-        `The modem will reboot and you will be redirected to https://${this.lanIp}.`,
+        'The modem will reboot. You will be redirected to:',
         () => this.setLanConfig(),
-        'Change LAN IP?'
+        'Change LAN IP?',
+        `https://${this.lanIp}`
       );
     },
 
     setLanConfig() {
       this.isLoading = true;
       const newIp = this.lanIp;
-      this.$store.waitModal.start(`Rebooting... Please wait, you will be automatically redirected to the new address (${newIp})`, 60, () => {
-        window.location.href = 'https://' + newIp + '/settings.html';
+      this.$store.waitModal.start(`Rebooting... Please wait, you will be automatically redirected to https://${newIp}`, REBOOT_WAIT_SECS, () => {
+        window.location.href = 'https://' + newIp + '/';
       });
       authFetch('/cgi-bin/get_set_lanip', {
         method: 'POST',

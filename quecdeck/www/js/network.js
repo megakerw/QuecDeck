@@ -363,7 +363,7 @@ function cellLocking() {
       setTimeout(() => {
         authFetch("/cgi-bin/set_setting", { method: "POST", body: new URLSearchParams({ action: "reboot" }) }).catch(() => {});
       }, 5000);
-      this.$store.waitModal.start("Rebooting...", 55, () => this.init());
+      this.$store.waitModal.start("Rebooting...", REBOOT_WAIT_SECS, () => this.init());
     },
     cellLockEnableLTE() {
       const cellNum = this.cellNum;

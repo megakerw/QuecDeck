@@ -243,10 +243,18 @@ body {
   margin-top: 1.25rem !important;
 }
 
-.navbar-brand span {
+.navbar > .container-fluid {
+  align-items: baseline;
+}
+
+.navbar-brand {
   font-weight: 700;
   font-size: 1.1rem;
   letter-spacing: -0.2px;
+}
+
+.navbar .navbar-text {
+  align-self: center;
 }
 
 .nav-link {
