@@ -19,6 +19,7 @@ ExecStartPre=/opt/sbin/lighttpd -tt -f /usrdata/quecdeck/lighttpd.conf
 ExecStart=/opt/sbin/lighttpd -D -f /usrdata/quecdeck/lighttpd.conf
 ExecReload=/bin/kill -USR1 $MAINPID
 Restart=on-failure
+RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target

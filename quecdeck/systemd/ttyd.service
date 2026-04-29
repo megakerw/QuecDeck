@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 ExecStart=/usrdata/quecdeck/console/ttyd -i 127.0.0.1 -p 8080 -t 'theme={"foreground":"white","background":"black"}' -t fontSize=25 --writable /usrdata/quecdeck/console/ttyd.bash
 Restart=on-failure
+RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
