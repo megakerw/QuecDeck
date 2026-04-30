@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TCP ports to allow on LAN IP and block everywhere else
-PORTS=("80" "443") # Default ports, will be modified by the install script
+PORTS=("80" "443")
 # Open port 22 only when sshd is installed
 # Check the service file on rootfs rather than the binary in /opt,
 # since /opt may not be mounted yet when the firewall starts.

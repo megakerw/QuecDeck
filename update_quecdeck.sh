@@ -28,7 +28,7 @@ remount_ro() {
 
 # Installation prep
 remount_rw
-systemctl daemon-reload
+trap 'remount_ro' EXIT
 rm -f $SERVICE_FILE
 
 # Create the systemd service file
@@ -38,7 +38,9 @@ Description=Update $DIR_NAME temporary service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash $TMP_SCRIPT > $LOG_FILE 2>&1
+ExecStart=/bin/bash $TMP_SCRIPT
+StandardOutput=append:$LOG_FILE
+StandardError=append:$LOG_FILE
 
 [Install]
 WantedBy=multi-user.target
@@ -70,6 +72,7 @@ remount_ro() {
 }
 
 remount_rw
+trap 'remount_ro' EXIT
 
 # Preserve lean mode, watchcat, and scheduled restart state across updates
 lean_mode_was_installed=0
@@ -122,28 +125,9 @@ uninstall_quecdeck() {
     echo "Uninstallation process completed."
 }
 
-setup_firewall() {
-    echo -e "\e[1;32mSetting up firewall...\e[0m"
-    mkdir -p "$QUECDECK_DIR/script"
-    wget -q -O "$QUECDECK_DIR/script/firewall.sh" $GITROOT/quecdeck/script/firewall.sh || { echo -e "\e[1;31mFailed to download firewall.sh.\e[0m"; return 1; }
-    echo "8929a3c170a198d22f4f9646cb9f704fc7b3b0607b7cbc3a2bee67def9347237  $QUECDECK_DIR/script/firewall.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for firewall.sh.\e[0m"; return 1; }
-    echo -e "\e[1;32mIntegrity verified: firewall.sh\e[0m"
-    chmod +x "$QUECDECK_DIR/script/firewall.sh"
-    mkdir -p /tmp/quecdeck
-    wget -q -O /tmp/quecdeck/firewall.service $GITROOT/quecdeck/systemd/firewall.service || { echo -e "\e[1;31mFailed to download firewall.service.\e[0m"; return 1; }
-    echo "e94c9aa3daf963085eac4c30b7b8993e762b067bebeed05d2ee5689feee50631  /tmp/quecdeck/firewall.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for firewall.service.\e[0m"; return 1; }
-    echo -e "\e[1;32mIntegrity verified: firewall.service\e[0m"
-    cp -f /tmp/quecdeck/firewall.service /lib/systemd/system/firewall.service
-    rm -f /tmp/quecdeck/firewall.service
-    ln -sf /lib/systemd/system/firewall.service /lib/systemd/system/multi-user.target.wants/firewall.service
-    systemctl daemon-reload
-    systemctl start firewall
-    echo -e "\e[1;32mFirewall setup complete.\e[0m"
-}
-
 install_lighttpd() {
-    /opt/bin/opkg update
-    /opt/bin/opkg install sudo lighttpd lighttpd-mod-cgi lighttpd-mod-magnet lighttpd-mod-openssl lighttpd-mod-proxy
+    /opt/bin/opkg update || { echo -e "\e[1;31mFailed to update opkg package list.\e[0m"; return 1; }
+    /opt/bin/opkg install sudo lighttpd lighttpd-mod-cgi lighttpd-mod-magnet lighttpd-mod-openssl lighttpd-mod-proxy || { echo -e "\e[1;31mFailed to install lighttpd packages.\e[0m"; return 1; }
 
     # Ensure rc.unslung doesn't try to start it
     for script in /opt/etc/init.d/*lighttpd*; do
@@ -156,10 +140,10 @@ install_lighttpd() {
     systemctl stop lighttpd
     echo -e "\033[0;32mInstalling/Updating Lighttpd...\033[0m"
     mkdir -p "$QUECDECK_DIR/script"
-    wget -O "$QUECDECK_DIR/lighttpd.conf" $GITROOT/quecdeck/lighttpd.conf
-    wget -O "$QUECDECK_DIR/script/update_lan_ip.sh" $GITROOT/quecdeck/script/update_lan_ip.sh
+    wget -O "$QUECDECK_DIR/lighttpd.conf" $GITROOT/quecdeck/lighttpd.conf || { echo -e "\e[1;31mFailed to download lighttpd.conf.\e[0m"; return 1; }
+    wget -O "$QUECDECK_DIR/script/update_lan_ip.sh" $GITROOT/quecdeck/script/update_lan_ip.sh || { echo -e "\e[1;31mFailed to download update_lan_ip.sh.\e[0m"; return 1; }
     chmod +x "$QUECDECK_DIR/script/update_lan_ip.sh"
-    wget -O "/lib/systemd/system/lighttpd.service" $GITROOT/quecdeck/systemd/lighttpd.service
+    wget -O "/lib/systemd/system/lighttpd.service" $GITROOT/quecdeck/systemd/lighttpd.service || { echo -e "\e[1;31mFailed to download lighttpd.service.\e[0m"; return 1; }
     ln -sf "/lib/systemd/system/lighttpd.service" "/lib/systemd/system/multi-user.target.wants/"
     echo "www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /bin/systemctl is-active watchcat, /usrdata/quecdeck/script/write_htpasswd.sh" > /opt/etc/sudoers.d/www-data
 
@@ -188,7 +172,6 @@ install_lighttpd() {
 }
 
 install_quecdeck() {
-    remount_rw
     echo -e "\e[1;31m2) Installing quecdeck from the $GITTREE branch\e[0m"
 
     mkdir -p $QUECDECK_DIR
@@ -385,6 +368,7 @@ install_quecdeck() {
     # Verify integrity of all downloaded files against published checksums
     echo "Verifying file integrity..."
     CHECKSUMS_FILE="/tmp/quecdeck/checksums.sha256"
+    mkdir -p /tmp/quecdeck
     wget -q -O "\$CHECKSUMS_FILE" "$GITROOT/quecdeck/checksums.sha256"
     if [ ! -f "\$CHECKSUMS_FILE" ]; then
         echo "WARNING: Could not download checksums file, skipping verification."
@@ -413,7 +397,7 @@ install_quecdeck() {
             echo "All checksums verified OK."
         else
             echo "FATAL: One or more files failed checksum verification. Installation may be compromised."
-            exit 1
+            return 1
         fi
     fi
 
@@ -450,12 +434,20 @@ install_quecdeck() {
 }
 
 install_ttyd() {
+    # ttyd project does not publish official checksums — pin the hash of the known-good binary here.
+    # To update: download the new release, run sha256sum on it, and update TTYD_HASH + the URL below.
+    TTYD_VERSION="1.7.7"
+    TTYD_HASH="8240c8438b68d3b10b0e1a4e7c914d70fca6a7606b516f40bf40adfa1044d801"
+
     echo -e "\e[1;34mStarting ttyd installation process...\e[0m"
     cd $QUECDECK_DIR/console
-    curl -L -o ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.armhf && chmod +x ttyd
-    wget "$GITROOT/quecdeck/console/ttyd.bash" && chmod +x ttyd.bash
+    curl -L -o ttyd https://github.com/tsl0922/ttyd/releases/download/\${TTYD_VERSION}/ttyd.armhf || { echo -e "\e[1;31mFailed to download ttyd.\e[0m"; return 1; }
+    echo "\${TTYD_HASH}  ttyd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for ttyd.\e[0m"; rm -f ttyd; return 1; }
+    chmod +x ttyd
+    wget -q "$GITROOT/quecdeck/console/ttyd.bash" || { echo -e "\e[1;31mFailed to download ttyd.bash.\e[0m"; return 1; }
+    chmod +x ttyd.bash
     cd $QUECDECK_DIR/systemd/
-    wget "$GITROOT/quecdeck/systemd/ttyd.service"
+    wget -q "$GITROOT/quecdeck/systemd/ttyd.service" || { echo -e "\e[1;31mFailed to download ttyd.service.\e[0m"; return 1; }
     cp -f $QUECDECK_DIR/systemd/ttyd.service /lib/systemd/system/
     ln -sf /usrdata/quecdeck/console/ttyd /bin
 
@@ -466,12 +458,48 @@ install_ttyd() {
     echo -e "\e[1;32mInstallation Complete! Start ttyd from the Developer page when needed.\e[0m"
 }
 
-uninstall_quecdeck
-setup_firewall || { echo -e "\e[1;31mFirewall setup failed.\e[0m"; remount_ro; exit 1; }
-install_lighttpd
-install_quecdeck
-install_ttyd || echo -e "\e[1;33mWARNING: ttyd installation failed (GitHub may be unreachable). Web console will not be available. Re-run the installer to retry.\e[0m"
+result_uninstall="FAILED"
+result_lighttpd="FAILED"
+result_quecdeck="FAILED"
+result_ttyd="FAILED"
+result_firewall="FAILED"
 
+if [ -d "\$QUECDECK_DIR/www" ]; then
+    uninstall_quecdeck && result_uninstall="OK"
+else
+    result_uninstall="SKIPPED"
+fi
+install_lighttpd && result_lighttpd="OK"
+if [ "\$result_lighttpd" = "OK" ]; then
+    install_quecdeck && result_quecdeck="OK"
+fi
+install_ttyd        && result_ttyd="OK" || result_ttyd="WARNING"
+systemctl is-active firewall >/dev/null 2>&1 && result_firewall="OK" || result_firewall="FAILED"
+
+_show_result() {
+    local label="\$1" val="\$2"
+    case "\$val" in
+        OK)      echo -e "  \$(printf '%-22s' "\$label") \e[1;32m\$val\e[0m" ;;
+        WARNING) echo -e "  \$(printf '%-22s' "\$label") \e[1;33m\$val\e[0m" ;;
+        *)       echo -e "  \$(printf '%-22s' "\$label") \e[1;31m\$val\e[0m" ;;
+    esac
+}
+
+echo ""
+echo -e "\e[92m============================================\e[0m"
+echo -e "\e[92m  Install Summary\e[0m"
+echo -e "\e[92m============================================\e[0m"
+_show_result "Uninstall previous" "\$result_uninstall"
+_show_result "Lighttpd"           "\$result_lighttpd"
+_show_result "QuecDeck"           "\$result_quecdeck"
+_show_result "Firewall"           "\$result_firewall"
+_show_result "ttyd"               "\$result_ttyd"
+echo -e "\e[92m============================================\e[0m"
+
+rm -f /tmp/install_quecdeck.sh
+rm -f /lib/systemd/system/install_quecdeck.service
+rm -f /lib/systemd/system/multi-user.target.wants/install_quecdeck.service
+systemctl daemon-reload
 remount_ro
 exit 0
 EOF
@@ -479,17 +507,18 @@ EOF
 # Make the temporary script executable
 chmod +x "$TMP_SCRIPT"
 
-# Reload systemd, start the update service and stream its output to the terminal
+# Run the rest of the installation via the systemd service
 systemctl daemon-reload
-systemctl start $SERVICE_NAME &
-SVC_PID=$!
-sleep 1
-[ -f "$LOG_FILE" ] && tail -f "$LOG_FILE" &
-TAIL_PID=$!
-wait $SVC_PID
-SVC_EXIT=$?
-sleep 0.3
-kill $TAIL_PID 2>/dev/null
-wait $TAIL_PID 2>/dev/null
-rm -f "$TMP_SCRIPT" "$LOG_FILE"
-exit $SVC_EXIT
+systemctl start $SERVICE_NAME
+echo ""
+if [ -f "$LOG_FILE" ]; then
+    if grep -q "Install Summary" "$LOG_FILE"; then
+        echo -e "\e[1;32mQuecDeck installed.\e[0m"
+        echo ""
+        sed -n '/Install Summary/,$p' "$LOG_FILE"
+        echo ""
+    else
+        echo -e "\e[1;31mInstall did not complete. Check $LOG_FILE for details.\e[0m"
+    fi
+fi
+remount_ro

@@ -19,8 +19,8 @@ remount_ro() {
 
 # Check for existing Entware/opkg installation, install if not installed
 ensure_entware_installed() {
-    trap 'mount -o remount,ro /' EXIT
-    mount -o remount,rw /
+    trap 'remount_ro' EXIT
+    remount_rw
     if [ ! -f "/opt/bin/opkg" ]; then
         echo -e "\e[1;32mInstalling Entware/OPKG\e[0m"
         cd /tmp && wget -O installentware.sh "$GITROOT/installentware.sh"
@@ -89,7 +89,7 @@ ensure_entware_installed() {
             exit 1
         fi
     fi
-    mount -o remount,ro /
+    remount_ro
     trap - EXIT
 }
 
@@ -109,8 +109,8 @@ uninstall_entware() {
     rm -rf /usrdata/opt
 
     # Remove root fs entries: systemd units, /opt symlink, login binary
-    trap 'mount -o remount,ro /' EXIT
-    mount -o remount,rw /
+    trap 'remount_ro' EXIT
+    remount_rw
 
     rm -f /lib/systemd/system/multi-user.target.wants/rc.unslung.service
     rm -f /lib/systemd/system/rc.unslung.service
@@ -127,7 +127,7 @@ uninstall_entware() {
         echo -e "\e[1;31mWARNING: /bin/login.shadow not found — could not restore login binary. Console login may be broken.\e[0m"
     fi
 
-    mount -o remount,ro /
+    remount_ro
     trap - EXIT
 
     systemctl daemon-reload
@@ -166,18 +166,19 @@ install_quecdeck() {
     echo -e "\e[1;32mInstalling/updating QuecDeck...\e[0m"
     ensure_entware_installed
     set_quecdeck_passwd || return 1
+    echo ""
     echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
     mkdir -p /tmp/quecdeck
     wget -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-    echo "9626cafdecbebcef1426c5240e66a36dd2be4d0cdb9d3b2f617c082329887e3e  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
+    echo "555d1ca121e4da9a83c9dcb5495c1828e84d722069980efe5c6eadfd46c0c029  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
     chmod +x /tmp/quecdeck/update_quecdeck.sh
     /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }
     rm -f /tmp/quecdeck/update_quecdeck.sh
-    echo -e "\e[1;32mQuecDeck installed.\e[0m"
     if [ ! -f /opt/etc/.htpasswd ]; then
         lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
         [ -z "$lan_ip" ] && lan_ip="192.168.225.1"
+        echo ""
         echo -e "\e[1;33mOpen https://${lan_ip} in your browser to complete setup.\e[0m"
     fi
 }
@@ -191,7 +192,7 @@ uninstall_quecdeck_components() {
         *) echo -e "\e[1;33mUninstallation cancelled.\e[0m"; return ;;
     esac
 
-    trap 'mount -o remount,ro /' EXIT
+    trap 'remount_ro' EXIT
     remount_rw
 
     # Uninstall watchcat
@@ -315,7 +316,7 @@ sshd_service() {
             fi
 
             echo -e "\e[1;32mInstalling OpenSSH Server...\e[0m"
-            opkg install --force-maintainer openssh-server-pam
+            opkg install --force-maintainer openssh-server-pam || { echo -e "\e[1;31mFailed to install openssh-server-pam.\e[0m"; return; }
 
             # Remove opkg init.d scripts so rc.unslung doesn't manage it
             for script in /opt/etc/init.d/*sshd*; do
@@ -340,12 +341,12 @@ sshd_service() {
             wget -q -O /tmp/quecdeck/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
             echo "9a1e5b5fd1030dea0b11f601249f8932ac615051dad3bf2081ab00423afac1a5  /tmp/quecdeck/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; return; }
             echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
-            trap 'mount -o remount,ro /' EXIT
-            mount -o remount,rw /
+            trap 'remount_ro' EXIT
+            remount_rw
             cp -f /tmp/quecdeck/sshd.service /lib/systemd/system/sshd.service
             rm -f /tmp/quecdeck/sshd.service
             ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service
-            mount -o remount,ro /
+            remount_ro
             trap - EXIT
             systemctl daemon-reload
             systemctl start sshd
@@ -358,11 +359,11 @@ sshd_service() {
             systemctl stop sshd 2>/dev/null
             opkg remove openssh-server-pam 2>/dev/null
             rm -rf /opt/etc/ssh
-            trap 'mount -o remount,ro /' EXIT
-            mount -o remount,rw /
+            trap 'remount_ro' EXIT
+            remount_rw
             rm -f /lib/systemd/system/sshd.service
             rm -f /lib/systemd/system/multi-user.target.wants/sshd.service
-            mount -o remount,ro /
+            remount_ro
             trap - EXIT
             systemctl daemon-reload
             # Reload firewall so port 22 rule is removed immediately
@@ -397,23 +398,27 @@ lean_mode_service() {
             echo "Downloading Lean Mode files..."
             mkdir -p /usrdata/quecdeck/script /usrdata/quecdeck/systemd
             wget -q -O /usrdata/quecdeck/script/lean_mode.sh "$GITROOT/quecdeck/script/lean_mode.sh" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
+            echo "d6ede9ef2a3b6716ae0cf58a8934c62ec1f2f6e1b8a88e2f01f52eefec2f2a54  /usrdata/quecdeck/script/lean_mode.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean_mode.sh.\e[0m"; return; }
+            echo -e "\e[1;32mIntegrity verified: lean_mode.sh\e[0m"
             wget -q -O /usrdata/quecdeck/systemd/lean-mode.service "$GITROOT/quecdeck/systemd/lean-mode.service" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
+            echo "146beb37b2840d5aaad4323b6979dcc9a03373ea56ee2e9d7dcfabaad6ff91d0  /usrdata/quecdeck/systemd/lean-mode.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean-mode.service.\e[0m"; return; }
+            echo -e "\e[1;32mIntegrity verified: lean-mode.service\e[0m"
             chmod +x /usrdata/quecdeck/script/lean_mode.sh
-            trap 'mount -o remount,ro /' EXIT
-            mount -o remount,rw /
+            trap 'remount_ro' EXIT
+            remount_rw
             cp -f /usrdata/quecdeck/systemd/lean-mode.service /lib/systemd/system/lean-mode.service
             ln -sf /lib/systemd/system/lean-mode.service /lib/systemd/system/multi-user.target.wants/lean-mode.service
-            mount -o remount,ro /
+            remount_ro
             trap - EXIT
             systemctl daemon-reload
             echo -e "\e[1;32mLean Mode installed. Takes effect on next reboot.\e[0m"
             ;;
         2)
-            trap 'mount -o remount,ro /' EXIT
-            mount -o remount,rw /
+            trap 'remount_ro' EXIT
+            remount_rw
             rm -f /lib/systemd/system/lean-mode.service
             rm -f /lib/systemd/system/multi-user.target.wants/lean-mode.service
-            mount -o remount,ro /
+            remount_ro
             trap - EXIT
             systemctl daemon-reload
             echo -e "\e[1;32mLean Mode uninstalled.\e[0m"
@@ -430,13 +435,13 @@ disable_monitoring_services() {
     systemctl stop watchcat 2>/dev/null
     systemctl stop scheduled_restart 2>/dev/null
 
-    trap 'mount -o remount,ro /' EXIT
-    mount -o remount,rw /
+    trap 'remount_ro' EXIT
+    remount_rw
 
     rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
     rm -f /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
 
-    mount -o remount,ro /
+    remount_ro
     trap - EXIT
 
     rm -f /usrdata/quecdeck/var/watchcat.json
@@ -480,10 +485,8 @@ while true; do
     case $choice in
         1)
             install_quecdeck
-            for i in 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
-                printf "\rReturning to menu in %s..." "$i"
-                sleep 1
-            done
+            echo ""
+            read -t 15 -p "Press any key to return to menu (auto in 15s)..." -n 1
             echo
             ;;
         2)
