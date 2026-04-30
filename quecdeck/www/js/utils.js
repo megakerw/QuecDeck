@@ -76,11 +76,13 @@ document.addEventListener('alpine:init', () => {
   Alpine.store('waitModal', {
     show: false,
     title: '',
+    subtitle: '',
     countdown: 0,
     _interval: null,
-    start(title, seconds, onDone) {
+    start(title, seconds, onDone, subtitle = '') {
       this.show = true;
       this.title = title;
+      this.subtitle = subtitle;
       this.countdown = seconds;
       this._interval = setInterval(() => {
         this.countdown--;
@@ -159,6 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="loader"></div>
       <div class="loading-text d-flex flex-column">
         <h3 x-text="$store.waitModal.title"></h3>
+        <p x-show="$store.waitModal.subtitle" x-text="$store.waitModal.subtitle" class="text-muted small mt-1 mb-0"></p>
         <p class="mt-2">
           Refreshing in
           <span x-text="$store.waitModal.countdown" class="fw-medium"></span>
