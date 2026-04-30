@@ -24,7 +24,7 @@
               <div class="panel-title d-flex align-items-center gap-2 mb-3">
                 Connection Events
                 <span x-show="loadingConn" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
-                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" @click="refreshConnection()">Refresh</button>
+                <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshConnection()">Refresh</button>
               </div>
               <div x-show="connectionEvents.length === 0 && !loadingConn" class="text-muted small">No connection events recorded yet.</div>
               <div x-show="connectionEvents.length > 0" style="max-height:420px; overflow-y:auto">
@@ -56,7 +56,7 @@
               <div class="panel-title d-flex align-items-center gap-2 mb-3">
                 Access Events
                 <span x-show="loadingAccess" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
-                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" @click="refreshAccess()">Refresh</button>
+                <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshAccess()">Refresh</button>
               </div>
               <div x-show="accessEvents.length === 0 && !loadingAccess" class="text-muted small">No access events recorded yet.</div>
               <div x-show="accessEvents.length > 0" style="max-height:420px; overflow-y:auto">

@@ -29,8 +29,7 @@ remount_ro() {
 # Installation prep
 remount_rw
 systemctl daemon-reload
-rm $SERVICE_FILE > /dev/null 2>&1
-rm $SERVICE_NAME > /dev/null 2>&1
+rm -f $SERVICE_FILE
 
 # Create the systemd service file
 cat <<EOF > "$SERVICE_FILE"
@@ -100,10 +99,6 @@ uninstall_quecdeck() {
     systemctl stop connection-logger 2>/dev/null
     rm -f /lib/systemd/system/connection-logger.service
     rm -f /lib/systemd/system/multi-user.target.wants/connection-logger.service
-    systemctl stop quecdeck_generate_status
-    systemctl stop quecdeck_httpd
-    rm -f /lib/systemd/system/quecdeck_httpd.service
-    rm -f /lib/systemd/system/quecdeck_generate_status.service
     systemctl daemon-reload
 
     echo -e "\e[1;34mUninstalling ttyd...\e[0m"
@@ -127,14 +122,22 @@ uninstall_quecdeck() {
     echo "Uninstallation process completed."
 }
 
-install_lighttpd() {
-    # Check for quecdeck_httpd service and remove if exists
-    if [ -f "/lib/systemd/system/quecdeck_httpd.service" ]; then
-        systemctl stop quecdeck_httpd
-        rm /lib/systemd/system/quecdeck_httpd.service
-        rm /lib/systemd/system/multi-user.target.wants/quecdeck_httpd.service
-    fi
+setup_firewall() {
+    echo -e "\e[1;32mSetting up firewall...\e[0m"
+    mkdir -p "$QUECDECK_DIR/script"
+    wget -q -O "$QUECDECK_DIR/script/firewall.sh" $GITROOT/quecdeck/script/firewall.sh
+    chmod +x "$QUECDECK_DIR/script/firewall.sh"
+    mkdir -p /tmp/quecdeck
+    wget -q -O /tmp/quecdeck/firewall.service $GITROOT/quecdeck/systemd/firewall.service
+    cp -f /tmp/quecdeck/firewall.service /lib/systemd/system/firewall.service
+    rm -f /tmp/quecdeck/firewall.service
+    ln -sf /lib/systemd/system/firewall.service /lib/systemd/system/multi-user.target.wants/firewall.service
+    systemctl daemon-reload
+    systemctl start firewall
+    echo -e "\e[1;32mFirewall setup complete.\e[0m"
+}
 
+install_lighttpd() {
     /opt/bin/opkg update
     /opt/bin/opkg install sudo lighttpd lighttpd-mod-cgi lighttpd-mod-magnet lighttpd-mod-openssl lighttpd-mod-proxy
 
@@ -207,6 +210,7 @@ install_quecdeck() {
     wget -q $GITROOT/quecdeck/systemd/atcmd-daemon.service &
     wget -q $GITROOT/quecdeck/systemd/lean-mode.service &
     wget -q $GITROOT/quecdeck/systemd/connection-logger.service &
+    wget -q $GITROOT/quecdeck/systemd/firewall.service &
     wait
 
     cd $QUECDECK_DIR/script
@@ -221,6 +225,7 @@ install_quecdeck() {
     wget -q $GITROOT/quecdeck/script/watchcat.sh &
     wget -q $GITROOT/quecdeck/script/scheduled_restart.sh &
     wget -q $GITROOT/quecdeck/script/write_htpasswd.sh &
+    wget -q $GITROOT/quecdeck/script/firewall.sh &
     wait
 
     cd $QUECDECK_DIR/console
@@ -375,7 +380,7 @@ install_quecdeck() {
 
     # Verify integrity of all downloaded files against published checksums
     echo "Verifying file integrity..."
-    CHECKSUMS_FILE="/tmp/quecdeck_checksums.sha256"
+    CHECKSUMS_FILE="/tmp/quecdeck/checksums.sha256"
     wget -q -O "\$CHECKSUMS_FILE" "$GITROOT/quecdeck/checksums.sha256"
     if [ ! -f "\$CHECKSUMS_FILE" ]; then
         echo "WARNING: Could not download checksums file, skipping verification."
@@ -409,6 +414,8 @@ install_quecdeck() {
     fi
 
     systemctl daemon-reload
+    ln -sf /lib/systemd/system/firewall.service /lib/systemd/system/multi-user.target.wants/firewall.service
+    systemctl restart firewall
     ln -sf /lib/systemd/system/atcmd-daemon.service /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service
     systemctl restart atcmd-daemon
     ln -sf /lib/systemd/system/connection-logger.service /lib/systemd/system/multi-user.target.wants/connection-logger.service
@@ -456,10 +463,12 @@ install_ttyd() {
 }
 
 uninstall_quecdeck
+setup_firewall
 install_lighttpd
 install_quecdeck
 install_ttyd || echo -e "\e[1;33mWARNING: ttyd installation failed (GitHub may be unreachable). Web console will not be available. Re-run the installer to retry.\e[0m"
 
+rm -f /tmp/install_quecdeck.sh /tmp/install_quecdeck.log
 remount_ro
 exit 0
 EOF

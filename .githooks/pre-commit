@@ -19,6 +19,8 @@ CHECKSUMMED_FILES=(
   quecdeck/script/update_lan_ip.sh
   quecdeck/script/lean_mode.sh
   quecdeck/script/write_htpasswd.sh
+  quecdeck/script/firewall.sh
+  quecdeck/systemd/firewall.service
   quecdeck/systemd/lighttpd.service
   quecdeck/systemd/watchcat.service
   quecdeck/systemd/ttyd.service
@@ -95,7 +97,6 @@ CHECKSUMMED_FILES=(
   quecdeck/www/favicon.ico
   quecdeck/www/js/alpinejs.min.js
   quecdeck/www/js/bootstrap.bundle.min.js
-  quecdeck/www/js/chart.min.js
   quecdeck/www/css/bootstrap.min.css
   quecdeck/www/fonts/poppins-v23-latin-300italic.woff2
   quecdeck/www/fonts/poppins-v23-latin-300.woff2
@@ -175,9 +176,8 @@ echo "Updated $CHECKSUMS_FILE"
 # they must be updated in quecdeck.sh whenever the corresponding file changes.
 PINNED_FILES=(
   installentware.sh
-  updates/update_firewall.sh
-  updates/update_quecdeck.sh
-  components/sshd/sshd.service
+  update_quecdeck.sh
+  optional/sshd/sshd.service
   quecdeck/quecdeckpasswd
   quecdeck/quecdeckdevpasswd
 )

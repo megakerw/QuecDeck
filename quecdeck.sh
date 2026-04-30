@@ -7,7 +7,6 @@ REPONAME="QuecDeck"
 GITTREE="main"
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 QUECDECK_DIR="/usrdata/quecdeck"
-FIREWALL_DIR="/usrdata/firewall"
 # Function to remount file system as read-write
 remount_rw() {
     mount -o remount,rw /
@@ -166,21 +165,15 @@ set_root_passwd() {
 install_quecdeck() {
 	echo -e "\e[1;32mInstalling/updating QuecDeck...\e[0m"
 	ensure_entware_installed
-	mkdir -p /usrdata/updates
-	echo -e "\e[1;32mInstalling/updating dependency: firewall\e[0m"
-	wget -q -O /usrdata/updates/update_firewall.sh $GITROOT/updates/update_firewall.sh || { echo -e "\e[1;31mFailed to download update_firewall.sh.\e[0m"; return 1; }
-	echo "df64b9e8d59557a6faf24372dd82a6ee1ce552f37e4a85156408c7d06e34382e  /usrdata/updates/update_firewall.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_firewall.sh.\e[0m"; return 1; }
-	echo -e "\e[1;32mIntegrity verified: update_firewall.sh\e[0m"
-	chmod +x /usrdata/updates/update_firewall.sh
-	/usrdata/updates/update_firewall.sh || { echo -e "\e[1;31mFirewall update failed.\e[0m"; return 1; }
-	echo -e "\e[1;32mFirewall updated.\e[0m"
 	set_quecdeck_passwd || return 1
 	echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
-	wget -q -O /usrdata/updates/update_quecdeck.sh $GITROOT/updates/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-	echo "1fcfcc46e3aea938d846fab6914d347a26577b88af1be9e0042631fb48be877b  /usrdata/updates/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
+	mkdir -p /tmp/quecdeck
+	wget -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
+	echo "4180149ea788194490c4d1b2db79163e61d88940a3ca55b6c296f5265718c0cd  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
 	echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
-	chmod +x /usrdata/updates/update_quecdeck.sh
-	/usrdata/updates/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }
+	chmod +x /tmp/quecdeck/update_quecdeck.sh
+	/tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }
+	rm -f /tmp/quecdeck/update_quecdeck.sh
 	echo -e "\e[1;32mQuecDeck installed.\e[0m"
 	if [ ! -f /opt/etc/.htpasswd ]; then
 		lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
@@ -226,16 +219,10 @@ uninstall_quecdeck_components() {
     rm -f /lib/systemd/system/connection-logger.service
     rm -f /lib/systemd/system/multi-user.target.wants/connection-logger.service
 
-    # Clean up simpleupdated (legacy auto-update daemon)
-    systemctl stop simpleupdated > /dev/null 2>&1
-    rm -f /lib/systemd/system/simpleupdated.service
-    rm -f /lib/systemd/system/multi-user.target.wants/simpleupdated.service
-
     # Uninstall firewall
     systemctl stop firewall > /dev/null 2>&1
     rm -f /lib/systemd/system/firewall.service
     rm -f /lib/systemd/system/multi-user.target.wants/firewall.service
-    rm -rf "$FIREWALL_DIR"
 
     # Uninstall ttyd
     systemctl stop ttyd > /dev/null 2>&1
@@ -254,12 +241,6 @@ uninstall_quecdeck_components() {
 		rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
 	fi
 
-	systemctl stop quecdeck_generate_status > /dev/null 2>&1
-	systemctl stop quecdeck_httpd > /dev/null 2>&1
-	rm -f /lib/systemd/system/quecdeck_httpd.service
-	rm -f /lib/systemd/system/multi-user.target.wants/quecdeck_httpd.service
-	rm -f /lib/systemd/system/quecdeck_generate_status.service
-	rm -f /lib/systemd/system/multi-user.target.wants/quecdeck_generate_status.service
 	rm -f /opt/etc/sudoers.d/www-data
 	rm -f /opt/etc/.htpasswd
 	rm -f /opt/etc/.htpasswd_dev
@@ -268,7 +249,6 @@ uninstall_quecdeck_components() {
 	rm -f /usrdata/root/bin/quecdeckpasswd
 	rm -f /usrdata/root/bin/quecdeckdevpasswd
 	rmdir /usrdata/root/bin 2>/dev/null
-	rm -rf /usrdata/updates
 	systemctl daemon-reload
 	rm -rf "$QUECDECK_DIR"
 	echo "QuecDeck and Lighttpd (if present) uninstalled."
@@ -356,13 +336,14 @@ sshd_service() {
                 echo "sshd:x:106:65534:Linux User,,,:/opt/run/sshd:/bin/nologin" >> /opt/etc/passwd
 
             # Download and install service file
-            mkdir -p /usrdata/sshd
-            wget -q -O /usrdata/sshd/sshd.service "$GITROOT/components/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
-            echo "9a1e5b5fd1030dea0b11f601249f8932ac615051dad3bf2081ab00423afac1a5  /usrdata/sshd/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; return; }
+            mkdir -p /tmp/quecdeck
+            wget -q -O /tmp/quecdeck/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
+            echo "9a1e5b5fd1030dea0b11f601249f8932ac615051dad3bf2081ab00423afac1a5  /tmp/quecdeck/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; return; }
             echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
             trap 'mount -o remount,ro /' EXIT
             mount -o remount,rw /
-            cp -f /usrdata/sshd/sshd.service /lib/systemd/system/sshd.service
+            cp -f /tmp/quecdeck/sshd.service /lib/systemd/system/sshd.service
+            rm -f /tmp/quecdeck/sshd.service
             ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service
             mount -o remount,ro /
             trap - EXIT
@@ -383,7 +364,6 @@ sshd_service() {
             rm -f /lib/systemd/system/multi-user.target.wants/sshd.service
             mount -o remount,ro /
             trap - EXIT
-            rm -rf /usrdata/sshd
             systemctl daemon-reload
             # Reload firewall so port 22 rule is removed immediately
             systemctl restart firewall 2>/dev/null || true
