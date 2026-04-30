@@ -125,10 +125,14 @@ uninstall_quecdeck() {
 setup_firewall() {
     echo -e "\e[1;32mSetting up firewall...\e[0m"
     mkdir -p "$QUECDECK_DIR/script"
-    wget -q -O "$QUECDECK_DIR/script/firewall.sh" $GITROOT/quecdeck/script/firewall.sh
+    wget -q -O "$QUECDECK_DIR/script/firewall.sh" $GITROOT/quecdeck/script/firewall.sh || { echo -e "\e[1;31mFailed to download firewall.sh.\e[0m"; return 1; }
+    echo "8929a3c170a198d22f4f9646cb9f704fc7b3b0607b7cbc3a2bee67def9347237  $QUECDECK_DIR/script/firewall.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for firewall.sh.\e[0m"; return 1; }
+    echo -e "\e[1;32mIntegrity verified: firewall.sh\e[0m"
     chmod +x "$QUECDECK_DIR/script/firewall.sh"
     mkdir -p /tmp/quecdeck
-    wget -q -O /tmp/quecdeck/firewall.service $GITROOT/quecdeck/systemd/firewall.service
+    wget -q -O /tmp/quecdeck/firewall.service $GITROOT/quecdeck/systemd/firewall.service || { echo -e "\e[1;31mFailed to download firewall.service.\e[0m"; return 1; }
+    echo "e94c9aa3daf963085eac4c30b7b8993e762b067bebeed05d2ee5689feee50631  /tmp/quecdeck/firewall.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for firewall.service.\e[0m"; return 1; }
+    echo -e "\e[1;32mIntegrity verified: firewall.service\e[0m"
     cp -f /tmp/quecdeck/firewall.service /lib/systemd/system/firewall.service
     rm -f /tmp/quecdeck/firewall.service
     ln -sf /lib/systemd/system/firewall.service /lib/systemd/system/multi-user.target.wants/firewall.service
@@ -463,12 +467,11 @@ install_ttyd() {
 }
 
 uninstall_quecdeck
-setup_firewall
+setup_firewall || { echo -e "\e[1;31mFirewall setup failed.\e[0m"; remount_ro; exit 1; }
 install_lighttpd
 install_quecdeck
 install_ttyd || echo -e "\e[1;33mWARNING: ttyd installation failed (GitHub may be unreachable). Web console will not be available. Re-run the installer to retry.\e[0m"
 
-rm -f /tmp/install_quecdeck.sh /tmp/install_quecdeck.log
 remount_ro
 exit 0
 EOF
@@ -476,6 +479,17 @@ EOF
 # Make the temporary script executable
 chmod +x "$TMP_SCRIPT"
 
-# Reload systemd to recognize the new service and start the update
+# Reload systemd, start the update service and stream its output to the terminal
 systemctl daemon-reload
-systemctl start $SERVICE_NAME
+systemctl start $SERVICE_NAME &
+SVC_PID=$!
+sleep 1
+[ -f "$LOG_FILE" ] && tail -f "$LOG_FILE" &
+TAIL_PID=$!
+wait $SVC_PID
+SVC_EXIT=$?
+sleep 0.3
+kill $TAIL_PID 2>/dev/null
+wait $TAIL_PID 2>/dev/null
+rm -f "$TMP_SCRIPT" "$LOG_FILE"
+exit $SVC_EXIT

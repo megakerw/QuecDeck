@@ -216,3 +216,41 @@ if [ "$hash_errors" = "1" ]; then
   echo "Commit blocked: update the hardcoded hashes in quecdeck.sh and re-stage it."
   exit 1
 fi
+
+# Verify that hardcoded hashes in update_quecdeck.sh match staged file content.
+UPDATE_PINNED_FILES=(
+  quecdeck/script/firewall.sh
+  quecdeck/systemd/firewall.service
+)
+
+if git diff --cached --name-only | grep -qx "update_quecdeck.sh"; then
+  update_quecdeck_sh=$(git show ":update_quecdeck.sh")
+else
+  update_quecdeck_sh=$(cat update_quecdeck.sh)
+fi
+
+for f in "${UPDATE_PINNED_FILES[@]}"; do
+  git show ":$f" > /dev/null 2>&1 || continue
+
+  actual=$(git show ":$f" | sha256sum | awk '{print $1}')
+  expected=$(echo "$update_quecdeck_sh" | grep -o "[a-f0-9]\{64\}.*$(basename "$f")" | awk '{print $1}' | head -1)
+
+  if [ -z "$expected" ]; then
+    continue
+  fi
+
+  if [ "$actual" != "$expected" ]; then
+    echo ""
+    echo "ERROR: Hash mismatch for $f"
+    echo "  Expected (update_quecdeck.sh): $expected"
+    echo "  Actual:                        $actual"
+    echo "  Update the hash in update_quecdeck.sh to: $actual"
+    hash_errors=1
+  fi
+done
+
+if [ "$hash_errors" = "1" ]; then
+  echo ""
+  echo "Commit blocked: update the hardcoded hashes in update_quecdeck.sh and re-stage it."
+  exit 1
+fi

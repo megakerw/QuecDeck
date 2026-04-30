@@ -54,7 +54,7 @@ ensure_entware_installed() {
             rm /bin/login /usr/bin/passwd
             ln -sf /opt/bin/login /bin
             ln -sf /opt/bin/passwd /usr/bin/
-			ln -sf /opt/bin/useradd /usr/bin/
+            ln -sf /opt/bin/useradd /usr/bin/
             echo -e "\e[1;31mPlease set the root password.\e[0m"
             /opt/bin/passwd
 
@@ -76,12 +76,12 @@ ensure_entware_installed() {
             sed -i '1s|/home/root:/bin/sh|/usrdata/root:/bin/bash|' /opt/etc/passwd
         fi
     fi
-	if [ ! -f "/opt/sbin/useradd" ]; then
-		echo "useradd does not exist. Installing shadow-useradd..."
-		opkg install shadow-useradd
-	fi
+    if [ ! -f "/opt/sbin/useradd" ]; then
+        echo "useradd does not exist. Installing shadow-useradd..."
+        opkg install shadow-useradd
+    fi
 
-	if [ ! -f "/usr/bin/curl" ] && [ ! -f "/opt/bin/curl" ]; then
+    if [ ! -f "/usr/bin/curl" ] && [ ! -f "/opt/bin/curl" ]; then
         echo "Installing curl..."
         opkg update && opkg install curl
         if [ "$?" -ne 0 ]; then
@@ -136,50 +136,50 @@ uninstall_entware() {
 }
 
 set_quecdeck_passwd(){
-	mkdir -p /usrdata/root/bin
-	wget -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
-	echo "a8a54427b71e33ba79fc63d1281fea059a91bcd9c986aef2d399f5394f84ee1e  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
-	echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
-	chmod +x /usrdata/root/bin/quecdeckpasswd
-	wget -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
-	echo "d57de363de9fa3e8936762bfd6fae56e474cb5649fc7dedc99f2ce776f355844  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
-	echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
-	chmod +x /usrdata/root/bin/quecdeckdevpasswd
-	echo -e "\e[1;32mTo change your quecdeck password in the future, run: quecdeckpasswd\e[0m"
-	echo -e "\e[1;32mTo change your developer password in the future, run: quecdeckdevpasswd\e[0m"
-	if [ -f /opt/etc/.htpasswd ]; then
-		echo -e "\e[1;32mExisting password kept.\e[0m"
-	fi
+    mkdir -p /usrdata/root/bin
+    wget -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
+    echo "a8a54427b71e33ba79fc63d1281fea059a91bcd9c986aef2d399f5394f84ee1e  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
+    echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
+    chmod +x /usrdata/root/bin/quecdeckpasswd
+    wget -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
+    echo "d57de363de9fa3e8936762bfd6fae56e474cb5649fc7dedc99f2ce776f355844  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
+    echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
+    chmod +x /usrdata/root/bin/quecdeckdevpasswd
+    echo -e "\e[1;32mTo change your quecdeck password in the future, run: quecdeckpasswd\e[0m"
+    echo -e "\e[1;32mTo change your developer password in the future, run: quecdeckdevpasswd\e[0m"
+    if [ -f /opt/etc/.htpasswd ]; then
+        echo -e "\e[1;32mExisting password kept.\e[0m"
+    fi
 }
 
 set_devpasswd() {
-	/usrdata/root/bin/quecdeckdevpasswd
+    /usrdata/root/bin/quecdeckdevpasswd
 }
 
 set_root_passwd() {
-	echo -e "\e[1;31mPlease set the root/console password.\e[0m"
-	/opt/bin/passwd
+    echo -e "\e[1;31mPlease set the root/console password.\e[0m"
+    /opt/bin/passwd
 }
 
 # Function to install/update QuecDeck
 install_quecdeck() {
-	echo -e "\e[1;32mInstalling/updating QuecDeck...\e[0m"
-	ensure_entware_installed
-	set_quecdeck_passwd || return 1
-	echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
-	mkdir -p /tmp/quecdeck
-	wget -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-	echo "4180149ea788194490c4d1b2db79163e61d88940a3ca55b6c296f5265718c0cd  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
-	echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
-	chmod +x /tmp/quecdeck/update_quecdeck.sh
-	/tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }
-	rm -f /tmp/quecdeck/update_quecdeck.sh
-	echo -e "\e[1;32mQuecDeck installed.\e[0m"
-	if [ ! -f /opt/etc/.htpasswd ]; then
-		lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
-		[ -z "$lan_ip" ] && lan_ip="192.168.225.1"
-		echo -e "\e[1;33mOpen https://${lan_ip} in your browser to complete setup.\e[0m"
-	fi
+    echo -e "\e[1;32mInstalling/updating QuecDeck...\e[0m"
+    ensure_entware_installed
+    set_quecdeck_passwd || return 1
+    echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
+    mkdir -p /tmp/quecdeck
+    wget -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
+    echo "9626cafdecbebcef1426c5240e66a36dd2be4d0cdb9d3b2f617c082329887e3e  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
+    echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
+    chmod +x /tmp/quecdeck/update_quecdeck.sh
+    /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }
+    rm -f /tmp/quecdeck/update_quecdeck.sh
+    echo -e "\e[1;32mQuecDeck installed.\e[0m"
+    if [ ! -f /opt/etc/.htpasswd ]; then
+        lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
+        [ -z "$lan_ip" ] && lan_ip="192.168.225.1"
+        echo -e "\e[1;33mOpen https://${lan_ip} in your browser to complete setup.\e[0m"
+    fi
 }
 
 # Function to Uninstall QuecDeck and dependencies
@@ -230,30 +230,30 @@ uninstall_quecdeck_components() {
     rm -f /lib/systemd/system/multi-user.target.wants/ttyd.service
     rm -f /bin/ttyd
 
-	echo "Uninstalling the rest of QuecDeck..."
+    echo "Uninstalling the rest of QuecDeck..."
 
-	# Check if Lighttpd service is installed and remove it if present
-	if [ -f "/lib/systemd/system/lighttpd.service" ]; then
-		echo "Lighttpd detected, uninstalling Lighttpd and its modules..."
-		systemctl stop lighttpd 2>/dev/null
-		opkg --force-remove --force-removal-of-dependent-packages remove lighttpd-mod-authn_file lighttpd-mod-auth lighttpd-mod-magnet lighttpd-mod-cgi lighttpd-mod-openssl lighttpd-mod-proxy lighttpd
-		rm -f /lib/systemd/system/lighttpd.service
-		rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
-	fi
+    # Check if Lighttpd service is installed and remove it if present
+    if [ -f "/lib/systemd/system/lighttpd.service" ]; then
+        echo "Lighttpd detected, uninstalling Lighttpd and its modules..."
+        systemctl stop lighttpd 2>/dev/null
+        opkg --force-remove --force-removal-of-dependent-packages remove lighttpd-mod-authn_file lighttpd-mod-auth lighttpd-mod-magnet lighttpd-mod-cgi lighttpd-mod-openssl lighttpd-mod-proxy lighttpd
+        rm -f /lib/systemd/system/lighttpd.service
+        rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
+    fi
 
-	rm -f /opt/etc/sudoers.d/www-data
-	rm -f /opt/etc/.htpasswd
-	rm -f /opt/etc/.htpasswd_dev
-	rm -f /usrdata/root/.profile
-	rm -f /usrdata/root/bin/menu
-	rm -f /usrdata/root/bin/quecdeckpasswd
-	rm -f /usrdata/root/bin/quecdeckdevpasswd
-	rmdir /usrdata/root/bin 2>/dev/null
-	systemctl daemon-reload
-	rm -rf "$QUECDECK_DIR"
-	echo "QuecDeck and Lighttpd (if present) uninstalled."
-	remount_ro
-	trap - EXIT
+    rm -f /opt/etc/sudoers.d/www-data
+    rm -f /opt/etc/.htpasswd
+    rm -f /opt/etc/.htpasswd_dev
+    rm -f /usrdata/root/.profile
+    rm -f /usrdata/root/bin/menu
+    rm -f /usrdata/root/bin/quecdeckpasswd
+    rm -f /usrdata/root/bin/quecdeckdevpasswd
+    rmdir /usrdata/root/bin 2>/dev/null
+    systemctl daemon-reload
+    rm -rf "$QUECDECK_DIR"
+    echo "QuecDeck and Lighttpd (if present) uninstalled."
+    remount_ro
+    trap - EXIT
 
     echo "Uninstallation process completed."
 }
@@ -470,74 +470,74 @@ while true; do
     echo -e "\e[91m4) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m" # Light Red
     echo -e "\e[91m5) Uninstall QuecDeck\e[0m" # Light Red
     echo -e "\e[91m6) Uninstall Entware/OPKG\e[0m" # Light Red
-	echo -e "\e[95m7) Set QuecDeck (admin) password\e[0m" # Light Purple
-	echo -e "\e[95m8) Set Developer access (devadmin) password\e[0m" # Light Purple
-	echo -e "\e[94m9) Set Console/ttyd (root) password\e[0m" # Light Blue
-	echo -e "\e[91m10) Reboot\e[0m" # Light Red
-	echo -e "\e[93m11) Exit\e[0m" # Yellow
+    echo -e "\e[95m7) Set QuecDeck (admin) password\e[0m" # Light Purple
+    echo -e "\e[95m8) Set Developer access (devadmin) password\e[0m" # Light Purple
+    echo -e "\e[94m9) Set Console/ttyd (root) password\e[0m" # Light Blue
+    echo -e "\e[91m10) Reboot\e[0m" # Light Red
+    echo -e "\e[93m11) Exit\e[0m" # Yellow
     read -p "Enter your choice: " choice
 
     case $choice in
-		1)
-			install_quecdeck
-			for i in 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
-				printf "\rReturning to menu in %s..." "$i"
-				sleep 1
-			done
-			echo
-			;;
-		2)
-			sshd_service
-			;;
-		3)
-			lean_mode_service
-			;;
-		4)
-			echo -e "\e[1;31mThis will disable Watchcat and Scheduled Restart.\e[0m"
-			read -p "Are you sure? (y/n): " confirm
-			case "$confirm" in
-				y|Y) disable_monitoring_services ;;
-				*) echo -e "\e[1;33mCancelled.\e[0m" ;;
-			esac
-			;;
-		5)
-			uninstall_quecdeck_components
-			;;
-		6)
-			echo -e "\e[1;31mAre you sure you want to uninstall Entware/OPKG?\e[0m"
-			read -p "Continue? (y/n): " user_choice
-			case "$user_choice" in
-				y|Y)
-					uninstall_entware
-					echo -e "\e[1;32mEntware has been uninstalled.\e[0m"
-					;;
-				*)
-					echo -e "\e[1;33mUninstallation cancelled.\e[0m"
-					;;
-			esac
-			;;
-		7)
-			set_quecdeck_passwd
-			;;
-		8)
-			set_devpasswd
-			;;
-		9)
-			set_root_passwd
-			;;
-		10)
-			read -p "Reboot the modem? (y/n): " reboot_confirm
-			case "$reboot_confirm" in
-				y|Y) reboot ;;
-				*) echo -e "\e[1;33mReboot cancelled.\e[0m" ;;
-			esac
-			;;
-		11)
-			echo -e "\e[1;32mGoodbye!\e[0m"
-			break
-			;;
-		*)
-			echo -e "\e[1;31mInvalid option\e[0m"
-			;;
-	esac
+        1)
+            install_quecdeck
+            for i in 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
+                printf "\rReturning to menu in %s..." "$i"
+                sleep 1
+            done
+            echo
+            ;;
+        2)
+            sshd_service
+            ;;
+        3)
+            lean_mode_service
+            ;;
+        4)
+            echo -e "\e[1;31mThis will disable Watchcat and Scheduled Restart.\e[0m"
+            read -p "Are you sure? (y/n): " confirm
+            case "$confirm" in
+                y|Y) disable_monitoring_services ;;
+                *) echo -e "\e[1;33mCancelled.\e[0m" ;;
+            esac
+            ;;
+        5)
+            uninstall_quecdeck_components
+            ;;
+        6)
+            echo -e "\e[1;31mAre you sure you want to uninstall Entware/OPKG?\e[0m"
+            read -p "Continue? (y/n): " user_choice
+            case "$user_choice" in
+                y|Y)
+                    uninstall_entware
+                    echo -e "\e[1;32mEntware has been uninstalled.\e[0m"
+                    ;;
+                *)
+                    echo -e "\e[1;33mUninstallation cancelled.\e[0m"
+                    ;;
+            esac
+            ;;
+        7)
+            set_quecdeck_passwd
+            ;;
+        8)
+            set_devpasswd
+            ;;
+        9)
+            set_root_passwd
+            ;;
+        10)
+            read -p "Reboot the modem? (y/n): " reboot_confirm
+            case "$reboot_confirm" in
+                y|Y) reboot ;;
+                *) echo -e "\e[1;33mReboot cancelled.\e[0m" ;;
+            esac
+            ;;
+        11)
+            echo -e "\e[1;32mGoodbye!\e[0m"
+            break
+            ;;
+        *)
+            echo -e "\e[1;31mInvalid option\e[0m"
+            ;;
+    esac
 done
