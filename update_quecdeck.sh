@@ -481,20 +481,20 @@ _show_result() {
     case "\$val" in
         OK)      echo -e "  \$(printf '%-22s' "\$label") \e[1;32m\$val\e[0m" ;;
         WARNING) echo -e "  \$(printf '%-22s' "\$label") \e[1;33m\$val\e[0m" ;;
+        SKIPPED) echo -e "  \$(printf '%-22s' "\$label") \$val" ;;
         *)       echo -e "  \$(printf '%-22s' "\$label") \e[1;31m\$val\e[0m" ;;
     esac
 }
 
 echo ""
-echo -e "\e[92m============================================\e[0m"
-echo -e "\e[92m  Install Summary\e[0m"
-echo -e "\e[92m============================================\e[0m"
+echo "Install Summary"
+echo "============================================"
 _show_result "Uninstall previous" "\$result_uninstall"
 _show_result "Lighttpd"           "\$result_lighttpd"
 _show_result "QuecDeck"           "\$result_quecdeck"
 _show_result "Firewall"           "\$result_firewall"
 _show_result "ttyd"               "\$result_ttyd"
-echo -e "\e[92m============================================\e[0m"
+echo "============================================"
 
 rm -f /tmp/install_quecdeck.sh
 rm -f /lib/systemd/system/install_quecdeck.service

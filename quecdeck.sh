@@ -170,7 +170,7 @@ install_quecdeck() {
     echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
     mkdir -p /tmp/quecdeck
     wget -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-    echo "555d1ca121e4da9a83c9dcb5495c1828e84d722069980efe5c6eadfd46c0c029  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
+    echo "bd072ab94a04daa85121ac06357e9f4d128b23ebbb5c320a42f93390b3fde0c4  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
     chmod +x /tmp/quecdeck/update_quecdeck.sh
     /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }
@@ -247,6 +247,7 @@ uninstall_quecdeck_components() {
     rm -f /opt/etc/.htpasswd_dev
     rm -f /usrdata/root/.profile
     rm -f /usrdata/root/bin/menu
+    rm -f /usrdata/root/bin/atcli
     rm -f /usrdata/root/bin/quecdeckpasswd
     rm -f /usrdata/root/bin/quecdeckdevpasswd
     rmdir /usrdata/root/bin 2>/dev/null
@@ -486,7 +487,7 @@ while true; do
         1)
             install_quecdeck
             echo ""
-            read -t 15 -p "Press any key to return to menu (auto in 15s)..." -n 1
+            read -t 15 -p "Press Enter to return to menu (auto in 15s)..."
             echo
             ;;
         2)
