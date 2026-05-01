@@ -487,8 +487,7 @@ while true; do
         1)
             install_quecdeck
             echo ""
-            read -t 15 -p "Press Enter to return to menu (auto in 15s)..."
-            echo
+            read -p "Press Enter to return to menu..."
             ;;
         2)
             sshd_service
