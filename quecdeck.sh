@@ -170,7 +170,7 @@ install_quecdeck() {
     echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
     mkdir -p /tmp/quecdeck
     wget -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-    echo "bd072ab94a04daa85121ac06357e9f4d128b23ebbb5c320a42f93390b3fde0c4  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
+    echo "6ecf35fc9e6b8e7206c8e6202e325157f119a9c2aaaf24dcfe6316d0405118fd  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
     chmod +x /tmp/quecdeck/update_quecdeck.sh
     /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }

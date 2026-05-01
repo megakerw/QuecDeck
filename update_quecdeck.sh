@@ -509,6 +509,7 @@ chmod +x "$TMP_SCRIPT"
 
 # Run the rest of the installation via the systemd service
 systemctl daemon-reload
+rm -f "$LOG_FILE"
 systemctl start $SERVICE_NAME
 echo ""
 if [ -f "$LOG_FILE" ]; then
