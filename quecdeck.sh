@@ -214,11 +214,13 @@ set_quecdeck_passwd(){
     echo "d57de363de9fa3e8936762bfd6fae56e474cb5649fc7dedc99f2ce776f355844  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
     chmod +x /usrdata/root/bin/quecdeckdevpasswd
-    echo -e "\e[1;32mTo change your quecdeck password in the future, run: quecdeckpasswd\e[0m"
-    echo -e "\e[1;32mTo change your developer password in the future, run: quecdeckdevpasswd\e[0m"
     if [ -f /opt/etc/.htpasswd ]; then
         echo -e "\e[1;32mExisting password kept.\e[0m"
     fi
+}
+
+set_adminpasswd() {
+    /usrdata/root/bin/quecdeckpasswd
 }
 
 set_devpasswd() {
@@ -639,7 +641,7 @@ while true; do
             esac
             ;;
         7)
-            set_quecdeck_passwd
+            set_adminpasswd
             ;;
         8)
             set_devpasswd
