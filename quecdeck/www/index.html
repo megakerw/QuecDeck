@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=eca391e2" />
-    <link rel="stylesheet" href="css/styles.css?v=eca391e2" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=0798f593" />
+    <link rel="stylesheet" href="css/styles.css?v=0798f593" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=eca391e2"></script>
-    <script src="js/utils.js?v=eca391e2"></script>
-    <script src="js/alpinejs.min.js?v=eca391e2" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=0798f593"></script>
+    <script src="js/utils.js?v=0798f593"></script>
+    <script src="js/alpinejs.min.js?v=0798f593" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="processAllInfos()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=eca391e2"></script>
+        <script src="js/nav.js?v=0798f593"></script>
 
         <div class="row mt-4 mb-0 g-3">
           <div class="col-6 col-sm-4 col-lg-2">
@@ -191,8 +191,12 @@
                         <td x-text="networkMode"></td>
                       </tr>
                       <tr>
-                        <th>Bands</th>
-                        <td class="text-break" x-text="bands"></td>
+                        <th>Band (PCC)</th>
+                        <td class="text-break" x-text="pccBand"></td>
+                      </tr>
+                      <tr x-show="sccBands !== '-'">
+                        <th>Bands (SCC)</th>
+                        <td class="text-break" x-text="sccBands"></td>
                       </tr>
                       <tr>
                         <th>Bandwidth</th>
@@ -478,8 +482,8 @@
         </div>
       </div>
     </main>
-    <script src="js/dark-mode.js?v=eca391e2"></script>
+    <script src="js/dark-mode.js?v=0798f593"></script>
 
-    <script src="js/home.js?v=eca391e2"></script>
+    <script src="js/home.js?v=0798f593"></script>
   </body>
 </html>

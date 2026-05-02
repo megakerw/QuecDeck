@@ -48,6 +48,8 @@ function processAllInfos() {
     apn: "Unknown",
     networkMode: "Disconnected",
     bands: "Unknown Bands",
+    pccBand: "-",
+    sccBands: "-",
     bandwidth: "Unknown Bandwidth",
     earfcns: "000",
     pccPCI: "0",
@@ -227,6 +229,20 @@ function processAllInfos() {
               this.bands = bands_5g.join(", ");
             } else {
               this.bands = "No Bands";
+            }
+
+            // --- PCC / SCC band split ---
+            const trim = (b) => b?.trim() ?? "";
+            if (this.networkMode === "5G SA TDD" || this.networkMode === "5G SA FDD") {
+              this.pccBand = trim(bands_5g[0]) || "-";
+              this.sccBands = bands_5g.slice(1).map(trim).filter(Boolean).join(", ") || "-";
+            } else if (this.networkMode === "5G NSA") {
+              this.pccBand = trim(bands[0]) || "-";
+              const scc = [...bands.slice(1), ...bands_5g].map(trim).filter(Boolean);
+              this.sccBands = scc.join(", ") || "-";
+            } else {
+              this.pccBand = trim(bands[0]) || "-";
+              this.sccBands = bands.slice(1).map(trim).filter(Boolean).join(", ") || "-";
             }
 
             // --- Bandwidth ---

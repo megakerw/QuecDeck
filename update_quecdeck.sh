@@ -83,18 +83,16 @@ scheduled_restart_was_installed=0
 [ -L /lib/systemd/system/multi-user.target.wants/scheduled_restart.service ] && scheduled_restart_was_installed=1
 
 uninstall_quecdeck() {
-    echo "Uninstalling QuecDeck..."
+    echo -e "\e[1;32mUninstalling QuecDeck...\e[0m"
 
     # Check if Lighttpd service is installed and remove it if present
     if [ -f "/lib/systemd/system/lighttpd.service" ]; then
-        echo "Lighttpd detected, uninstalling Lighttpd webserver and its modules..."
         systemctl stop lighttpd
         rm -f /lib/systemd/system/lighttpd.service
         rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
         opkg --force-remove --force-removal-of-dependent-packages remove lighttpd-mod-authn_file lighttpd-mod-auth lighttpd-mod-magnet lighttpd-mod-cgi lighttpd-mod-openssl lighttpd-mod-proxy lighttpd
     fi
 
-    echo -e "\e[1;34mUninstalling quecdeck content...\e[0m"
     systemctl stop watchcat 2>/dev/null
     systemctl stop scheduled_restart 2>/dev/null
     systemctl stop atcmd-daemon 2>/dev/null
@@ -105,7 +103,6 @@ uninstall_quecdeck() {
     rm -f /lib/systemd/system/multi-user.target.wants/connection-logger.service
     systemctl daemon-reload
 
-    echo -e "\e[1;34mUninstalling ttyd...\e[0m"
     systemctl stop ttyd 2>/dev/null
     # Preserve var/ (watchcat config, lan_ip) and SSL certs across updates
     rm -f "$QUECDECK_DIR/atcli"
@@ -120,9 +117,7 @@ uninstall_quecdeck() {
     rm -f /lib/systemd/system/multi-user.target.wants/lean-mode.service
     rm -f /bin/ttyd
     rm -f /opt/etc/sudoers.d/www-data
-    echo -e "\e[1;32mttyd has been uninstalled.\e[0m"
-
-    echo "Uninstallation process completed."
+    echo -e "\e[1;32mQuecDeck uninstalled.\e[0m"
 }
 
 install_lighttpd() {
@@ -138,7 +133,7 @@ install_lighttpd() {
     done
 
     systemctl stop lighttpd 2>/dev/null
-    echo -e "\033[0;32mInstalling/Updating Lighttpd...\033[0m"
+    echo -e "\e[1;32mInstalling Lighttpd...\e[0m"
     mkdir -p "$QUECDECK_DIR/script"
     wget -O "$QUECDECK_DIR/lighttpd.conf" $GITROOT/quecdeck/lighttpd.conf || { echo -e "\e[1;31mFailed to download lighttpd.conf.\e[0m"; return 1; }
     wget -O "$QUECDECK_DIR/script/update_lan_ip.sh" $GITROOT/quecdeck/script/update_lan_ip.sh || { echo -e "\e[1;31mFailed to download update_lan_ip.sh.\e[0m"; return 1; }
@@ -168,11 +163,11 @@ install_lighttpd() {
     systemctl daemon-reload
     systemctl start lighttpd || { echo -e "\e[1;31mWARNING: lighttpd failed to start — check 'systemctl status lighttpd' for details.\e[0m"; return 1; }
 
-    echo -e "\033[0;32mLighttpd installation/update complete.\033[0m"
+    echo -e "\e[1;32mLighttpd installed.\e[0m"
 }
 
 install_quecdeck() {
-    echo -e "\e[1;31m2) Installing quecdeck from the $GITTREE branch\e[0m"
+    echo -e "\e[1;32mInstalling QuecDeck...\e[0m"
 
     mkdir -p $QUECDECK_DIR
     mkdir -p $QUECDECK_DIR/systemd
@@ -439,7 +434,7 @@ install_ttyd() {
     TTYD_VERSION="1.7.7"
     TTYD_HASH="8240c8438b68d3b10b0e1a4e7c914d70fca6a7606b516f40bf40adfa1044d801"
 
-    echo -e "\e[1;34mStarting ttyd installation process...\e[0m"
+    echo -e "\e[1;32mInstalling ttyd...\e[0m"
     cd $QUECDECK_DIR/console
     curl -L -o ttyd https://github.com/tsl0922/ttyd/releases/download/\${TTYD_VERSION}/ttyd.armhf || { echo -e "\e[1;31mFailed to download ttyd.\e[0m"; return 1; }
     echo "\${TTYD_HASH}  ttyd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for ttyd.\e[0m"; rm -f ttyd; return 1; }
@@ -455,7 +450,7 @@ install_ttyd() {
     systemctl daemon-reload
     rm -f /lib/systemd/system/multi-user.target.wants/ttyd.service
 
-    echo -e "\e[1;32mInstallation Complete! Start ttyd from the Developer page when needed.\e[0m"
+    echo -e "\e[1;32mttyd installed.\e[0m"
 }
 
 result_uninstall="FAILED"
@@ -487,7 +482,7 @@ _show_result() {
 }
 
 echo ""
-echo "Install Summary"
+echo -e "\e[1;32mInstall Summary\e[0m"
 echo "============================================"
 _show_result "Uninstall previous" "\$result_uninstall"
 _show_result "Lighttpd"           "\$result_lighttpd"
@@ -511,7 +506,6 @@ chmod +x "$TMP_SCRIPT"
 systemctl daemon-reload
 rm -f "$LOG_FILE"
 systemctl start $SERVICE_NAME || { echo -e "\e[1;31mFailed to start install service. Check 'systemctl status $SERVICE_NAME' for details.\e[0m"; exit 1; }
-echo ""
 if [ -f "$LOG_FILE" ]; then
     if grep -q "Install Summary" "$LOG_FILE"; then
         echo -e "\e[1;32mQuecDeck installed.\e[0m"
