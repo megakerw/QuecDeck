@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=0798f593" />
-    <link rel="stylesheet" href="css/styles.css?v=0798f593" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=3cd64ba2" />
+    <link rel="stylesheet" href="css/styles.css?v=3cd64ba2" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=0798f593"></script>
-    <script src="js/utils.js?v=0798f593"></script>
-    <script src="js/alpinejs.min.js?v=0798f593" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=3cd64ba2"></script>
+    <script src="js/utils.js?v=3cd64ba2"></script>
+    <script src="js/alpinejs.min.js?v=3cd64ba2" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="processAllInfos()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=0798f593"></script>
+        <script src="js/nav.js?v=3cd64ba2"></script>
 
         <div class="row mt-4 mb-0 g-3">
           <div class="col-6 col-sm-4 col-lg-2">
@@ -203,17 +203,16 @@
                         <td x-text="bandwidth"></td>
                       </tr>
                       <tr>
-                        <th>E/ARFCN<sup>4G/5G</sup></th>
+                        <th>EARFCN / NR-ARFCN</th>
                         <td class="text-break" x-text="earfcns"></td>
                       </tr>
                       <tr>
-                        <th>PCI</th>
-                        <td
-                          x-show="sccPCI != '-' && sccPCI != ''"
-                          x-text="pccPCI + ', ' + sccPCI"
-                        ></td>
-
-                        <td x-show="sccPCI == '-' || sccPCI == ''" x-text="pccPCI"></td>
+                        <th>PCI (PCC)</th>
+                        <td x-text="pccPCI"></td>
+                      </tr>
+                      <tr x-show="sccPCI != '-' && sccPCI != ''">
+                        <th>PCI (SCC)</th>
+                        <td x-text="sccPCI"></td>
                       </tr>
                       <tr>
                         <th>IPv4</th>
@@ -243,9 +242,7 @@
                       </tr>
                       <tr>
                         <th>Traffic Stats</th>
-                        <td
-                          x-text="downloadStat + ' DL / ' + uploadStat + ' UL'"
-                        ></td>
+                        <td x-text="'↓ ' + downloadStat + ' / ↑ ' + uploadStat"></td>
                       </tr>
                       <tr x-show="csq != 'NR-SA Mode'">
                         <th>CSQ</th>
@@ -297,7 +294,7 @@
                         </td>
                       </tr>
                       <tr x-show="rsrqNR != '-'">
-                        <th>SS_RSRQ<sup>5G</sup></th>
+                        <th>RSRQ<sup>5G</sup></th>
                         <td>
                           <div
                             x-show="rsrqNR != '-' && rsrqNRPercentage != '0'"
@@ -359,7 +356,7 @@
                         </td>
                       </tr>
                       <tr x-show="rsrpNR != '-'">
-                        <th>SS_RSRP<sup>5G</sup></th>
+                        <th>RSRP<sup>5G</sup></th>
                         <td
                           class="gap-4 align-items-center"
                         >
@@ -482,8 +479,8 @@
         </div>
       </div>
     </main>
-    <script src="js/dark-mode.js?v=0798f593"></script>
+    <script src="js/dark-mode.js?v=3cd64ba2"></script>
 
-    <script src="js/home.js?v=0798f593"></script>
+    <script src="js/home.js?v=3cd64ba2"></script>
   </body>
 </html>

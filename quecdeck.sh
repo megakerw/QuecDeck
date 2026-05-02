@@ -588,7 +588,7 @@ while true; do
     echo ""
     echo "Select an option:"
     echo -e "\e[93m1) Install/Update QuecDeck\e[0m" # Yellow
-    echo -e "\e[93m2) sshd (install/uninstall)\e[0m" # Yellow
+    echo -e "\e[93m2) SSH server (install/uninstall)\e[0m" # Yellow
     echo -e "\e[33m3) Lean Mode (install/uninstall) [EXPERIMENTAL]\e[0m" # Dark Yellow/Orange
     echo -e "\e[91m4) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m" # Light Red
     echo -e "\e[91m5) Uninstall QuecDeck\e[0m" # Light Red
