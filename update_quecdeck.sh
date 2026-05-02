@@ -28,7 +28,7 @@ remount_ro() {
 
 # Installation prep
 remount_rw
-trap 'remount_ro' EXIT
+trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
 rm -f $SERVICE_FILE
 
 # Create the systemd service file
@@ -72,7 +72,7 @@ remount_ro() {
 }
 
 remount_rw
-trap 'remount_ro' EXIT
+trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
 
 # Preserve lean mode, watchcat, and scheduled restart state across updates
 lean_mode_was_installed=0
@@ -90,6 +90,7 @@ uninstall_quecdeck() {
         echo "Lighttpd detected, uninstalling Lighttpd webserver and its modules..."
         systemctl stop lighttpd
         rm -f /lib/systemd/system/lighttpd.service
+        rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
         opkg --force-remove --force-removal-of-dependent-packages remove lighttpd-mod-authn_file lighttpd-mod-auth lighttpd-mod-magnet lighttpd-mod-cgi lighttpd-mod-openssl lighttpd-mod-proxy lighttpd
     fi
 
@@ -105,8 +106,7 @@ uninstall_quecdeck() {
     systemctl daemon-reload
 
     echo -e "\e[1;34mUninstalling ttyd...\e[0m"
-    systemctl stop ttyd
-    rm -rf /usrdata/ttyd
+    systemctl stop ttyd 2>/dev/null
     # Preserve var/ (watchcat config, lan_ip) and SSL certs across updates
     rm -f "$QUECDECK_DIR/atcli"
     rm -f /usrdata/root/bin/atcli
@@ -137,7 +137,7 @@ install_lighttpd() {
         fi
     done
 
-    systemctl stop lighttpd
+    systemctl stop lighttpd 2>/dev/null
     echo -e "\033[0;32mInstalling/Updating Lighttpd...\033[0m"
     mkdir -p "$QUECDECK_DIR/script"
     wget -O "$QUECDECK_DIR/lighttpd.conf" $GITROOT/quecdeck/lighttpd.conf || { echo -e "\e[1;31mFailed to download lighttpd.conf.\e[0m"; return 1; }
@@ -166,7 +166,7 @@ install_lighttpd() {
     fi
     chmod 600 "$QUECDECK_DIR/server.key"
     systemctl daemon-reload
-    systemctl start lighttpd
+    systemctl start lighttpd || { echo -e "\e[1;31mWARNING: lighttpd failed to start — check 'systemctl status lighttpd' for details.\e[0m"; return 1; }
 
     echo -e "\033[0;32mLighttpd installation/update complete.\033[0m"
 }
@@ -510,7 +510,7 @@ chmod +x "$TMP_SCRIPT"
 # Run the rest of the installation via the systemd service
 systemctl daemon-reload
 rm -f "$LOG_FILE"
-systemctl start $SERVICE_NAME
+systemctl start $SERVICE_NAME || { echo -e "\e[1;31mFailed to start install service. Check 'systemctl status $SERVICE_NAME' for details.\e[0m"; exit 1; }
 echo ""
 if [ -f "$LOG_FILE" ]; then
     if grep -q "Install Summary" "$LOG_FILE"; then

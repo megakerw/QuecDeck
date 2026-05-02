@@ -19,21 +19,25 @@ remount_ro() {
 
 # Check for existing Entware/opkg installation, install if not installed
 ensure_entware_installed() {
-    trap 'remount_ro' EXIT
+    trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     remount_rw
     if [ ! -f "/opt/bin/opkg" ]; then
         echo -e "\e[1;32mInstalling Entware/OPKG\e[0m"
         cd /tmp && wget -O installentware.sh "$GITROOT/installentware.sh"
-        echo "fc8772a1a8686b73721c7bf7adcccc7c5425930151b5c1a40e533db4374dfb44  installentware.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; exit 1; }
+        echo "7b4546ccf4d37b3e3b85f40e2dd204933070354a8d3f735f0ad158b484612c1a  installentware.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f /tmp/installentware.sh; exit 1; }
         echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
         chmod +x installentware.sh && ./installentware.sh
         if [ "$?" -ne 0 ]; then
             echo -e "\e[1;31mEntware/OPKG installation failed. Please check your internet connection or the repository URL.\e[0m"
+            rm -f /tmp/installentware.sh
             exit 1
         fi
+        rm -f /tmp/installentware.sh
         cd /
     else
         if [ "$(readlink /bin/login)" != "/opt/bin/login" ]; then
+            [ ! -f /bin/login.shadow ] && cp /bin/login /bin/login.shadow
+            [ ! -f /usr/bin/passwd.shadow ] && [ -f /usr/bin/passwd ] && cp /usr/bin/passwd /usr/bin/passwd.shadow
             opkg update && opkg install shadow-login shadow-passwd shadow-useradd
             if [ "$?" -ne 0 ]; then
                 echo -e "\e[1;31mPackage installation failed. Please check your internet connection and try again.\e[0m"
@@ -41,8 +45,8 @@ ensure_entware_installed() {
             fi
 
             # Replace the login and passwd binaries and set home for root to a writable directory
-            rm /opt/etc/shadow
-            rm /opt/etc/passwd
+            rm -f /opt/etc/shadow
+            rm -f /opt/etc/passwd
             cp /etc/shadow /opt/etc/
             cp /etc/passwd /opt/etc
             mkdir -p /usrdata/root/bin
@@ -51,7 +55,7 @@ ensure_entware_installed() {
             echo "export PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin" >> /usrdata/root/.profile
             chmod +x /usrdata/root/.profile
             sed -i '1s|/home/root:/bin/sh|/usrdata/root:/bin/bash|' /opt/etc/passwd
-            rm /bin/login /usr/bin/passwd
+            rm -f /bin/login /usr/bin/passwd
             ln -sf /opt/bin/login /bin
             ln -sf /opt/bin/passwd /usr/bin/
             ln -sf /opt/bin/useradd /usr/bin/
@@ -93,23 +97,38 @@ ensure_entware_installed() {
     trap - EXIT
 }
 
-#Uninstall Entware if the Users chooses 
+#Uninstall Entware if the Users chooses
 uninstall_entware() {
     echo -e '\033[31mInfo: Starting Entware/OPKG uninstallation...\033[0m'
+
+    result_sshd="SKIPPED"
+    result_opt_unmount="SKIPPED"
+    result_entware_data="SKIPPED"
+    result_login="SKIPPED"
+    result_passwd="SKIPPED"
 
     # Stop services before touching the filesystem
     systemctl stop rc.unslung.service 2>/dev/null
     [ -f /opt/etc/init.d/rc.unslung ] && /opt/etc/init.d/rc.unslung stop
     systemctl stop opt.mount 2>/dev/null
 
+    # Stop sshd if installed — it is an Entware package and won't survive Entware removal
+    [ -f /lib/systemd/system/sshd.service ] && result_sshd="REMOVED"
+    systemctl stop sshd 2>/dev/null
+
     # Unmount /opt before removing it
-    mountpoint -q /opt && umount /opt 2>/dev/null
+    if mountpoint -q /opt; then
+        umount /opt \
+            && result_opt_unmount="OK" \
+            || { result_opt_unmount="WARNING"; echo -e "\e[1;31mWARNING: Could not unmount /opt — a reboot may be required to complete removal.\e[0m"; }
+    fi
 
     # Remove Entware data directory (/usrdata is always writable)
+    [ -d /usrdata/opt ] && result_entware_data="REMOVED"
     rm -rf /usrdata/opt
 
-    # Remove root fs entries: systemd units, /opt symlink, login binary
-    trap 'remount_ro' EXIT
+    # Remove root fs entries: systemd units, /opt mount point, login binary
+    trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     remount_rw
 
     rm -f /lib/systemd/system/multi-user.target.wants/rc.unslung.service
@@ -117,22 +136,72 @@ uninstall_entware() {
     rm -f /lib/systemd/system/multi-user.target.wants/start-opt-mount.service
     rm -f /lib/systemd/system/opt.mount
     rm -f /lib/systemd/system/start-opt-mount.service
+    rm -f /lib/systemd/system/sshd.service
+    rm -f /lib/systemd/system/multi-user.target.wants/sshd.service
     rm -rf /opt
 
-    # Restore original login binary compiled by Quectel
-    if [ -f /bin/login.shadow ]; then
-        rm -f /bin/login
-        ln /bin/login.shadow /bin/login
-    else
-        echo -e "\e[1;31mWARNING: /bin/login.shadow not found — could not restore login binary. Console login may be broken.\e[0m"
+    # Restore original login binary compiled by Quectel (only if still pointing at Entware)
+    if [ "$(readlink /bin/login)" = "/opt/bin/login" ]; then
+        if [ -f /bin/login.shadow ]; then
+            rm -f /bin/login
+            ln /bin/login.shadow /bin/login
+            result_login="RESTORED"
+        else
+            result_login="WARNING"
+            echo -e "\e[1;31mWARNING: /bin/login.shadow not found — could not restore login binary. Console login may be broken.\e[0m"
+        fi
     fi
+
+    # Restore original passwd binary compiled by Quectel (only if still pointing at Entware)
+    if [ "$(readlink /usr/bin/passwd)" = "/opt/bin/passwd" ]; then
+        if [ -f /usr/bin/passwd.shadow ]; then
+            rm -f /usr/bin/passwd
+            ln /usr/bin/passwd.shadow /usr/bin/passwd
+            result_passwd="RESTORED"
+        else
+            rm -f /usr/bin/passwd
+            result_passwd="REMOVED"
+        fi
+    fi
+
+    # Remove symlinks into /opt that are now dangling
+    rm -f /bin/opkg
+    rm -f /usr/bin/useradd
+    rm -f /bin/mc /bin/htop /bin/dfc /bin/lsof
 
     remount_ro
     trap - EXIT
 
     systemctl daemon-reload
 
-    echo -e '\033[32mInfo: Entware/OPKG has been uninstalled successfully.\033[0m'
+    echo ""
+    echo "Uninstall Summary"
+    echo "============================================"
+    case "$result_sshd" in
+        REMOVED) echo -e "  $(printf '%-22s' "SSHD") \e[1;32m$result_sshd\e[0m" ;;
+        *)       echo -e "  $(printf '%-22s' "SSHD") $result_sshd" ;;
+    esac
+    case "$result_opt_unmount" in
+        OK)      echo -e "  $(printf '%-22s' "/opt unmount") \e[1;32m$result_opt_unmount\e[0m" ;;
+        SKIPPED) echo -e "  $(printf '%-22s' "/opt unmount") $result_opt_unmount" ;;
+        *)       echo -e "  $(printf '%-22s' "/opt unmount") \e[1;31m$result_opt_unmount\e[0m" ;;
+    esac
+    case "$result_entware_data" in
+        REMOVED) echo -e "  $(printf '%-22s' "Entware data") \e[1;32m$result_entware_data\e[0m" ;;
+        *)       echo -e "  $(printf '%-22s' "Entware data") $result_entware_data" ;;
+    esac
+    case "$result_login" in
+        RESTORED) echo -e "  $(printf '%-22s' "login binary") \e[1;32m$result_login\e[0m" ;;
+        SKIPPED)  echo -e "  $(printf '%-22s' "login binary") $result_login" ;;
+        *)        echo -e "  $(printf '%-22s' "login binary") \e[1;31m$result_login\e[0m" ;;
+    esac
+    case "$result_passwd" in
+        RESTORED) echo -e "  $(printf '%-22s' "passwd binary") \e[1;32m$result_passwd\e[0m" ;;
+        REMOVED)  echo -e "  $(printf '%-22s' "passwd binary") $result_passwd" ;;
+        SKIPPED)  echo -e "  $(printf '%-22s' "passwd binary") $result_passwd" ;;
+        *)        echo -e "  $(printf '%-22s' "passwd binary") \e[1;31m$result_passwd\e[0m" ;;
+    esac
+    echo "============================================"
 }
 
 set_quecdeck_passwd(){
@@ -170,10 +239,10 @@ install_quecdeck() {
     echo -e "\e[1;32mInstalling/updating QuecDeck content\e[0m"
     mkdir -p /tmp/quecdeck
     wget -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-    echo "6ecf35fc9e6b8e7206c8e6202e325157f119a9c2aaaf24dcfe6316d0405118fd  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; return 1; }
+    echo "1ec39783b37f15a9884afecc51d52900eb466a87aacaba66a0231c1a449a2bac  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
     echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
     chmod +x /tmp/quecdeck/update_quecdeck.sh
-    /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; return 1; }
+    /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
     rm -f /tmp/quecdeck/update_quecdeck.sh
     if [ ! -f /opt/etc/.htpasswd ]; then
         lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
@@ -192,52 +261,76 @@ uninstall_quecdeck_components() {
         *) echo -e "\e[1;33mUninstallation cancelled.\e[0m"; return ;;
     esac
 
-    trap 'remount_ro' EXIT
+    _show_uninstall_result() {
+        local label="$1" val="$2"
+        case "$val" in
+            REMOVED) echo -e "  $(printf '%-22s' "$label") \e[1;32m$val\e[0m" ;;
+            SKIPPED) echo -e "  $(printf '%-22s' "$label") $val" ;;
+            *)       echo -e "  $(printf '%-22s' "$label") \e[1;31m$val\e[0m" ;;
+        esac
+    }
+
+    result_watchcat="SKIPPED"
+    result_scheduled_restart="SKIPPED"
+    result_lean_mode="SKIPPED"
+    result_atcmd="SKIPPED"
+    result_connection_logger="SKIPPED"
+    result_firewall="SKIPPED"
+    result_ttyd="SKIPPED"
+    result_lighttpd="SKIPPED"
+    result_files="SKIPPED"
+
+    trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     remount_rw
 
     # Uninstall watchcat
     systemctl stop watchcat > /dev/null 2>&1
+    [ -f /lib/systemd/system/watchcat.service ] && result_watchcat="REMOVED"
     rm -f /lib/systemd/system/watchcat.service
     rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
 
     # Uninstall scheduled restart
     systemctl stop scheduled_restart > /dev/null 2>&1
+    [ -f /lib/systemd/system/scheduled_restart.service ] && result_scheduled_restart="REMOVED"
     rm -f /lib/systemd/system/scheduled_restart.service
     rm -f /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
 
     # Uninstall lean mode
     systemctl stop lean-mode 2>/dev/null
+    [ -f /lib/systemd/system/lean-mode.service ] && result_lean_mode="REMOVED"
     rm -f /lib/systemd/system/lean-mode.service
     rm -f /lib/systemd/system/multi-user.target.wants/lean-mode.service
 
     # Uninstall atcmd daemon
     systemctl stop atcmd-daemon > /dev/null 2>&1
+    [ -f /lib/systemd/system/atcmd-daemon.service ] && result_atcmd="REMOVED"
     rm -f /lib/systemd/system/atcmd-daemon.service
     rm -f /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service
 
     # Uninstall connection logger
     systemctl stop connection-logger > /dev/null 2>&1
+    [ -f /lib/systemd/system/connection-logger.service ] && result_connection_logger="REMOVED"
     rm -f /lib/systemd/system/connection-logger.service
     rm -f /lib/systemd/system/multi-user.target.wants/connection-logger.service
 
     # Uninstall firewall
     systemctl stop firewall > /dev/null 2>&1
+    [ -f /lib/systemd/system/firewall.service ] && result_firewall="REMOVED"
     rm -f /lib/systemd/system/firewall.service
     rm -f /lib/systemd/system/multi-user.target.wants/firewall.service
 
     # Uninstall ttyd
     systemctl stop ttyd > /dev/null 2>&1
+    [ -f /lib/systemd/system/ttyd.service ] && result_ttyd="REMOVED"
     rm -f /lib/systemd/system/ttyd.service
     rm -f /lib/systemd/system/multi-user.target.wants/ttyd.service
     rm -f /bin/ttyd
 
-    echo "Uninstalling the rest of QuecDeck..."
-
     # Check if Lighttpd service is installed and remove it if present
     if [ -f "/lib/systemd/system/lighttpd.service" ]; then
-        echo "Lighttpd detected, uninstalling Lighttpd and its modules..."
         systemctl stop lighttpd 2>/dev/null
-        opkg --force-remove --force-removal-of-dependent-packages remove lighttpd-mod-authn_file lighttpd-mod-auth lighttpd-mod-magnet lighttpd-mod-cgi lighttpd-mod-openssl lighttpd-mod-proxy lighttpd
+        opkg --force-remove --force-removal-of-dependent-packages remove lighttpd-mod-authn_file lighttpd-mod-auth lighttpd-mod-magnet lighttpd-mod-cgi lighttpd-mod-openssl lighttpd-mod-proxy lighttpd \
+            && result_lighttpd="REMOVED" || result_lighttpd="FAILED"
         rm -f /lib/systemd/system/lighttpd.service
         rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
     fi
@@ -245,19 +338,35 @@ uninstall_quecdeck_components() {
     rm -f /opt/etc/sudoers.d/www-data
     rm -f /opt/etc/.htpasswd
     rm -f /opt/etc/.htpasswd_dev
+    # Revert root home/shell patch applied during Entware setup
+    [ -f /opt/etc/passwd ] && sed -i '1s|/usrdata/root:/bin/bash|/home/root:/bin/sh|' /opt/etc/passwd
     rm -f /usrdata/root/.profile
     rm -f /usrdata/root/bin/menu
     rm -f /usrdata/root/bin/atcli
     rm -f /usrdata/root/bin/quecdeckpasswd
     rm -f /usrdata/root/bin/quecdeckdevpasswd
     rmdir /usrdata/root/bin 2>/dev/null
+    rmdir /usrdata/root 2>/dev/null
     systemctl daemon-reload
+    [ -d "$QUECDECK_DIR" ] && result_files="REMOVED"
     rm -rf "$QUECDECK_DIR"
-    echo "QuecDeck and Lighttpd (if present) uninstalled."
+
     remount_ro
     trap - EXIT
 
-    echo "Uninstallation process completed."
+    echo ""
+    echo "Uninstall Summary"
+    echo "============================================"
+    _show_uninstall_result "Watchcat"           "$result_watchcat"
+    _show_uninstall_result "Scheduled restart"  "$result_scheduled_restart"
+    _show_uninstall_result "Lean mode"          "$result_lean_mode"
+    _show_uninstall_result "atcmd daemon"       "$result_atcmd"
+    _show_uninstall_result "Connection logger"  "$result_connection_logger"
+    _show_uninstall_result "Firewall"           "$result_firewall"
+    _show_uninstall_result "ttyd"               "$result_ttyd"
+    _show_uninstall_result "Lighttpd"           "$result_lighttpd"
+    _show_uninstall_result "QuecDeck files"     "$result_files"
+    echo "============================================"
 }
 
 
@@ -340,9 +449,9 @@ sshd_service() {
             # Download and install service file
             mkdir -p /tmp/quecdeck
             wget -q -O /tmp/quecdeck/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
-            echo "9a1e5b5fd1030dea0b11f601249f8932ac615051dad3bf2081ab00423afac1a5  /tmp/quecdeck/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; return; }
+            echo "9a1e5b5fd1030dea0b11f601249f8932ac615051dad3bf2081ab00423afac1a5  /tmp/quecdeck/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f /tmp/quecdeck/sshd.service; return; }
             echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
-            trap 'remount_ro' EXIT
+            trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
             remount_rw
             cp -f /tmp/quecdeck/sshd.service /lib/systemd/system/sshd.service
             rm -f /tmp/quecdeck/sshd.service
@@ -350,17 +459,17 @@ sshd_service() {
             remount_ro
             trap - EXIT
             systemctl daemon-reload
-            systemctl start sshd
+            systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start — check 'systemctl status sshd' for details.\e[0m"; }
             # Reload firewall so port 22 LAN-only rule takes effect immediately
             systemctl restart firewall 2>/dev/null || true
-            echo -e "\e[1;32mOpenSSH Server installed and started!\e[0m"
+            echo -e "\e[1;32mOpenSSH Server installed.\e[0m"
             ;;
         2)
             echo -e "\e[1;31mStopping and removing OpenSSH Server...\e[0m"
             systemctl stop sshd 2>/dev/null
             opkg remove openssh-server-pam 2>/dev/null
             rm -rf /opt/etc/ssh
-            trap 'remount_ro' EXIT
+            trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
             remount_rw
             rm -f /lib/systemd/system/sshd.service
             rm -f /lib/systemd/system/multi-user.target.wants/sshd.service
@@ -399,13 +508,13 @@ lean_mode_service() {
             echo "Downloading Lean Mode files..."
             mkdir -p /usrdata/quecdeck/script /usrdata/quecdeck/systemd
             wget -q -O /usrdata/quecdeck/script/lean_mode.sh "$GITROOT/quecdeck/script/lean_mode.sh" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
-            echo "d6ede9ef2a3b6716ae0cf58a8934c62ec1f2f6e1b8a88e2f01f52eefec2f2a54  /usrdata/quecdeck/script/lean_mode.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean_mode.sh.\e[0m"; return; }
+            echo "d6ede9ef2a3b6716ae0cf58a8934c62ec1f2f6e1b8a88e2f01f52eefec2f2a54  /usrdata/quecdeck/script/lean_mode.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean_mode.sh.\e[0m"; rm -f /usrdata/quecdeck/script/lean_mode.sh; return; }
             echo -e "\e[1;32mIntegrity verified: lean_mode.sh\e[0m"
             wget -q -O /usrdata/quecdeck/systemd/lean-mode.service "$GITROOT/quecdeck/systemd/lean-mode.service" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
-            echo "146beb37b2840d5aaad4323b6979dcc9a03373ea56ee2e9d7dcfabaad6ff91d0  /usrdata/quecdeck/systemd/lean-mode.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean-mode.service.\e[0m"; return; }
+            echo "146beb37b2840d5aaad4323b6979dcc9a03373ea56ee2e9d7dcfabaad6ff91d0  /usrdata/quecdeck/systemd/lean-mode.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean-mode.service.\e[0m"; rm -f /usrdata/quecdeck/systemd/lean-mode.service; return; }
             echo -e "\e[1;32mIntegrity verified: lean-mode.service\e[0m"
             chmod +x /usrdata/quecdeck/script/lean_mode.sh
-            trap 'remount_ro' EXIT
+            trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
             remount_rw
             cp -f /usrdata/quecdeck/systemd/lean-mode.service /lib/systemd/system/lean-mode.service
             ln -sf /lib/systemd/system/lean-mode.service /lib/systemd/system/multi-user.target.wants/lean-mode.service
@@ -415,7 +524,7 @@ lean_mode_service() {
             echo -e "\e[1;32mLean Mode installed. Takes effect on next reboot.\e[0m"
             ;;
         2)
-            trap 'remount_ro' EXIT
+            trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
             remount_rw
             rm -f /lib/systemd/system/lean-mode.service
             rm -f /lib/systemd/system/multi-user.target.wants/lean-mode.service
@@ -436,7 +545,7 @@ disable_monitoring_services() {
     systemctl stop watchcat 2>/dev/null
     systemctl stop scheduled_restart 2>/dev/null
 
-    trap 'remount_ro' EXIT
+    trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     remount_rw
 
     rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
@@ -507,6 +616,16 @@ while true; do
             uninstall_quecdeck_components
             ;;
         6)
+            if [ -d "$QUECDECK_DIR/www" ]; then
+                echo -e "\e[1;31mWARNING: QuecDeck is still installed.\e[0m"
+                echo -e "\e[1;31mUninstalling Entware will break QuecDeck and all its services.\e[0m"
+                echo -e "\e[1;31mRun option 5 to uninstall QuecDeck first.\e[0m"
+                read -p "Continue anyway? (y/n): " quecdeck_warn_confirm
+                case "$quecdeck_warn_confirm" in
+                    y|Y) ;;
+                    *) echo -e "\e[1;33mUninstallation cancelled.\e[0m"; continue ;;
+                esac
+            fi
             echo -e "\e[1;31mAre you sure you want to uninstall Entware/OPKG?\e[0m"
             read -p "Continue? (y/n): " user_choice
             case "$user_choice" in
