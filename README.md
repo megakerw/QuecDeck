@@ -57,7 +57,7 @@ To update, run the same command and select **Install/Update QuecDeck** again. Yo
 Features are organised by page.
 
 ### Home
-Real-time overview of the modem's current status: signal strength, temperature, SIM status, internet connectivity, and more. Displays aggregated bandwidth broken down by technology (e.g. `10 MHz (LTE) + 100 MHz (NR) DL / 10 MHz UL`) and active band aggregation with PCC/SCC labels.
+Real-time overview of the modem's current status: signal strength, temperature, SIM status, internet connectivity, active band aggregation, and more.
 
 ### Cellular Network
 - Band locking for LTE, NR5G-NSA, and NR5G-SA
