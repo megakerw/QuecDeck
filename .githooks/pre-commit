@@ -16,7 +16,7 @@ CHECKSUMMED_FILES=(
   quecdeck/script/scheduled_restart.sh
   quecdeck/script/atcmd_queue_daemon.sh
   quecdeck/script/connection_logger.sh
-  quecdeck/script/update_lan_ip.sh
+  quecdeck/script/lighttpd_prestart.sh
   quecdeck/script/lean_mode.sh
   quecdeck/script/write_htpasswd.sh
   quecdeck/script/firewall.sh
@@ -179,6 +179,7 @@ PINNED_FILES=(
   installentware.sh
   update_quecdeck.sh
   optional/sshd/sshd.service
+  optional/sshd/update_sshd_ip.sh
   quecdeck/quecdeckpasswd
   quecdeck/quecdeckdevpasswd
   quecdeck/script/lean_mode.sh

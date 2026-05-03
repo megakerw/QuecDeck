@@ -4,7 +4,7 @@ while true; do
     echo -e "\e[1;31mPlease set your quecdeck (User: admin) web login password.\e[0m"
     read -r -s -p "Password: " pw1; echo
     read -r -s -p "Confirm password: " pw2; echo
-    if [ "$pw1" = "$pw2" ] && [ -n "$pw1" ]; then
+    if [ "$pw1" = "$pw2" ] && [ "${#pw1}" -ge 8 ]; then
         echo "admin:$(printf '%s' "$pw1" | openssl passwd -6 -stdin)" > /opt/etc/.htpasswd
         chown root:dialout /opt/etc/.htpasswd
         chmod 640 /opt/etc/.htpasswd
@@ -13,6 +13,6 @@ while true; do
     elif [ "$pw1" != "$pw2" ]; then
         echo -e "\e[1;31mPasswords did not match. Please try again.\e[0m"
     else
-        echo -e "\e[1;31mPassword cannot be empty. Please try again.\e[0m"
+        echo -e "\e[1;31mPassword must be at least 8 characters. Please try again.\e[0m"
     fi
 done

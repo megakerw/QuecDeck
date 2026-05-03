@@ -48,12 +48,10 @@ function processAllInfos() {
     apn: "Unknown",
     networkMode: "Disconnected",
     bands: "Unknown Bands",
-    pccBand: "-",
-    sccBands: "-",
+    bandDisplay: "-",
     bandwidth: "Unknown Bandwidth",
     earfcns: "000",
-    pccPCI: "0",
-    sccPCI: "-",
+    pciDisplay: "-",
     ipv4: null,
     ipv6: null,
     cellID: "Unknown",
@@ -201,27 +199,35 @@ function processAllInfos() {
               .filter((line) => line.includes("NR5G BAND"))
               .map((line) => {
                 const num = line.split(",")[3]?.replace(/"/g, "")?.replace("NR5G BAND", "")?.trim();
-                return num ? "n" + num : null;
+                return num ? "N" + num : null;
               })
               .filter(Boolean);
 
             this.bands = [...bands, ...bands_5g].join(", ") || "No Bands";
 
             // --- PCC / SCC band split ---
-            const trim = (b) => b?.trim() ?? "";
-            if (this.networkMode === "5G SA TDD" || this.networkMode === "5G SA FDD") {
-              this.pccBand = trim(bands_5g[0]) || "-";
-              this.sccBands = bands_5g.slice(1).map(trim).filter(Boolean).join(", ") || "-";
-            } else if (this.networkMode === "5G NSA") {
-              this.pccBand = trim(bands[0]) || "-";
-              const scc = [...bands.slice(1), ...bands_5g].map(trim).filter(Boolean);
-              this.sccBands = scc.join(", ") || "-";
-            } else {
-              this.pccBand = trim(bands[0]) || "-";
-              this.sccBands = bands.slice(1).map(trim).filter(Boolean).join(", ") || "-";
+            {
+              const trim = (b) => b?.trim() ?? "";
+              let pcc, scc;
+              if (this.networkMode === "5G SA TDD" || this.networkMode === "5G SA FDD") {
+                pcc = trim(bands_5g[0]) || null;
+                scc = bands_5g.slice(1).map(trim).filter(Boolean).join(", ") || null;
+              } else if (this.networkMode === "5G NSA") {
+                pcc = trim(bands[0]) || null;
+                scc = [...bands.slice(1), ...bands_5g].map(trim).filter(Boolean).join(", ") || null;
+              } else {
+                pcc = trim(bands[0]) || null;
+                scc = bands.slice(1).map(trim).filter(Boolean).join(", ") || null;
+              }
+              this.bandDisplay = pcc ? pcc + " (PCC)" + (scc ? ", " + scc : "") : "-";
             }
 
             // --- Bandwidth ---
+            // Helper: sum LTE DL bandwidth across QCAINFO component carriers.
+            // QCAINFO index 2 for LTE is resource blocks (6/15/25/50/75/100), not the QENG code.
+            const sumLteDL = (caLines) =>
+              caLines.reduce((sum, l) => sum + (this.lte_rb_to_mhz(l.split(",")[2]) ?? 0), 0) || null;
+
             if (
               this.networkMode === "5G SA TDD" ||
               this.networkMode === "5G SA FDD"
@@ -234,28 +240,27 @@ function processAllInfos() {
               this.networkMode === "4G LTE TDD"
             ) {
               const lte_bw_ul = servingcell_line?.split(",")[10];
-              const lte_bw_dl = servingcell_line?.split(",")[11];
-              const calculated_bandwidth_ul = this.calculate_lte_bw(lte_bw_ul);
-              const calculated_bandwidth_dl = this.calculate_lte_bw(lte_bw_dl);
-              this.bandwidth =
-                (calculated_bandwidth_ul ?? "?") +
-                " MHz UL / " +
-                (calculated_bandwidth_dl ?? "?") +
-                " MHz DL";
+              const ul = this.calculate_lte_bw(lte_bw_ul);
+              const scc_lines = lines.filter(l => l.includes('+QCAINFO: "SCC"') && l.includes("LTE BAND"));
+              const dl = pcc_line
+                ? sumLteDL([pcc_line, ...scc_lines])
+                : this.calculate_lte_bw(servingcell_line?.split(",")[11]);
+              this.bandwidth = (ul ?? "?") + " MHz UL / " + (dl ?? "?") + " MHz DL";
             } else if (this.networkMode === "5G NSA") {
               const lte_bw_ul = lte_line?.split(",")[8];
-              const lte_bw_dl = lte_line?.split(",")[9];
-              const calculated_bandwidth_ul = this.calculate_lte_bw(lte_bw_ul);
-              const calculated_bandwidth_dl = this.calculate_lte_bw(lte_bw_dl);
-              const nr_bw = nr5g_nsa_line?.split(",")[9];
-              const calculated_bandwidth = this.calculate_nr_bw(nr_bw);
+              const ul = this.calculate_lte_bw(lte_bw_ul);
+              const lte_scc_lines = lines.filter(l => l.includes('+QCAINFO: "SCC"') && l.includes("LTE BAND"));
+              const lte_dl = pcc_line
+                ? sumLteDL([pcc_line, ...lte_scc_lines])
+                : this.calculate_lte_bw(lte_line?.split(",")[9]);
+              const nr_scc_lines = lines.filter(l => l.includes('+QCAINFO: "SCC"') && l.includes("NR5G BAND"));
+              const nr = nr_scc_lines.length > 0
+                ? nr_scc_lines.reduce((sum, l) => sum + (this.calculate_nr_bw(l.split(",")[2]) ?? 0), 0) || null
+                : this.calculate_nr_bw(nr5g_nsa_line?.split(",")[9]);
               this.bandwidth =
-                (calculated_bandwidth_ul ?? "?") +
-                " MHz UL / " +
-                (calculated_bandwidth_dl ?? "?") +
-                " MHz DL (LTE) + " +
-                (calculated_bandwidth ?? "?") +
-                " MHz (NR)";
+                (ul ?? "?") + " MHz UL / " +
+                (lte_dl ?? "?") + " MHz DL (LTE) + " +
+                (nr ?? "?") + " MHz (NR)";
             } else {
               this.bandwidth = "Unknown Bandwidth";
             }
@@ -274,78 +279,16 @@ function processAllInfos() {
             }
 
             // --- PCI ---
-            if (
-              this.networkMode === "5G SA TDD" ||
-              this.networkMode === "5G SA FDD"
-            ) {
-              const nr_pcc_pci = pcc_line?.split(",")[4]?.trim();
-              const nr_scc_pci = lines.filter((line) =>
-                line.includes('+QCAINFO: "SCC"')
-              );
-              if (nr_scc_pci.length === 0) {
-                this.pccPCI = nr_pcc_pci?.replace(/,/g, "");
-                this.sccPCI = "-";
+            // PCI is always at index 4 in +QCAINFO lines regardless of line length or mode.
+            {
+              const pcc_pci = pcc_line?.split(",")[4]?.trim();
+              const scc_lines = lines.filter((line) => line.includes('+QCAINFO: "SCC"'));
+              const scc = scc_lines.map(l => l.split(",")[4]?.trim()).filter(Boolean).join(", ") || null;
+              if (this.networkMode === "Disconnected") {
+                this.pciDisplay = "-";
               } else {
-                this.pccPCI = nr_pcc_pci;
-                this.sccPCI = nr_scc_pci.map(l => l.split(",")[5]?.trim()).filter(Boolean).join(", ");
+                this.pciDisplay = pcc_pci ? pcc_pci + " (PCC)" + (scc ? ", " + scc : "") : "-";
               }
-            } else if (
-              this.networkMode === "4G LTE FDD" ||
-              this.networkMode === "4G LTE TDD"
-            ) {
-              const lte_pcc_pci = pcc_line?.split(",")[5]?.trim();
-              const lte_scc_pci = lines.filter((line) =>
-                line.includes('+QCAINFO: "SCC"')
-              );
-              if (lte_scc_pci.length === 0) {
-                this.pccPCI = lte_pcc_pci;
-                this.sccPCI = "-";
-              } else {
-                this.pccPCI = lte_pcc_pci;
-                this.sccPCI = lte_scc_pci.map(l => l.split(",")[5]?.trim()).filter(Boolean).join(", ");
-              }
-            } else if (this.networkMode === "5G NSA") {
-              const pccparts = pcc_line?.split(":")[1]?.split(",");
-              const sccarr = lines.filter((m) => m.includes("QCAINFO: \"SCC\""));
-              const sccpci = [];
-              sccarr.forEach((s) => {
-                const sccparts = s.split(":")[1]?.split(",");
-                if (!sccparts) return;
-                let sccIndex = 5;
-                switch (sccparts.length) {
-                  case 8: // NR5G PCC/SCC — PCI at index 4
-                    sccIndex = 4;
-                    break;
-                  case 13: // LTE SCC
-                  case 12: // NR5G SCC
-                  case 10: // LTE PCC
-                  default:
-                    sccIndex = 5;
-                    break;
-                }
-                sccpci.push(sccparts[sccIndex]?.trim());
-              });
-              this.sccPCI = sccpci.filter(Boolean).join(', ');
-              if (!pccparts) {
-                this.pccPCI = "-";
-              } else {
-                let pccIndex = 5;
-                switch (pccparts.length) {
-                  case 8:
-                    pccIndex = 4;
-                    break;
-                  case 13:
-                  case 12:
-                  case 10:
-                  default:
-                    pccIndex = 5;
-                    break;
-                }
-                this.pccPCI = pccparts[pccIndex]?.trim();
-              }
-            } else {
-              this.pccPCI = "0";
-              this.sccPCI = "-";
             }
 
             // Traffic Stats
@@ -595,6 +538,11 @@ function processAllInfos() {
       return BANDWIDTH_MAP[lte_bw];
     },
 
+    lte_rb_to_mhz(rb) {
+      const MAP = { 6: 1.4, 15: 3, 25: 5, 50: 10, 75: 15, 100: 20 };
+      return MAP[parseInt(rb, 10)];
+    },
+
     calculate_nr_bw(nr_bw) {
       const NR_BANDWIDTH_MAP = {
         0: 5,
@@ -642,9 +590,9 @@ function processAllInfos() {
       this["rsrp" + prefix] = rsrp;
       this["rsrq" + prefix] = rsrq;
       this["sinr" + prefix] = sinr;
-      const rp  = this.calculateRSRPPercentage(parseInt(rsrp));
-      const rqp = this.calculateRSRQPercentage(parseInt(rsrq));
-      const sp  = this.calculateSINRPercentage(parseInt(sinr));
+      const rp  = this.calculateRSRPPercentage(parseInt(rsrp, 10));
+      const rqp = this.calculateRSRQPercentage(parseInt(rsrq, 10));
+      const sp  = this.calculateSINRPercentage(parseInt(sinr, 10));
       this["rsrp" + prefix + "Percentage"] = rp;
       this["rsrq" + prefix + "Percentage"] = rqp;
       this["sinr" + prefix + "Percentage"] = sp;
@@ -652,7 +600,7 @@ function processAllInfos() {
     },
 
     get tempColor() {
-      const t = parseInt(this.temperature);
+      const t = parseInt(this.temperature, 10);
       if (isNaN(t))  return STATUS_COLOR_GREEN;
       if (t >= 75)   return STATUS_COLOR_RED;
       if (t >= 60)   return STATUS_COLOR_YELLOW;
@@ -661,7 +609,7 @@ function processAllInfos() {
     },
 
     getProgressBarClass(pct) {
-      const percentage = parseInt(pct);
+      const percentage = parseInt(pct, 10);
       if (percentage >= 60) return 'progress-bar bg-success is-medium';
       if (percentage >= 40) return 'progress-bar bg-warning is-warning is-medium';
       return 'progress-bar bg-danger is-medium';

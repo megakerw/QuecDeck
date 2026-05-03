@@ -6,7 +6,7 @@ After=network.target opt.mount firewall.service
 [Service]
 Type=simple
 PIDFile=/opt/var/run/sshd.pid
-ExecStartPre=/bin/sh -c 'LAN_IP=$(grep -o "<APIPAddr>[^<]*</APIPAddr>" /etc/data/mobileap_cfg.xml 2>/dev/null | sed "s/<APIPAddr>//;s/<\\/APIPAddr>//"); [ -z "$LAN_IP" ] && LAN_IP=192.168.225.1; sed -i "s/^.*ListenAddress .*/ListenAddress $LAN_IP/" /opt/etc/ssh/sshd_config; grep -q "^ListenAddress" /opt/etc/ssh/sshd_config || echo "ListenAddress $LAN_IP" >> /opt/etc/ssh/sshd_config'
+ExecStartPre=/bin/sh /opt/etc/ssh/update_sshd_ip.sh
 ExecStartPre=/opt/sbin/sshd -t
 ExecStart=/opt/sbin/sshd -D
 ExecReload=/bin/kill -HUP $MAINPID

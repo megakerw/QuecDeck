@@ -19,7 +19,7 @@ cgi_output_text
 # ping failures and potentially trigger a modem reboot mid-scan.
 CONN_LOG="/tmp/quecdeck/logs/connection_events.jsonl"
 log_scan_event() {
-    mkdir -p "$(dirname "$CONN_LOG")"
+    mkdir -p "$(dirname "$CONN_LOG")" && chmod 700 "$(dirname "$CONN_LOG")"
     printf '%s\n' "$1" >> "$CONN_LOG"
     local count
     count=$(wc -l < "$CONN_LOG" 2>/dev/null || echo 0)

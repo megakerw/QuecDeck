@@ -9,11 +9,11 @@ After=network.target opt.mount QCMAP_ConnectionManagerd.service firewall.service
 [Service]
 Type=simple
 PIDFile=/opt/var/run/lighttpd.pid
-ExecStartPre=/bin/sh /usrdata/quecdeck/script/update_lan_ip.sh
+ExecStartPre=/bin/sh /usrdata/quecdeck/script/lighttpd_prestart.sh
 ExecStartPre=/bin/rm -rf /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
 ExecStartPre=/bin/mkdir -p /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
 ExecStartPre=/bin/chown www-data /tmp/quecdeck /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
-ExecStartPre=/bin/chmod 750 /tmp/quecdeck
+ExecStartPre=/bin/chmod 700 /tmp/quecdeck
 ExecStartPre=/bin/chmod 700 /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
 ExecStartPre=/opt/sbin/lighttpd -tt -f /usrdata/quecdeck/lighttpd.conf
 ExecStart=/opt/sbin/lighttpd -D -f /usrdata/quecdeck/lighttpd.conf

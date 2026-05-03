@@ -25,7 +25,7 @@ token=$(printf '%s' "$cookie" | sed 's/.*[^A-Za-z0-9]session=\([A-Za-z0-9]*\).*/
 if printf '%s' "$token" | grep -qE '^[A-Za-z0-9]{1,128}$'; then
     session_file="/tmp/quecdeck/sessions/$token"
     if [ -f "$session_file" ]; then
-        logout_user=$(grep '^user=' "$session_file" | cut -d= -f2)
+        logout_user=$(grep '^user=' "$session_file" | cut -d= -f2 | tr -cd 'A-Za-z0-9_-')
         client_ip=$(printf '%s' "${REMOTE_ADDR:-unknown}" | tr -cd 'A-Fa-f0-9.:')
         [ -z "$client_ip" ] && client_ip="unknown"
         wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $1; exit}')

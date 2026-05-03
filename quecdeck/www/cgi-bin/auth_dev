@@ -94,7 +94,7 @@ fi
 
 ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
 log_access_event() {
-    mkdir -p "$(dirname "$ACCESS_LOG")"
+    mkdir -p "$(dirname "$ACCESS_LOG")" && chmod 700 "$(dirname "$ACCESS_LOG")"
     printf '%s\n' "$1" >> "$ACCESS_LOG"
     local count
     count=$(wc -l < "$ACCESS_LOG" 2>/dev/null || echo 0)
@@ -110,9 +110,15 @@ wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $
 
 _session_write() {
     local tmp="${SESSION_FILE}.tmp.$$"
-    (umask 077; grep -vE '^(dev_unlocked|dev_fail_count|dev_lockout_until)=' "$SESSION_FILE" > "$tmp")
-    cat >> "$tmp"
-    mv "$tmp" "$SESSION_FILE"
+    local lock="${SESSION_FILE}.lock"
+    local new_fields
+    new_fields=$(cat)
+    (
+        flock -x 9
+        (umask 077; grep -vE '^(dev_unlocked|dev_fail_count|dev_lockout_until)=' "$SESSION_FILE" > "$tmp")
+        printf '%s\n' "$new_fields" >> "$tmp"
+        mv "$tmp" "$SESSION_FILE"
+    ) 9>"$lock"
 }
 
 if validate_htpasswd "/opt/etc/.htpasswd_dev" "devadmin" "$password"; then

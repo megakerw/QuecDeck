@@ -42,7 +42,7 @@ parse_qeng() {
     if [ -n "$sc_line" ]; then
         sc_state=$(  printf '%s' "$sc_line" | awk -F',' '{gsub(/"/,"",$2); print $2}')
         sc_mode=$(   printf '%s' "$sc_line" | awk -F',' '{gsub(/"/,"",$3); print $3}')
-        sc_cell_id=$(printf '%s' "$sc_line" | awk -F',' '{gsub(/"/,"",$7); print $7}')
+        sc_cell_id=$(printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9A-Fa-f]/,"",$7); print $7}')
         sc_pci=$(    printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9]/,"",$8); print $8+0}')
         sc_earfcn=$( printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9]/,"",$9); print $9+0}')
         sc_band=$(   printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9]/,"",$10); print $10+0}')
@@ -57,7 +57,7 @@ parse_qeng() {
                 else
                     sc_mode="LTE"
                 fi
-                sc_cell_id=$(printf '%s' "$lte_line" | awk -F',' '{gsub(/"/,"",$5); print $5}')
+                sc_cell_id=$(printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9A-Fa-f]/,"",$5); print $5}')
                 sc_pci=$(    printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$6); print $6+0}')
                 sc_earfcn=$( printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$7); print $7+0}')
                 sc_band=$(   printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$8); print $8+0}')
@@ -70,7 +70,7 @@ parse_qeng() {
         if [ -n "$lte_line" ]; then
             sc_state="CONNECT"
             sc_mode="LTE"
-            sc_cell_id=$(printf '%s' "$lte_line" | awk -F',' '{gsub(/"/,"",$5); print $5}')
+            sc_cell_id=$(printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9A-Fa-f]/,"",$5); print $5}')
             sc_pci=$(    printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$6); print $6+0}')
             sc_earfcn=$( printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$7); print $7+0}')
             sc_band=$(   printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$8); print $8+0}')
@@ -83,12 +83,26 @@ parse_qeng() {
             sc_band=0
         fi
     fi
+
+    # Whitelist sc_mode against known values to prevent JSON injection from crafted AT responses.
+    case "$sc_mode" in
+        LTE|NR5G-SA|NR5G-NSA|WCDMA|CDMA|TDSCDMA) ;;
+        *) sc_mode="" ;;
+    esac
 }
 
 is_registered() {
     case "$1" in
         CONNECT|NOCONN) return 0 ;;
         *) return 1 ;;
+    esac
+}
+
+band_label() {
+    local mode="$1" band="$2"
+    case "$mode" in
+        NR5G-SA) printf 'N%s' "$band" ;;
+        *)        printf 'B%s' "$band" ;;
     esac
 }
 
@@ -112,7 +126,7 @@ prev_pci="$sc_pci"
 prev_band="$sc_band"
 
 if is_registered "$sc_state"; then
-    log_event "{\"ts\":$ts,\"type\":\"connected\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":$sc_band}"
+    log_event "{\"ts\":$ts,\"type\":\"connected\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -138,15 +152,15 @@ while true; do
         ts=$(date +%s)
         response=$(atcmd_run 'AT+QENG="servingcell"' 10000)
         parse_qeng "$response"
-        log_event "{\"ts\":$ts,\"type\":\"connected\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":$sc_band}"
+        log_event "{\"ts\":$ts,\"type\":\"connected\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}"
 
     elif [ "$now_registered" = "1" ]; then
         if [ "$sc_mode" != "$prev_mode" ] && [ -n "$sc_mode" ] && [ -n "$prev_mode" ]; then
             log_event "{\"ts\":$ts,\"type\":\"mode_change\",\"from\":\"$prev_mode\",\"to\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci}"
         elif [ "$sc_cell_id" != "$prev_cell_id" ] || [ "$sc_pci" != "$prev_pci" ]; then
-            log_event "{\"ts\":$ts,\"type\":\"cell_change\",\"mode\":\"$sc_mode\",\"from\":{\"cell_id\":\"$prev_cell_id\",\"pci\":$prev_pci},\"to\":{\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":$sc_band}}"
+            log_event "{\"ts\":$ts,\"type\":\"cell_change\",\"mode\":\"$sc_mode\",\"from\":{\"cell_id\":\"$prev_cell_id\",\"pci\":$prev_pci},\"to\":{\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}}"
         elif [ "$sc_band" != "$prev_band" ]; then
-            log_event "{\"ts\":$ts,\"type\":\"band_change\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"from\":$prev_band,\"to\":$sc_band}"
+            log_event "{\"ts\":$ts,\"type\":\"band_change\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"from\":\"$(band_label "$prev_mode" "$prev_band")\",\"to\":\"$(band_label "$sc_mode" "$sc_band")\"}"
         fi
     fi
 

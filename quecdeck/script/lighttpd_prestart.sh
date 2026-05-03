@@ -15,14 +15,12 @@ if ! printf '%s' "$LAN_IP" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || \
     LAN_IP="192.168.225.1"
 fi
 
-# Update lighttpd.conf binding if the IP has changed (e.g. after an update
-# that resets the conf to 0.0.0.0) and restart sshd to rebind.
+# Update lighttpd.conf binding if the IP has changed.
 current_ip=$(grep -o 'server\.bind = "[0-9.]*"' "$LIGHTTPD_CONF" | grep -o '"[0-9.]*"' | tr -d '"')
 if [ "$current_ip" != "$LAN_IP" ]; then
     LAN_IP_ESC=$(printf '%s' "$LAN_IP" | sed 's/[\/&]/\\&/g')
     sed -i "s/server\.bind = \"[0-9.]*\"/server.bind = \"$LAN_IP_ESC\"/" "$LIGHTTPD_CONF"
     sed -i "s/== \"[0-9.]*:443\"/== \"$LAN_IP_ESC:443\"/" "$LIGHTTPD_CONF"
-    systemctl is-active sshd >/dev/null 2>&1 && systemctl restart sshd
 fi
 
 # Regenerate TLS cert only if its SAN doesn't already match the current LAN IP.

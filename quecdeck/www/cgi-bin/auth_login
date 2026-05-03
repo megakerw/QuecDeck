@@ -69,7 +69,7 @@ json_error()  { printf 'Status: 200 OK\r\nContent-Type: application/json\r\nCach
 
 ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
 log_access_event() {
-    mkdir -p "$(dirname "$ACCESS_LOG")"
+    mkdir -p "$(dirname "$ACCESS_LOG")" && chmod 700 "$(dirname "$ACCESS_LOG")"
     printf '%s\n' "$1" >> "$ACCESS_LOG"
     local count
     count=$(wc -l < "$ACCESS_LOG" 2>/dev/null || echo 0)

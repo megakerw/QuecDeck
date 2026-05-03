@@ -59,35 +59,40 @@ function parseCurrentSettings(rawdata) {
     (line) => line.includes("+CGDCONT: 1"), ",", 1
   );
 
+  const formatBand = (raw) => {
+    const lte = raw.match(/LTE BAND (\d+)/);
+    if (lte) return "B" + lte[1];
+    const nr = raw.match(/NR5G BAND (\d+)/);
+    if (nr) return "N" + nr[1];
+    return raw;
+  };
+
   let bands;
   try {
-    const PCCbands = lines
+    const pccRaw = lines
       .find((line) => line.includes('+QCAINFO: "PCC"'))
       .split(",")[3]
       .replace(/\"/g, "")
       .trim();
+    const pccFormatted = formatBand(pccRaw) + " (PCC)";
 
-    try {
-      const SCCbands = lines
-        .filter((line) => line.includes('+QCAINFO: "SCC"'))
-        .map((line) => line.split(",")[3].replace(/\"/g, "").trim())
-        .filter(Boolean)
-        .join(", ");
-      bands = SCCbands ? `${PCCbands}, ${SCCbands}` : PCCbands;
-    } catch (error) {
-      bands = PCCbands;
-    }
+    const sccFormatted = lines
+      .filter((line) => line.includes('+QCAINFO: "SCC"'))
+      .map((line) => formatBand(line.split(",")[3].replace(/\"/g, "").trim()))
+      .filter(Boolean)
+      .join(", ");
 
+    bands = sccFormatted ? `${pccFormatted}, ${sccFormatted}` : pccFormatted;
   } catch (error) {
     bands = "Failed fetching bands";
   }
 
   let cellLockStatus;
-  if (cellLock4GStatus == 1 && cellLock5GStatus == 1) {
+  if (cellLock4GStatus === "1" && cellLock5GStatus === "1") {
     cellLockStatus = "Locked to 4G and 5G";
-  } else if (cellLock4GStatus == 1) {
+  } else if (cellLock4GStatus === "1") {
     cellLockStatus = "Locked to 4G";
-  } else if (cellLock5GStatus == 1) {
+  } else if (cellLock5GStatus === "1") {
     cellLockStatus = "Locked to 5G";
   } else {
     cellLockStatus = "Not Locked";

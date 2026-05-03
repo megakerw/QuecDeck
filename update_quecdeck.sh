@@ -136,8 +136,8 @@ install_lighttpd() {
     echo -e "\e[1;32mInstalling Lighttpd...\e[0m"
     mkdir -p "$QUECDECK_DIR/script"
     wget -O "$QUECDECK_DIR/lighttpd.conf" $GITROOT/quecdeck/lighttpd.conf || { echo -e "\e[1;31mFailed to download lighttpd.conf.\e[0m"; return 1; }
-    wget -O "$QUECDECK_DIR/script/update_lan_ip.sh" $GITROOT/quecdeck/script/update_lan_ip.sh || { echo -e "\e[1;31mFailed to download update_lan_ip.sh.\e[0m"; return 1; }
-    chmod +x "$QUECDECK_DIR/script/update_lan_ip.sh"
+    wget -O "$QUECDECK_DIR/script/lighttpd_prestart.sh" $GITROOT/quecdeck/script/lighttpd_prestart.sh || { echo -e "\e[1;31mFailed to download lighttpd_prestart.sh.\e[0m"; return 1; }
+    chmod 700 "$QUECDECK_DIR/script/lighttpd_prestart.sh"
     wget -O "/lib/systemd/system/lighttpd.service" $GITROOT/quecdeck/systemd/lighttpd.service || { echo -e "\e[1;31mFailed to download lighttpd.service.\e[0m"; return 1; }
     ln -sf "/lib/systemd/system/lighttpd.service" "/lib/systemd/system/multi-user.target.wants/"
     echo "www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /bin/systemctl is-active watchcat, /usrdata/quecdeck/script/write_htpasswd.sh" > /opt/etc/sudoers.d/www-data
@@ -198,7 +198,7 @@ install_quecdeck() {
     cd $QUECDECK_DIR/script
     wget -q $GITROOT/quecdeck/script/remove_watchcat.sh &
     wget -q $GITROOT/quecdeck/script/create_watchcat.sh &
-    wget -q $GITROOT/quecdeck/script/update_lan_ip.sh &
+    wget -q $GITROOT/quecdeck/script/lighttpd_prestart.sh &
     wget -q $GITROOT/quecdeck/script/lean_mode.sh &
     wget -q $GITROOT/quecdeck/script/create_scheduled_restart.sh &
     wget -q $GITROOT/quecdeck/script/remove_scheduled_restart.sh &
@@ -348,7 +348,8 @@ install_quecdeck() {
     chown root:root $QUECDECK_DIR/script/remove_watchcat.sh
     chown root:root $QUECDECK_DIR/script/create_scheduled_restart.sh
     chown root:root $QUECDECK_DIR/script/remove_scheduled_restart.sh
-    chown root:root $QUECDECK_DIR/script/update_lan_ip.sh
+    chown root:root $QUECDECK_DIR/script/lighttpd_prestart.sh
+    chmod 700 $QUECDECK_DIR/script/lighttpd_prestart.sh
     chown root:root $QUECDECK_DIR/script/write_htpasswd.sh
     cp -f $QUECDECK_DIR/console/.profile /usrdata/root/.profile
     chmod +x /usrdata/root/.profile
