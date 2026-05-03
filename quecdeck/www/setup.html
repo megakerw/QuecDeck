@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck — Setup</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=77c8f098" />
-    <link rel="stylesheet" href="css/styles.css?v=77c8f098" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=bbbc7359" />
+    <link rel="stylesheet" href="css/styles.css?v=bbbc7359" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=77c8f098"></script>
-    <script src="js/dark-mode.js?v=77c8f098" defer></script>
-    <script src="js/alpinejs.min.js?v=77c8f098" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=bbbc7359"></script>
+    <script src="js/dark-mode.js?v=bbbc7359" defer></script>
+    <script src="js/alpinejs.min.js?v=bbbc7359" defer></script>
   </head>
   <body>
     <main>
@@ -51,7 +51,7 @@
               <template x-if="step === 2">
                 <div>
                   <h5 class="mb-1">Developer Access</h5>
-                  <p class="text-muted small mb-3">Optionally set a password for developer access (AT commander, terminal). You can skip this and set it later via the console.</p>
+                  <p class="text-muted small mb-3">Optionally set a password for developer access. This unlocks the AT terminal, web console, and cell locking features. You can skip this and set it later via the console.</p>
                   <div x-show="error" class="alert alert-danger mb-3" x-text="error"></div>
                   <form @submit.prevent="submit()">
                     <div class="mb-3">
@@ -78,6 +78,6 @@
         </div>
       </div>
     </main>
-    <script src="js/setup.js?v=77c8f098"></script>
+    <script src="js/setup.js?v=bbbc7359"></script>
   </body>
 </html>

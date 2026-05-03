@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=77c8f098" />
-    <link rel="stylesheet" href="css/styles.css?v=77c8f098" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=bbbc7359" />
+    <link rel="stylesheet" href="css/styles.css?v=bbbc7359" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=77c8f098"></script>
-    <script src="js/utils.js?v=77c8f098"></script>
-    <script src="js/alpinejs.min.js?v=77c8f098" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=bbbc7359"></script>
+    <script src="js/utils.js?v=bbbc7359"></script>
+    <script src="js/alpinejs.min.js?v=bbbc7359" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="fetchDeviceInfo()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=77c8f098"></script>
+        <script src="js/nav.js?v=bbbc7359"></script>
 
         <div class="row gy-3 mt-4 mb-0 align-items-stretch">
           <div class="col-md">
@@ -72,11 +72,11 @@
                 </li>
                 <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
                   <span class="text-muted fw-semibold text-nowrap">DNS Primary</span>
-                  <span class="text-end" x-text="dnsPrimary"></span>
+                  <span class="text-end" x-text="dnsIPv4Primary"></span>
                 </li>
                 <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
                   <span class="text-muted fw-semibold text-nowrap">DNS Secondary</span>
-                  <span class="text-end" x-text="dnsSecondary"></span>
+                  <span class="text-end" x-text="dnsIPv4Secondary"></span>
                 </li>
                 <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
                   <span class="text-muted fw-semibold text-nowrap">WWAN IPv6</span>
@@ -155,7 +155,7 @@
 
       </div>
     </main>
-    <script src="js/dark-mode.js?v=77c8f098"></script>
-    <script src="js/deviceinfo.js?v=77c8f098"></script>
+    <script src="js/dark-mode.js?v=bbbc7359"></script>
+    <script src="js/deviceinfo.js?v=bbbc7359"></script>
   </body>
 </html>

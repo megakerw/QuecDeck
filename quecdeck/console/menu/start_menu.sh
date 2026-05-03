@@ -64,7 +64,7 @@ apps_menu() {
 
 settings_menu() {
     while true; do
-        display_random_color "Welcome to QuecDeck Console"
+        display_random_color "Password Management"
         display_green "Select an option:"
         echo "------------------"
         display_green "1. Change quecdeck (admin) password"
@@ -91,7 +91,7 @@ main_menu() {
         display_green "Select an option:"
         echo "------------------"
         display_random_color "1. Apps"
-        display_random_color "2. Settings"
+        display_random_color "2. Password Management"
         display_random_color "3. Toolkit"
         display_random_color "4. Exit (Enter Root Shell)"
         echo

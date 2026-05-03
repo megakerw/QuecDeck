@@ -245,7 +245,7 @@ function processAllInfos() {
               const dl = pcc_line
                 ? sumLteDL([pcc_line, ...scc_lines])
                 : this.calculate_lte_bw(servingcell_line?.split(",")[11]);
-              this.bandwidth = (ul ?? "?") + " MHz UL / " + (dl ?? "?") + " MHz DL";
+              this.bandwidth = (dl ?? "?") + " MHz DL / " + (ul ?? "?") + " MHz UL";
             } else if (this.networkMode === "5G NSA") {
               const lte_bw_ul = lte_line?.split(",")[8];
               const ul = this.calculate_lte_bw(lte_bw_ul);
@@ -258,9 +258,9 @@ function processAllInfos() {
                 ? nr_scc_lines.reduce((sum, l) => sum + (this.calculate_nr_bw(l.split(",")[2]) ?? 0), 0) || null
                 : this.calculate_nr_bw(nr5g_nsa_line?.split(",")[9]);
               this.bandwidth =
-                (ul ?? "?") + " MHz UL / " +
-                (lte_dl ?? "?") + " MHz DL (LTE) + " +
-                (nr ?? "?") + " MHz (NR)";
+                (lte_dl ?? "?") + " MHz (LTE) + " +
+                (nr ?? "?") + " MHz (NR) DL / " +
+                (ul ?? "?") + " MHz UL";
             } else {
               this.bandwidth = "Unknown Bandwidth";
             }

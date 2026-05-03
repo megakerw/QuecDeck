@@ -30,8 +30,8 @@ function fetchDeviceInfo() {
     lanIp: "-",
     wwanIpv4: "-",
     wwanIpv6: "-",
-    dnsPrimary: "-",
-    dnsSecondary: "-",
+    dnsIPv4Primary: "-",
+    dnsIPv4Secondary: "-",
     dnsIPv6Primary: "-",
     dnsIPv6Secondary: "-",
     phoneNumber: "Unknown",
@@ -117,10 +117,12 @@ function fetchDeviceInfo() {
         const ipv4Re    = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
         const ipv6ByteRe = /^(\d{1,3}\.){15}\d{1,3}$/;
         const tokens = parts.slice(5).flatMap(p => p.split(/\s+/));
-        const dnsAddrs    = tokens.filter(p => ipv4Re.test(p));
-        const dnsIPv6Addrs = tokens.filter(p => ipv6ByteRe.test(p)).map(dotByteToIPv6).filter(Boolean);
-        if (dnsAddrs[0])    this.dnsPrimary      = dnsAddrs[0];
-        if (dnsAddrs[1])    this.dnsSecondary    = dnsAddrs[1];
+        const dnsIPv4Addrs = tokens.filter(p => ipv4Re.test(p));
+        const dnsIPv6Addrs = tokens.filter(p => ipv6ByteRe.test(p)).map(dotByteToIPv6).filter(
+          addr => addr && !/^fe[89ab][0-9a-f]:/i.test(addr)
+        );
+        if (dnsIPv4Addrs[0]) this.dnsIPv4Primary       = dnsIPv4Addrs[0];
+        if (dnsIPv4Addrs[1]) this.dnsIPv4Secondary     = dnsIPv4Addrs[1];
         if (dnsIPv6Addrs[0]) this.dnsIPv6Primary   = dnsIPv6Addrs[0];
         if (dnsIPv6Addrs[1]) this.dnsIPv6Secondary = dnsIPv6Addrs[1];
       }
