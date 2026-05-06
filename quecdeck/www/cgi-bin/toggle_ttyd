@@ -17,7 +17,8 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
         /opt/bin/sudo /bin/systemctl stop ttyd
         echo '{"running": false}'
     else
-        printf 'Status: 400 Bad Request\r\nContent-Type: application/json\r\n\r\n'
+        printf 'Status: 400 Bad Request\r\n'
+        cgi_output_json
         echo '{"error": "action must be start or stop"}'
     fi
 elif [ "$REQUEST_METHOD" = "GET" ]; then
@@ -25,6 +26,7 @@ elif [ "$REQUEST_METHOD" = "GET" ]; then
     systemctl is-active ttyd >/dev/null 2>&1 && running="true" || running="false"
     echo "{\"running\": $running}"
 else
-    printf 'Status: 405 Method Not Allowed\r\nAllow: GET, POST\r\nContent-Type: application/json\r\n\r\n'
+    printf 'Status: 405 Method Not Allowed\r\nAllow: GET, POST\r\n'
+    cgi_output_json
     echo '{"error": "Method Not Allowed"}'
 fi

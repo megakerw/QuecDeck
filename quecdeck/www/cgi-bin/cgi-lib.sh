@@ -75,6 +75,34 @@ cgi_error() {
     exit 1
 }
 
+# Verify a password against an htpasswd file (SHA-512 crypt format).
+# Usage: validate_htpasswd <htpasswd_file> <username> <password>
+validate_htpasswd() {
+    local htpasswd_file="$1" username="$2" password="$3"
+    [ -f "$htpasswd_file" ] || return 1
+    local line
+    line=$(grep "^${username}:" "$htpasswd_file" 2>/dev/null | head -1)
+    [ -n "$line" ] || return 1
+    local stored_hash="${line#*:}"
+    local salt computed
+    salt=$(printf '%s' "$stored_hash" | awk -F'[$]' '{print $3}')
+    computed=$(printf '%s' "$password" | openssl passwd -6 -salt "$salt" -stdin 2>/dev/null)
+    [ "$computed" = "$stored_hash" ]
+}
+
+# Append a JSON log entry to an access log file, capped at 500 lines.
+# Usage: log_access_event <log_file> <json_string>
+log_access_event() {
+    local log_file="$1" entry="$2"
+    mkdir -p "$(dirname "$log_file")" && chmod 700 "$(dirname "$log_file")"
+    printf '%s\n' "$entry" >> "$log_file"
+    local count
+    count=$(wc -l < "$log_file" 2>/dev/null || echo 0)
+    if [ "$count" -gt 500 ]; then
+        tail -500 "$log_file" > "${log_file}.tmp" && mv "${log_file}.tmp" "$log_file"
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # On-demand AT response cache.
 #

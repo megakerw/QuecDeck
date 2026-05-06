@@ -113,8 +113,7 @@ function logsPage() {
 
     refreshConnection() {
       this.loadingConn = true;
-      authFetch('/cgi-bin/get_logs')
-        .then((r) => r.json())
+      fetchJSON('/cgi-bin/get_logs')
         .then((data) => {
           this.connectionEvents = (data.connection_events || []).slice().reverse();
           this.connUpdatedAt = new Date().toLocaleString([], { hour12: false });
@@ -125,8 +124,7 @@ function logsPage() {
 
     refreshAccess() {
       this.loadingAccess = true;
-      authFetch('/cgi-bin/get_logs')
-        .then((r) => r.json())
+      fetchJSON('/cgi-bin/get_logs')
         .then((data) => {
           this.accessEvents = (data.access_events || []).slice().reverse();
           this.accessUpdatedAt = new Date().toLocaleString([], { hour12: false });
@@ -138,8 +136,7 @@ function logsPage() {
     refresh() {
       this.loadingConn = true;
       this.loadingAccess = true;
-      authFetch('/cgi-bin/get_logs')
-        .then((r) => r.json())
+      fetchJSON('/cgi-bin/get_logs')
         .then((data) => {
           this.connectionEvents = (data.connection_events || []).slice().reverse();
           this.accessEvents     = (data.access_events     || []).slice().reverse();

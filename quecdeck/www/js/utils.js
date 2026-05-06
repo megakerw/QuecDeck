@@ -218,6 +218,14 @@ document.addEventListener('DOMContentLoaded', () => {
   startScanPoll();
 });
 
+function fetchJSON(url, options) {
+  return authFetch(url, options).then(r => r.json());
+}
+
+function fetchText(url, options) {
+  return authFetch(url, options).then(r => r.text());
+}
+
 // Returns "-" for unassigned IP addresses (0.0.0.0 or all-zero IPv6 like ::)
 function cleanIp(ip) {
   if (!ip) return '-';

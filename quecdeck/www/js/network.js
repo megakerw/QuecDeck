@@ -419,17 +419,15 @@ function cellLocking() {
       this.$store.waitModal.start("Applying Settings...", 3, () => this.init());
     },
     fetchNetworkInfo() {
-      return authFetch("/cgi-bin/get_network_info", {
-        method: "POST",
-      }).then((response) => response.text())
+      return fetchText("/cgi-bin/get_network_info", { method: "POST" })
         .catch((error) => { console.error("Error:", error); throw error; });
     },
 
     postNetworkAction(endpoint, params) {
-      return authFetch(endpoint, {
+      return fetchText(endpoint, {
         method: "POST",
         body: new URLSearchParams(params),
-      }).then((response) => response.text())
+      })
         .catch(() => this.$store.errorModal.open('Failed to apply network changes. Please try again.'));
     },
   };

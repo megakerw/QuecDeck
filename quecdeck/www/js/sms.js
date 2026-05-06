@@ -21,8 +21,7 @@ function fetchSMS() {
 
     requestSMS() {
       this.isLoading = true;
-      authFetch("/cgi-bin/get_sms", { method: "POST" })
-        .then(response => response.text())
+      fetchText("/cgi-bin/get_sms", { method: "POST" })
         .then(data => {
           const filtered = data.split('\n')
             .filter(line => line.trim() !== "OK" && line.trim() !== "")

@@ -39,12 +39,7 @@ function fetchDeviceInfo() {
     services: null,
 
     fetchATCommand() {
-      authFetch("/cgi-bin/get_device_info", {
-        method: "POST",
-      })
-        .then((res) => {
-          return res.text();
-        })
+      fetchText("/cgi-bin/get_device_info", { method: "POST" })
         .then((data) => {
           this.parseFetchedData(data);
         })
@@ -153,23 +148,21 @@ function fetchDeviceInfo() {
     },
 
     fetchServiceStatus() {
-      authFetch("/cgi-bin/get_service_status")
-        .then((r) => r.json())
+      fetchJSON("/cgi-bin/get_service_status")
         .then((data) => { this.services = data; })
         .catch(() => {});
     },
 
 
     fetchUpnpStatus() {
-      authFetch('/cgi-bin/get_upnp_status')
-        .then((r) => r.json())
+      fetchJSON('/cgi-bin/get_upnp_status')
         .then((data) => { this.upnpEnabled = data.upnp === true; })
         .catch(() => {});
     },
 
     init() {
       this.fetchATCommand();
-      authFetch('/cgi-bin/get_set_lanip').then(r => r.json()).then(data => { this.lanIp = data.lan_ip; }).catch(() => {});
+      fetchJSON('/cgi-bin/get_set_lanip').then(data => { this.lanIp = data.lan_ip; }).catch(() => {});
       this.fetchUpnpStatus();
       this.fetchServiceStatus();
     },

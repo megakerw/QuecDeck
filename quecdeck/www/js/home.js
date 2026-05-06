@@ -646,8 +646,7 @@ function processAllInfos() {
       this.isUpTimeFetching = true;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 4000);
-      authFetch("/cgi-bin/get_uptime", { signal: controller.signal })
-        .then((response) => response.text())
+      fetchText("/cgi-bin/get_uptime", { signal: controller.signal })
         .then((data) => {
           // Example: 01:17:02 up 3 days,  2:41,  load average: 0.65, 0.66, 0.60
           this.uptime = this.formatUptime(data);
@@ -676,8 +675,7 @@ function processAllInfos() {
       this.isStatsFetching = true;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 4000);
-      authFetch("/cgi-bin/get_system_stats", { signal: controller.signal })
-        .then((r) => r.json())
+      fetchJSON("/cgi-bin/get_system_stats", { signal: controller.signal })
         .then((data) => {
           this.cpuLoad = data.load_avg;
           this.ramPercent = data.mem_percent;

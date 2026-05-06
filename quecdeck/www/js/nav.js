@@ -1,5 +1,5 @@
 (function () {
-  var _script = document.currentScript;
+  const _script = document.currentScript;
   const storedTheme = localStorage.getItem('theme') || 'dark';
   const themeLabel = storedTheme === 'dark' ? '☀️ Light' : '🌙 Dark';
   const links = [

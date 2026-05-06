@@ -21,8 +21,7 @@ function quecdeckSettings() {
     },
 
     sendSetting(action) {
-      return authFetch('/cgi-bin/set_setting', { method: 'POST', body: new URLSearchParams({ action }) })
-        .then(r => r.text())
+      return fetchText('/cgi-bin/set_setting', { method: 'POST', body: new URLSearchParams({ action }) })
         .then(text => {
           if (text.includes('ERROR')) throw new Error(text.trim());
           return text;
@@ -101,12 +100,7 @@ function quecdeckSettings() {
     },
 
     fetchCurrentSettings() {
-      authFetch("/cgi-bin/get_settings", {
-        method: "POST",
-      })
-        .then((res) => {
-          return res.text();
-        })
+      fetchText("/cgi-bin/get_settings", { method: "POST" })
         .then((data) => {
           const currentData = data.split("\n");
 
@@ -129,18 +123,16 @@ function quecdeckSettings() {
     },
 
     fetchLanConfig() {
-      authFetch('/cgi-bin/get_set_lanip')
-        .then((r) => r.json())
+      fetchJSON('/cgi-bin/get_set_lanip')
         .then((data) => {
           this.lanIp = data.lan_ip;
           this.dhcpStart = data.dhcp_start;
           this.dhcpEnd = data.dhcp_end;
         })
         .catch(() => {
-        this.$store.errorModal.open('Failed to load settings. Please refresh the page.');
-      });
-      authFetch('/cgi-bin/get_ippt_status')
-        .then((r) => r.json())
+          this.$store.errorModal.open('Failed to load settings. Please refresh the page.');
+        });
+      fetchJSON('/cgi-bin/get_ippt_status')
         .then((data) => { this.ipptEnabled = data.ippt_enabled === true; })
         .catch(() => { this.ipptEnabled = false; });
     },
@@ -160,7 +152,7 @@ function quecdeckSettings() {
       this.$store.waitModal.start('Rebooting...', REBOOT_WAIT_SECS + 5, () => {
         window.location.href = 'https://' + newIp + '/';
       }, `Redirecting to https://${newIp}`);
-      authFetch('/cgi-bin/get_set_lanip', {
+      fetchJSON('/cgi-bin/get_set_lanip', {
         method: 'POST',
         body: new URLSearchParams({
           lan_ip: this.lanIp,
@@ -168,7 +160,6 @@ function quecdeckSettings() {
           dhcp_end: this.dhcpEnd,
         }),
       })
-        .then((r) => r.json())
         .then((data) => {
           if (!data.ok) {
             this.$store.waitModal.stop();

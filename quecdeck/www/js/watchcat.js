@@ -127,8 +127,7 @@ function quecdeckWatchCat() {
     saveSettings() {
       this.isLoading = true;
       this.response = '';
-      authFetch('/cgi-bin/watchcat_maker', { method: 'POST', body: new URLSearchParams(this.buildParams()) })
-        .then((r) => r.text())
+      fetchText('/cgi-bin/watchcat_maker', { method: 'POST', body: new URLSearchParams(this.buildParams()) })
         .then((data) => {
           this.response = this.enabled ? 'Saved.' : 'Disabled.';
           this.isLoading = false;
@@ -141,8 +140,7 @@ function quecdeckWatchCat() {
     },
 
     fetchSettings() {
-      return authFetch('/cgi-bin/get_watchcat_status')
-        .then((r) => r.json())
+      return fetchJSON('/cgi-bin/get_watchcat_status')
         .then((data) => {
           if (data && Object.keys(data).length > 0) {
             this.enabled = data.enabled === true;
@@ -161,8 +159,7 @@ function quecdeckWatchCat() {
       this.statsFetching = true;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 4000);
-      authFetch('/cgi-bin/get_watchcat_stats', { signal: controller.signal })
-        .then((r) => r.json())
+      fetchJSON('/cgi-bin/get_watchcat_stats', { signal: controller.signal })
         .then((data) => {
           if (data && data.stats) {
             this.stats = data.stats;
@@ -189,8 +186,7 @@ function quecdeckWatchCat() {
     },
 
     fetchScheduledRestart() {
-      return authFetch('/cgi-bin/get_scheduled_restart')
-        .then((r) => r.json())
+      return fetchJSON('/cgi-bin/get_scheduled_restart')
         .then((data) => {
           if (data) {
             this.srEnabled = data.enabled === true;
@@ -221,8 +217,7 @@ function quecdeckWatchCat() {
         HOUR: device.hour,
         MINUTE: device.minute,
       };
-      authFetch('/cgi-bin/scheduled_restart_maker', { method: 'POST', body: new URLSearchParams(params) })
-        .then((r) => r.text())
+      fetchText('/cgi-bin/scheduled_restart_maker', { method: 'POST', body: new URLSearchParams(params) })
         .then((data) => {
           this.srResponse = this.srEnabled ? 'Saved.' : 'Disabled.';
           this.srLoading = false;

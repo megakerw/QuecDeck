@@ -1,11 +1,7 @@
 #!/bin/bash
 
-# Execute the uptime command and store the result
-uptime_output=$(uptime)
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
 
-# Set header for plain text content
-echo "Content-Type: text/plain"
-echo ""
+cgi_output_text
 
-# Output the uptime result
-echo "$uptime_output"
+uptime

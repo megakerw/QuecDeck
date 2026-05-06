@@ -14,24 +14,6 @@
 
 . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
 
-validate_htpasswd() {
-    local htpasswd_file="$1"
-    local username="$2"
-    local password="$3"
-
-    [ -f "$htpasswd_file" ] || return 1
-
-    local line
-    line=$(grep "^${username}:" "$htpasswd_file" 2>/dev/null | head -1)
-    [ -n "$line" ] || return 1
-
-    local stored_hash="${line#*:}"
-    local salt computed
-    salt=$(printf '%s' "$stored_hash" | awk -F'[$]' '{print $3}')
-    computed=$(printf '%s' "$password" | openssl passwd -6 -salt "$salt" -stdin 2>/dev/null)
-    [ "$computed" = "$stored_hash" ]
-}
-
 # Extract session token from Cookie header.
 token=$(printf '%s' "${HTTP_COOKIE:-}" | tr ';' '\n' | sed 's/^ *//' | \
     grep '^session=' | head -1 | cut -d= -f2)
@@ -93,15 +75,6 @@ if [ -n "$dev_lockout_until" ] && [ "$dev_lockout_until" -gt "$now" ]; then
 fi
 
 ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
-log_access_event() {
-    mkdir -p "$(dirname "$ACCESS_LOG")" && chmod 700 "$(dirname "$ACCESS_LOG")"
-    printf '%s\n' "$1" >> "$ACCESS_LOG"
-    local count
-    count=$(wc -l < "$ACCESS_LOG" 2>/dev/null || echo 0)
-    if [ "$count" -gt 500 ]; then
-        tail -500 "$ACCESS_LOG" > "${ACCESS_LOG}.tmp" && mv "${ACCESS_LOG}.tmp" "$ACCESS_LOG"
-    fi
-}
 
 client_ip=$(printf '%s' "${REMOTE_ADDR:-unknown}" | tr -cd 'A-Fa-f0-9.:')
 [ -z "$client_ip" ] && client_ip="unknown"
@@ -124,7 +97,7 @@ _session_write() {
 if validate_htpasswd "/opt/etc/.htpasswd_dev" "devadmin" "$password"; then
     # Success — clear lockout state and mark session as dev-unlocked.
     printf 'dev_unlocked=1\n' | _session_write
-    log_access_event "{\"ts\":$now,\"type\":\"dev_unlock_success\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+    log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_success\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
     cgi_output_json
     printf '{"unlocked":true}\n'
 else
@@ -132,12 +105,12 @@ else
     count=$(( ${dev_fail_count:-0} + 1 ))
     if [ "$count" -ge "$MAX_ATTEMPTS" ]; then
         printf 'dev_fail_count=0\ndev_lockout_until=%s\n' "$(( now + LOCKOUT_SECS ))" | _session_write
-        log_access_event "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+        log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
         cgi_output_json
         printf '{"unlocked":false,"error":"locked"}\n'
     else
         printf 'dev_fail_count=%s\ndev_lockout_until=0\n' "$count" | _session_write
-        log_access_event "{\"ts\":$now,\"type\":\"dev_unlock_failure\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+        log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_failure\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
         cgi_output_json
         printf '{"unlocked":false,"error":"wrong"}\n'
     fi

@@ -1,15 +1,8 @@
 #!/bin/bash
 
-# Reject cross-origin requests (CSRF protection).
-if [ -n "$HTTP_ORIGIN" ]; then
-    case "$HTTP_ORIGIN" in
-        "https://${HTTP_HOST}"|"http://${HTTP_HOST}") ;;
-        *)
-            printf 'Status: 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nForbidden\n'
-            exit 1
-            ;;
-    esac
-fi
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+
+cgi_check_cors
 
 # Only accept POST — silently redirect GET (e.g. BFCache restores) to login.
 if [ "$REQUEST_METHOD" != "POST" ]; then
@@ -30,9 +23,9 @@ if printf '%s' "$token" | grep -qE '^[A-Za-z0-9]{1,128}$'; then
         [ -z "$client_ip" ] && client_ip="unknown"
         wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $1; exit}')
         [ -z "$wan_ip" ] && wan_ip=""
-        printf '{"ts":%s,"type":"logout","user":"%s","ip":"%s","wan_ip":"%s"}\n' \
-            "$(date +%s)" "$logout_user" "$client_ip" "$wan_ip" \
-            >> /tmp/quecdeck/logs/access_events.jsonl
+        ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
+        log_access_event "$ACCESS_LOG" "$(printf '{"ts":%s,"type":"logout","user":"%s","ip":"%s","wan_ip":"%s"}' \
+            "$(date +%s)" "$logout_user" "$client_ip" "$wan_ip")"
     fi
     rm -f "$session_file"
 fi
