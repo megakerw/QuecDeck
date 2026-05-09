@@ -30,8 +30,8 @@
               <!-- Step 1: Admin password -->
               <template x-if="step === 1">
                 <div>
-                  <h5 class="mb-1">Welcome</h5>
-                  <p class="text-muted small mb-3">Set a password for the admin account to get started.</p>
+                  <h5 class="mb-2">Welcome</h5>
+                  <p class="text-muted small mb-4">Set a password for the admin account to get started.</p>
                   <div x-show="error" class="alert alert-danger mb-3" x-text="error"></div>
                   <form @submit.prevent="nextStep()">
                     <div class="mb-3">
@@ -50,8 +50,8 @@
               <!-- Step 2: Developer password (optional) -->
               <template x-if="step === 2">
                 <div>
-                  <h5 class="mb-1">Developer Access</h5>
-                  <p class="text-muted small mb-3">Optionally set a password for developer access. This unlocks the AT terminal, web console, and cell locking features. You can skip this and set it later via the console.</p>
+                  <h5 class="mb-2">Developer Access</h5>
+                  <p class="text-muted small mb-4">Optionally set a password for developer access. This unlocks the AT terminal, web console, and cell locking features. You can skip this and set it later via the console.</p>
                   <div x-show="error" class="alert alert-danger mb-3" x-text="error"></div>
                   <form @submit.prevent="submit()">
                     <div class="mb-3">
