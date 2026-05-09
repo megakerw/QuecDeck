@@ -37,6 +37,7 @@ function quecdeckWatchCat() {
     },
 
     get canSave() {
+      if (!this.enabled) return true;
       return (
         this.validIps.length > 0 &&
         this.pingInterval >= 10 &&
@@ -139,8 +140,8 @@ function quecdeckWatchCat() {
         });
     },
 
-    fetchSettings() {
-      return fetchJSON('/cgi-bin/get_watchcat_status')
+    fetchSettings(signal) {
+      return fetchJSON('/cgi-bin/get_watchcat_status', signal ? { signal } : {})
         .then((data) => {
           if (data && Object.keys(data).length > 0) {
             this.enabled = data.enabled === true;
@@ -150,8 +151,7 @@ function quecdeckWatchCat() {
             this.pingFailureCount = data.ping_failure_count || 3;
             this.disableOnNoSim = data.disable_on_no_sim !== false;
           }
-        })
-        .catch(() => this.$store.errorModal.open('Failed to load watchcat settings.'));
+        });
     },
 
     fetchStats() {
@@ -185,8 +185,8 @@ function quecdeckWatchCat() {
       }
     },
 
-    fetchScheduledRestart() {
-      return fetchJSON('/cgi-bin/get_scheduled_restart')
+    fetchScheduledRestart(signal) {
+      return fetchJSON('/cgi-bin/get_scheduled_restart', signal ? { signal } : {})
         .then((data) => {
           if (data) {
             this.srEnabled = data.enabled === true;
@@ -202,8 +202,7 @@ function quecdeckWatchCat() {
             this.srMinute = local.minute;
             this.srDay = local.day;
           }
-        })
-        .catch(() => this.$store.errorModal.open('Failed to load scheduled restart settings.'));
+        });
     },
 
     saveScheduledRestart() {
@@ -230,10 +229,18 @@ function quecdeckWatchCat() {
     },
 
     init() {
-      this.fetchSettings().then(() => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      Promise.all([
+        this.fetchSettings(controller.signal),
+        this.fetchScheduledRestart(controller.signal),
+      ]).then(() => {
+        clearTimeout(timer);
         if (this.serviceActive) this.startStatsPolling();
+      }).catch(() => {
+        clearTimeout(timer);
+        this.$store.errorModal.open('Failed to load settings.');
       });
-      this.fetchScheduledRestart();
       this.$watch('serviceActive', (value) => {
         if (value) {
           this.startStatsPolling();
