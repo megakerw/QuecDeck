@@ -94,8 +94,8 @@ function fetchDeviceInfo() {
         if (imsiLine) this.imsi = imsiLine;
       } else {
         this.phoneNumber = "No SIM Card Inserted or Detected";
-        this.imsi = " ";
-        this.iccid = " ";
+        this.imsi = "-";
+        this.iccid = "-";
       }
     },
 

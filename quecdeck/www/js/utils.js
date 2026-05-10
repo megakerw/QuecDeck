@@ -116,7 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="mb-3">
         <h5 class="mb-0 fw-semibold" x-text="$store.confirmModal.title"></h5>
       </div>
-      <p class="mb-2 text-muted" x-text="$store.confirmModal.message"></p>
+      <p class="mb-3 text-muted" x-text="$store.confirmModal.message"></p>
       <p x-show="$store.confirmModal.detail" class="mb-3 font-monospace small rounded px-2 py-1" style="background:var(--bs-secondary-bg)" x-text="$store.confirmModal.detail"></p>
       <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-secondary btn-sm" @click="$store.confirmModal.cancel()">Cancel</button>
@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.body.appendChild(modal);
 });
 
-// Inject scan-in-progress banner and start polling
+// Inject scan-in-progress banner
 document.addEventListener('DOMContentLoaded', () => {
   const banner = document.createElement('div');
   banner.setAttribute('x-data', '');
@@ -185,37 +185,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const main = document.querySelector('main');
   if (main) main.parentNode.insertBefore(banner, main);
 
-  let scanFetching = false;
-  let scanIntervalId = null;
-
-  function pollScanStatus() {
-    if (scanFetching) return;
-    scanFetching = true;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-    authFetch('/cgi-bin/get_scan_status', { signal: controller.signal })
-      .then(r => r.json())
-      .then(data => { Alpine.store('scanBanner').active = !!data.scanning; })
-      .catch(() => {})
-      .finally(() => { clearTimeout(timer); scanFetching = false; });
-  }
-
-  function startScanPoll() {
-    if (scanIntervalId) return;
-    pollScanStatus();
-    scanIntervalId = setInterval(pollScanStatus, 5000);
-  }
-
-  function stopScanPoll() {
-    clearInterval(scanIntervalId);
-    scanIntervalId = null;
-  }
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopScanPoll(); else startScanPoll();
-  });
-
-  startScanPoll();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  authFetch('/cgi-bin/get_scan_status', { signal: controller.signal })
+    .then(r => r.json())
+    .then(data => { Alpine.store('scanBanner').active = !!data.scanning; })
+    .catch(() => {})
+    .finally(() => clearTimeout(timer));
 });
 
 function fetchJSON(url, options) {

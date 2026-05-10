@@ -72,7 +72,7 @@ Scan for nearby cells and display network, provider, band, frequency, PCI, and R
 
 ### Settings
 - LAN IP and DHCP range configuration
-- One-click utilities: reboot, onboard DNS IPv4/IPv6 proxy, IP Passthrough (IPPT), auto-connect (QMAPWAC), and GNSS toggle
+- One-click utilities: reboot, onboard DNS IPv4/IPv6 proxy, IP Passthrough (IPPT), auto-connect (QMAPWAC), GNSS toggle, and SIM hot-swap detection
 
 ### Monitoring
 - **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics and consecutive failure tracking
@@ -117,7 +117,7 @@ QuecDeck started as a fork of [Simple Admin](https://github.com/iamromulan/quect
 - Sessions are managed via secure cookies, with a 15-minute lockout after 5 failed login attempts. Both passwords require a minimum of 8 characters.
 
 ### AT Command Layer
-All modem communication goes through [atcli](https://github.com/megakerw/atcli_rust) (a fork of [atcli_rust](https://github.com/1alessandro1/atcli_rust)), a Rust-based AT command CLI that runs as a setuid binary. Since multiple CGI requests can arrive at the same time, a queue daemon (`atcmd_queue_daemon.sh`) serializes requests through named pipes to avoid race conditions. Responses are cached per endpoint to reduce modem load: 3 seconds for modem stats, 5 seconds for everything else.
+All modem communication goes through [atcli](https://github.com/megakerw/atcli_rust) (a fork of [atcli_rust](https://github.com/1alessandro1/atcli_rust)), a Rust-based AT command CLI that runs as a setuid binary. Since multiple CGI requests can arrive at the same time, a queue daemon (`atcmd_queue_daemon.sh`) serializes requests through named pipes to avoid race conditions. Responses are cached per endpoint to reduce modem load. Cache TTLs are tuned to how often data actually changes: 3 seconds for signal stats and connection info, 5 seconds for network and settings data, and 1 hour for static device info like firmware version and build time. Where possible, multiple AT commands are batched into a single request to cut down on round trips.
 
 ### Firewall
 A lightweight iptables-based firewall restricts access to ports 80, 443, and optionally 22 (SSH) to the LAN IP only, blocking WAN exposure. Custom chains (`FW`/`FW6`) survive QCMAP's automatic iptables rebuilds. IPv6 access to the admin UI is blocked by default.

@@ -60,9 +60,9 @@ echo "$result"
 cache_invalidate "$_CACHE_MODEM_ALL" "$_CACHE_NETWORK" "$_CACHE_MODEM_CONN"
 
 if [ "$action" = "reconnect" ]; then
-    ( sleep 2; atcmd_run 'AT+CGACT=0,1'; sleep 3; atcmd_run 'AT+CGACT=1,1' ) >/dev/null 2>&1 &
+    ( sleep 2; atcmd_run 'AT+CFUN=0'; sleep 10; atcmd_run 'AT+CFUN=1' ) >/dev/null 2>&1 &
     disown $!
-else
+elif [ "$action" != "simswap" ]; then
     ( sleep 5; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
     disown $!
 fi

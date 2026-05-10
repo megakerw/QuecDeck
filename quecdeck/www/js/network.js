@@ -327,15 +327,21 @@ function networkSettings() {
         return;
       }
 
-      if (this.hotswapEnabled) {
+      const simInvolved = 'sim' in changes;
+      if (simInvolved && this.hotswapEnabled) {
         this.$store.confirmModal.open(
-          'The connection will be briefly interrupted while the new settings are applied.',
-          () => this.applySettingsWithReconnect(changes)
+          'The SIM slot will be switched. The connection may be briefly interrupted.',
+          () => this.applySettingsWithSimswap(changes)
+        );
+      } else if (simInvolved && !this.hotswapEnabled) {
+        this.$store.confirmModal.open(
+          'The modem will reboot to switch the SIM slot.',
+          () => this.applySaveChanges(changes)
         );
       } else {
         this.$store.confirmModal.open(
-          'The modem will reboot to apply the new APN settings.',
-          () => this.applySaveChanges(changes)
+          'The modem will briefly disconnect to apply the new settings.',
+          () => this.applySettingsWithReconnect(changes)
         );
       }
     },
@@ -364,7 +370,11 @@ function networkSettings() {
     },
     applySettingsWithReconnect(changes) {
       this.postNetworkAction("/cgi-bin/save_apn", { ...changes, action: "reconnect" });
-      this.$store.waitModal.start("Reconnecting...", 15, () => this.init());
+      this.$store.waitModal.start("Reconnecting...", 20, () => this.init());
+    },
+    applySettingsWithSimswap(changes) {
+      this.postNetworkAction("/cgi-bin/save_apn", { ...changes, action: "simswap" });
+      this.$store.waitModal.start("Switching SIM slot...", 10, () => this.init());
     },
     fetchNetworkInfo() {
       return fetchText("/cgi-bin/get_network_info", { method: "POST" })
