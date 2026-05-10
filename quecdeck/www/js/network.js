@@ -1,10 +1,5 @@
-function cellLocking() {
+function networkSettings() {
   return {
-    isLoading: false,
-    networkModeCell: "-",
-    cells: Array.from({ length: 10 }, () => ({ earfcn: null, pci: null })),
-    scs: null,
-    band: null,
     apn: "-",
     apnIP: "-",
     newApnIP: null,
@@ -19,7 +14,6 @@ function cellLocking() {
     mbnAutoSelFetched: "-",
     nrModeControl: "-",
     nrModeControlFetched: "-",
-    nrModeControlDisplay: "-",
     ratAcqOrder: "-",
     ratAcqOrderFetched: "-",
     roamPref: "-",
@@ -29,7 +23,6 @@ function cellLocking() {
       { id: "LTE", label: "LTE (4G)" },
       { id: "WCDMA", label: "WCDMA (3G)" },
     ],
-    cellNum: null,
     lte_bands: null,
     nsa_bands: null,
     sa_bands: null,
@@ -38,7 +31,6 @@ function cellLocking() {
     locked_sa_bands: null,
     sim: "-",
     newSim: null,
-    cellLockStatus: "Unknown",
     bands: "Fetching Bands...",
     isGettingBands: false,
     allBandsChecked: false,
@@ -158,9 +150,9 @@ function cellLocking() {
       }
 
       // Separate the bands for each network mode
-      this.lte_bands = bands.lte_band.join(":");
-      this.nsa_bands = bands.nsa_nr5g_band.join(":");
-      this.sa_bands = bands.nr5g_band.join(":");
+      this.lte_bands = (bands.lte_band || []).join(":");
+      this.nsa_bands = (bands.nsa_nr5g_band || []).join(":");
+      this.sa_bands = (bands.nr5g_band || []).join(":");
 
       // Show checkboxes immediately with no locked state — parseLockedBands
       // will call populateBands again once locked bands are fetched.
@@ -190,9 +182,9 @@ function cellLocking() {
       }
 
       // Separate the bands for each network mode
-      this.locked_lte_bands = bands.lte_band.join(":");
-      this.locked_nsa_bands = bands.nsa_nr5g_band.join(":");
-      this.locked_sa_bands = bands.nr5g_band.join(":");
+      this.locked_lte_bands = (bands.lte_band || []).join(":");
+      this.locked_nsa_bands = (bands.nsa_nr5g_band || []).join(":");
+      this.locked_sa_bands = (bands.nr5g_band || []).join(":");
 
       populateBands(
         this.lte_bands,
@@ -231,12 +223,10 @@ function cellLocking() {
           this.apnIP = settings.apnIP;
           this.newApn = settings.apn;
           this.newApnIP = settings.apnIP;
-          this.cellLockStatus = settings.cellLockStatus;
           this.prefNetwork = settings.prefNetwork;
           this.setNetworkModesFromPref(settings.prefNetwork);
           this.nrModeControl = settings.nrModeControl;
           this.nrModeControlFetched = settings.nrModeControl;
-          this.nrModeControlDisplay = settings.nrModeControlDisplay;
           this.ratAcqOrder = settings.ratAcqOrder;
           this.ratAcqOrderFetched = settings.ratAcqOrder;
           this.setRatAcqFromFetched(settings.ratAcqOrder);
@@ -364,59 +354,6 @@ function cellLocking() {
         authFetch("/cgi-bin/set_setting", { method: "POST", body: new URLSearchParams({ action: "reboot" }) }).catch(() => {});
       }, 5000);
       this.$store.waitModal.start("Rebooting...", REBOOT_WAIT_SECS, () => this.init());
-    },
-    cellLockEnableLTE() {
-      const cellNum = this.cellNum;
-
-      const isInt = (v) => /^\d+$/.test(String(v).trim());
-
-      if (cellNum === null || !isInt(cellNum)) {
-        this.$store.errorModal.open("Please enter a valid number of cells to lock");
-        return;
-      }
-
-      const earfcnPciPairs = this.cells.slice(0, parseInt(cellNum));
-
-      // Filter out pairs where either earfcn or pci is missing or non-integer
-      const validPairs = earfcnPciPairs.filter(
-        (pair) => pair.earfcn && pair.pci && isInt(pair.earfcn) && isInt(pair.pci)
-      );
-
-      if (validPairs.length === 0) {
-        this.$store.errorModal.open("Please enter at least one valid EARFCN and PCI pair (integers only)");
-        return;
-      }
-
-      const pairs = validPairs.map((pair) => `${pair.earfcn},${pair.pci}`).join(",");
-      this.postNetworkAction("/cgi-bin/set_cell_lock", { type: "lte", count: cellNum, pairs });
-      this.$store.waitModal.start("Applying Settings...", 3, () => this.init());
-    },
-    cellLockEnableNR() {
-      const earfcn = this.cells[0].earfcn;
-      const pci = this.cells[0].pci;
-      const scs = this.scs;
-      const band = this.band;
-
-      if (!earfcn || !pci || !scs || scs === "SCS" || !band) {
-        this.$store.errorModal.open("Please enter all the required fields");
-        return;
-      }
-
-      if (!/^\d+$/.test(String(earfcn)) || !/^\d+$/.test(String(pci))) {
-        this.$store.errorModal.open("EARFCN and PCI must be integers");
-        return;
-      }
-
-      this.postNetworkAction("/cgi-bin/set_cell_lock", { type: "nr", earfcn, pci, scs, band });
-      this.$store.waitModal.start("Applying Settings...", 3, () => this.init());
-    },
-    cellLockDisableLTE() {
-      this.postNetworkAction("/cgi-bin/set_cell_lock", { type: "unlock_lte" });
-      this.$store.waitModal.start("Applying Settings...", 3, () => this.init());
-    },
-    cellLockDisableNR() {
-      this.postNetworkAction("/cgi-bin/set_cell_lock", { type: "unlock_nr" });
-      this.$store.waitModal.start("Applying Settings...", 3, () => this.init());
     },
     fetchNetworkInfo() {
       return fetchText("/cgi-bin/get_network_info", { method: "POST" })

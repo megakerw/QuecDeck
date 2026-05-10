@@ -7,5 +7,7 @@ cgi_require_post
 cgi_output_text
 
 cache_get_or_fetch "$_CACHE_MODEM_ALL" 3 \
-    'AT+QTEMP;+QENG="servingcell";+QCAINFO;+CSQ;+QGDNRCNT?;+QGDCNT?;+QUIMSLOT?;+QSPN;+CGCONTRDP=1;+QMAP="WWANIP";+QSIMSTAT?' \
-    '+QENG: "servingcell"' '+CSQ:' '+QUIMSLOT:'
+    'AT+QTEMP;+QENG="servingcell";+QCAINFO;+CSQ;+QGDNRCNT?;+QGDCNT?;+QUIMSLOT?;+QSPN;+QSIMSTAT?'
+
+# Connection-dependent info — may fail with no active bearer; JS falls back gracefully.
+cache_get_or_fetch "$_CACHE_MODEM_CONN" 3 'AT+CGCONTRDP=1;+QMAP="WWANIP"' 2000

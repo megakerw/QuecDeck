@@ -27,14 +27,6 @@ function parseCurrentSettings(rawdata) {
     apn = "Failed fetching APN";
   }
 
-  const cellLock4GStatus = safeParse(
-    (line) => line.includes('+QNWLOCK: "common/4g"'), ",", 1, "0"
-  );
-
-  const cellLock5GStatus = safeParse(
-    (line) => line.includes('+QNWLOCK: "common/5g"'), ",", 1, "0"
-  );
-
   const prefNetwork = safeParse(
     (line) => line.includes('+QNWPREFCFG: "mode_pref"'), ",", 1
   );
@@ -87,28 +79,12 @@ function parseCurrentSettings(rawdata) {
     bands = "Failed fetching bands";
   }
 
-  let cellLockStatus;
-  if (cellLock4GStatus === "1" && cellLock5GStatus === "1") {
-    cellLockStatus = "Locked to 4G and 5G";
-  } else if (cellLock4GStatus === "1") {
-    cellLockStatus = "Locked to 4G";
-  } else if (cellLock5GStatus === "1") {
-    cellLockStatus = "Locked to 5G";
-  } else {
-    cellLockStatus = "Not Locked";
-  }
-
-  const nrModeControlDisplayMap = { "0": "NSA & SA", "1": "NR5G-SA Disabled", "2": "NR5G-NSA Disabled" };
-  const nrModeControlDisplay = nrModeControlDisplayMap[nrModeControlStatus] || nrModeControlStatus;
-
   return {
     sim,
     apn,
     apnIP,
-    cellLockStatus,
     prefNetwork,
     nrModeControl: nrModeControlStatus,
-    nrModeControlDisplay,
     ratAcqOrder,
     roamPref,
     mbnAutoSel,

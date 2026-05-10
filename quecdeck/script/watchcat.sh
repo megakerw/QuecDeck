@@ -52,7 +52,7 @@ for ip in $TRACK_IPS; do
 done
 
 check_sim() {
-    /usrdata/quecdeck/atcli 'AT+CIMI' 2>/dev/null | grep -qv 'ERROR'
+    /usrdata/quecdeck/atcli 'AT+QSIMSTAT?' 2>/dev/null | grep -qE '^\+QSIMSTAT: [0-9]+,1'
 }
 
 write_stats() {

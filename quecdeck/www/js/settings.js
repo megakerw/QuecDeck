@@ -6,6 +6,7 @@ function quecdeckSettings() {
     ipptEnabled: null,
     autoConnectEnabled: null,
     gnssEnabled: null,
+    simDetEnabled: null,
     lanIp: "",
     dhcpStart: "",
     dhcpEnd: "",
@@ -99,6 +100,14 @@ function quecdeckSettings() {
       this.sendSetting('gnss_disable').then(() => { this.gnssEnabled = false; }).catch(() => this.$store.errorModal.open('Failed to disable GNSS. Please try again.'));
     },
 
+    simDetEnable() {
+      this.sendSetting('simdet_enable').then(() => { this.simDetEnabled = true; }).catch(() => this.$store.errorModal.open('Failed to enable SIM hot swap. Please try again.'));
+    },
+
+    simDetDisable() {
+      this.sendSetting('simdet_disable').then(() => { this.simDetEnabled = false; }).catch(() => this.$store.errorModal.open('Failed to disable SIM hot swap. Please try again.'));
+    },
+
     fetchCurrentSettings() {
       fetchText("/cgi-bin/get_settings", { method: "POST" })
         .then((data) => {
@@ -115,6 +124,9 @@ function quecdeckSettings() {
 
           const gnssLine = currentData.find(line => line.includes('+QGPS:'));
           this.gnssEnabled = !!(gnssLine && gnssLine.trim().split(":")[1]?.trim() === '1');
+
+          const simDetLine = currentData.find(line => line.includes('+QSIMDET:'));
+          this.simDetEnabled = !!(simDetLine && simDetLine.split(':')[1]?.trim().split(',')[1]?.trim() === '1');
 
         })
         .catch(() => {

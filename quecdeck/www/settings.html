@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=f3482f33" />
-    <link rel="stylesheet" href="css/styles.css?v=f3482f33" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=73ed4510" />
+    <link rel="stylesheet" href="css/styles.css?v=73ed4510" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=f3482f33"></script>
-    <script src="js/utils.js?v=f3482f33"></script>
-    <script src="js/alpinejs.min.js?v=f3482f33" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=73ed4510"></script>
+    <script src="js/utils.js?v=73ed4510"></script>
+    <script src="js/alpinejs.min.js?v=73ed4510" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="quecdeckSettings()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=f3482f33"></script>
+        <script src="js/nav.js?v=73ed4510"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
           <div class="col-md-6 form-narrow">
@@ -109,6 +109,17 @@
                       x-text="gnssEnabled ? 'Disable' : 'Enable'"
                     ></button>
                   </li>
+                  <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span>SIM Hot Swap</span>
+                    <button
+                      type="button"
+                      class="btn"
+                      :class="simDetEnabled ? 'btn-danger' : 'btn-primary'"
+                      @click="simDetEnabled ? simDetDisable() : simDetEnable()"
+                      :disabled="isLoading || $store.scanBanner.active || simDetEnabled === null"
+                      x-text="simDetEnabled ? 'Disable' : 'Enable'"
+                    ></button>
+                  </li>
               </ul>
             </div>
           </div>
@@ -116,7 +127,7 @@
 
       </div>
     </main>
-    <script src="js/dark-mode.js?v=f3482f33"></script>
-    <script src="js/settings.js?v=f3482f33"></script>
+    <script src="js/dark-mode.js?v=73ed4510"></script>
+    <script src="js/settings.js?v=73ed4510"></script>
   </body>
 </html>

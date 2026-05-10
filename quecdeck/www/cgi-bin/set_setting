@@ -38,6 +38,10 @@ case "$action" in
         atcmd_run 'AT+QMAP="MPDN_rule",0' 15000
         ( sleep 2; . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
         disown $! ;;
+    simdet_enable)
+        atcmd_run 'AT+QSIMDET=0,1' ;;
+    simdet_disable)
+        atcmd_run 'AT+QSIMDET=0,0' ;;
     *)
         cgi_error "ERROR: invalid action" ;;
 esac

@@ -114,17 +114,13 @@ log_access_event() {
 # unconditionally so AT commands are not sent to a busy modem.
 #
 # Validation: responses are only cached if the last non-empty line is exactly
-# "OK" AND the response contains every required pattern string supplied by the
-# caller. Patterns are passed as positional args after sock_timeout; zero
-# patterns means only the OK check applies. This catches the case where a
-# stale response from a different AT command leaks in and still ends with OK.
-# ERROR/CME/CMS responses and empty results are rejected; stale cache is
-# served instead.
+# "OK". ERROR/CME/CMS responses and empty results are rejected; stale cache
+# is served instead.
 #
-# Retry: cache_get_or_fetch retries once if the response fails validation but
-# is non-empty (modem returned ERROR or wrong content). Empty results — where
-# the modem is silent and the handler timed out — are not retried to avoid
-# stacking up timeout delays that would exceed the client request timeout.
+# Retry: cache_get_or_fetch retries once if the response is non-empty but
+# didn't end with OK (transient modem error). Empty results — where the modem
+# is silent and the handler timed out — are not retried to avoid stacking up
+# timeout delays that would exceed the client request timeout.
 # ---------------------------------------------------------------------------
 _CACHE_DIR=/tmp/quecdeck/cache
 
@@ -133,6 +129,7 @@ _CACHE_DEVICE_INFO="$_CACHE_DIR/device_info"
 _CACHE_NEIGHBOUR="$_CACHE_DIR/neighbour_cells"
 _CACHE_SETTINGS="$_CACHE_DIR/settings"
 _CACHE_NETWORK="$_CACHE_DIR/network"
+_CACHE_MODEM_CONN="$_CACHE_DIR/modem_conn"
 
 # Returns 0 if cache file exists and is younger than ttl seconds.
 cache_is_fresh() {
@@ -150,16 +147,6 @@ at_response_ok() {
     [ "$last" = "OK" ]
 }
 
-# Returns 0 if response ends with OK and contains every required pattern.
-# Usage: _at_result_ok <response> [pattern ...]
-_at_result_ok() {
-    local _res="$1"; shift
-    at_response_ok "$_res" || return 1
-    local _p
-    for _p in "$@"; do
-        printf '%s' "$_res" | grep -qF "$_p" || return 1
-    done
-}
 
 # Atomically write content to a cache file via temp file + mv.
 # Cache dir is 700 so only its owner can enter — files inside are 644 so that
@@ -181,11 +168,10 @@ cache_invalidate() {
 # Used by write CGIs to warm the cache after changing modem settings.
 # Accepts the same required-pattern varargs as cache_get_or_fetch.
 cache_refresh() {
-    local f="$1" at_cmd="$2" at_timeout="${3:-5000}"
-    shift 3 2>/dev/null || shift "$#"
+    local f="$1" at_cmd="$2" at_timeout="${3:-3000}"
     local result
     result=$(atcmd_run "$at_cmd" "$at_timeout")
-    _at_result_ok "$result" "$@" && cache_write "$f" "$result"
+    at_response_ok "$result" && cache_write "$f" "$result"
 }
 
 # Serve from cache if fresh; otherwise run AT command, cache, and serve.
@@ -198,12 +184,7 @@ cache_refresh() {
 # same for all callers and the cost of a duplicate command is one extra
 # 50-100 ms round trip — cheaper than returning empty on first boot.
 cache_get_or_fetch() {
-    local f="$1" ttl="$2" at_cmd="$3"
-    shift 3 2>/dev/null || shift "$#"
-    # $@ now holds the required patterns (zero or more).
-    # Note: shift 3 fails silently if fewer than 3 args were supplied; the
-    # fallback shift "$#" clears all positional params so $@ is empty rather
-    # than leaking the fixed args (f, ttl, at_cmd) into the pattern-check loop.
+    local f="$1" ttl="$2" at_cmd="$3" at_timeout="${4:-3000}"
     local result
     if [ -f /tmp/quecdeck/qscan.active ]; then
         # Treat as stale if older than 5 minutes — max scan is 215 s, so a
@@ -222,20 +203,18 @@ cache_get_or_fetch() {
     # Ensure cache dir exists (tmpfs is empty after boot).
     # 700: cache files contain sensitive modem data (IPs, APN, cell info).
     mkdir -p "$_CACHE_DIR" && chmod 700 "$_CACHE_DIR"
-    # Retry once only if the modem returned a non-empty response that didn't end
-    # with OK — those are transient errors where a second attempt may succeed.
-    # If the result is empty (timeout) or ended with OK but failed pattern checks
-    # (wrong content), retrying won't help and only adds latency.
+    # Retry once if the modem returned a non-empty response that didn't end with
+    # OK — those are transient errors where a second attempt may succeed.
+    # Empty results (timeout) are not retried to avoid stacking timeout delays.
     local attempt=0
     result=""
     while [ $attempt -lt 2 ]; do
-        result=$(atcmd_run "$at_cmd" 5000)
-        _at_result_ok "$result" "$@" && break
-        [ -z "$result" ] && break
+        result=$(atcmd_run "$at_cmd" "$at_timeout")
         at_response_ok "$result" && break
+        [ -z "$result" ] && break
         attempt=$((attempt + 1))
     done
-    if _at_result_ok "$result" "$@"; then
+    if at_response_ok "$result"; then
         cache_write "$f" "$result"
         printf '%s' "$result"
     else
@@ -270,7 +249,7 @@ _ATCMD_QUEUE_LIMIT=10
 
 atcmd_run() {
     local cmd="$1"
-    local at_timeout="${2:-5000}"
+    local at_timeout="${2:-3000}"
     local _id _resp _waited _queued _f _line _resp_data
 
     if [ -p "$_ATCMD_NOTIFY" ]; then
