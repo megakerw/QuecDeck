@@ -39,9 +39,11 @@ case "$action" in
         ( sleep 2; . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
         disown $! ;;
     simdet_enable)
-        atcmd_run 'AT+QSIMDET=0,1' ;;
+        atcmd_run 'AT+QSIMDET=0,1'
+        cache_invalidate "$_CACHE_NETWORK" ;;
     simdet_disable)
-        atcmd_run 'AT+QSIMDET=0,0' ;;
+        atcmd_run 'AT+QSIMDET=0,0'
+        cache_invalidate "$_CACHE_NETWORK" ;;
     *)
         cgi_error "ERROR: invalid action" ;;
 esac

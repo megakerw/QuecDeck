@@ -34,6 +34,7 @@ function networkSettings() {
     bands: "Fetching Bands...",
     isGettingBands: false,
     allBandsChecked: false,
+    hotswapEnabled: false,
 
     toggleAllBands() {
       const checkboxes = document.querySelectorAll('#bandForm input[type="checkbox"]');
@@ -236,6 +237,8 @@ function networkSettings() {
           this.mbnAutoSelFetched = settings.mbnAutoSel;
           this.bands = settings.bands;
           this.isGettingBands = false;
+          const simdetVal = rawdata.split('\n').find(l => l.includes('+QSIMDET:'))?.split(':')[1]?.trim().split(',')[1]?.trim();
+          this.hotswapEnabled = simdetVal === '1';
           if (settings.bands === "Failed fetching bands" && rawdata.includes('+QCAINFO: "PCC"')) {
             // Only retry if QCAINFO returned PCC data — that means we're connected
             // but parsing failed transiently. Without a connection QCAINFO returns
@@ -324,10 +327,17 @@ function networkSettings() {
         return;
       }
 
-      this.$store.confirmModal.open(
-        'The modem will reboot to apply the new APN settings.',
-        () => this.applySaveChanges(changes)
-      );
+      if (this.hotswapEnabled) {
+        this.$store.confirmModal.open(
+          'The connection will be briefly interrupted while the new settings are applied.',
+          () => this.applySettingsWithReconnect(changes)
+        );
+      } else {
+        this.$store.confirmModal.open(
+          'The modem will reboot to apply the new APN settings.',
+          () => this.applySaveChanges(changes)
+        );
+      }
     },
     saveNetworkPreferences() {
       const modePref = this.getModePrefString();
@@ -350,10 +360,11 @@ function networkSettings() {
     },
     applySaveChanges(changes) {
       this.postNetworkAction("/cgi-bin/save_apn", changes);
-      setTimeout(() => {
-        authFetch("/cgi-bin/set_setting", { method: "POST", body: new URLSearchParams({ action: "reboot" }) }).catch(() => {});
-      }, 5000);
       this.$store.waitModal.start("Rebooting...", REBOOT_WAIT_SECS, () => this.init());
+    },
+    applySettingsWithReconnect(changes) {
+      this.postNetworkAction("/cgi-bin/save_apn", { ...changes, action: "reconnect" });
+      this.$store.waitModal.start("Reconnecting...", 15, () => this.init());
     },
     fetchNetworkInfo() {
       return fetchText("/cgi-bin/get_network_info", { method: "POST" })

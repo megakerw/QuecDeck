@@ -47,7 +47,7 @@ function fetchDeviceInfo() {
         .then(data => this.parseSimData(data))
         .catch(() => {});
 
-      fetchText("/cgi-bin/get_device_conn", { method: "POST" })
+      fetchText("/cgi-bin/get_modem_conn", { method: "POST" })
         .then(data => this.parseConnData(data))
         .catch(() => {});
     },

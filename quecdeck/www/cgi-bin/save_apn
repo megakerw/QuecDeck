@@ -10,6 +10,7 @@ ip_type=$(get_post_param ip_type)
 sim=$(get_post_param sim)
 roam_pref=$(get_post_param roam_pref)
 mbn=$(get_post_param mbn)
+action=$(get_post_param action)
 
 cgi_output_text
 
@@ -56,4 +57,12 @@ fi
 
 result=$(atcmd_run "AT${at_parts}")
 echo "$result"
-cache_invalidate "$_CACHE_MODEM_ALL" "$_CACHE_NETWORK"
+cache_invalidate "$_CACHE_MODEM_ALL" "$_CACHE_NETWORK" "$_CACHE_MODEM_CONN"
+
+if [ "$action" = "reconnect" ]; then
+    ( sleep 2; atcmd_run 'AT+CGACT=0,1'; sleep 3; atcmd_run 'AT+CGACT=1,1' ) >/dev/null 2>&1 &
+    disown $!
+else
+    ( sleep 5; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
+    disown $!
+fi
