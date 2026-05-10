@@ -63,6 +63,8 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/get_atcommand
   quecdeck/www/cgi-bin/get_modem_stats
   quecdeck/www/cgi-bin/get_device_info
+  quecdeck/www/cgi-bin/get_device_sim
+  quecdeck/www/cgi-bin/get_modem_conn
   quecdeck/www/cgi-bin/get_settings
   quecdeck/www/cgi-bin/set_setting
   quecdeck/www/cgi-bin/get_network_info
