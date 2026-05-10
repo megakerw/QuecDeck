@@ -109,7 +109,7 @@ end
 
 -- Developer CGIs additionally require the session to be unlocked via auth_dev
 local requires_dev_unlocked = path:match("^/console")
-    or path == "/cgi-bin/user_atcommand" or path == "/cgi-bin/get_atcommand"
+    or path == "/cgi-bin/user_atcommand"
     or path == "/cgi-bin/toggle_ttyd"   or path == "/cgi-bin/set_cell_lock"
 if requires_dev_unlocked and sess.dev_unlocked ~= "1" then
     lighty.status = 403

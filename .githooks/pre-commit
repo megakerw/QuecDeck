@@ -60,7 +60,6 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/auth_login
   quecdeck/www/cgi-bin/auth_logout
   quecdeck/www/cgi-bin/auth_dev
-  quecdeck/www/cgi-bin/get_atcommand
   quecdeck/www/cgi-bin/get_modem_stats
   quecdeck/www/cgi-bin/get_device_info
   quecdeck/www/cgi-bin/get_device_sim

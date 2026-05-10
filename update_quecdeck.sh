@@ -284,7 +284,6 @@ install_quecdeck() {
     wget -q $GITROOT/quecdeck/www/cgi-bin/auth_login &
     wget -q $GITROOT/quecdeck/www/cgi-bin/auth_logout &
     wget -q $GITROOT/quecdeck/www/cgi-bin/auth_dev &
-    wget -q $GITROOT/quecdeck/www/cgi-bin/get_atcommand &
     wget -q $GITROOT/quecdeck/www/cgi-bin/get_modem_stats &
     wget -q $GITROOT/quecdeck/www/cgi-bin/get_device_info &
     wget -q $GITROOT/quecdeck/www/cgi-bin/get_device_sim &

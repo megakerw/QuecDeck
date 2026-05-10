@@ -24,22 +24,22 @@ if ! printf '%s' "$LAN_IP" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || \
 fi
 
 # Set up custom chains so rules survive QCMAP INPUT chain rebuilds
-iptables  -N FW  2>/dev/null
-iptables  -F FW
-ip6tables -N FW6 2>/dev/null
-ip6tables -F FW6
+iptables  -N QUECDECK  2>/dev/null
+iptables  -F QUECDECK
+ip6tables -N QUECDECK6 2>/dev/null
+ip6tables -F QUECDECK6
 
 # Add rules to custom chains
 for port in "${PORTS[@]}"; do
     # IPv4: allow from LAN IP only, block all other interfaces
-    iptables  -A FW  -d "$LAN_IP" -p tcp --dport "$port" -j ACCEPT
-    iptables  -A FW  -p tcp --dport "$port" -j DROP
+    iptables  -A QUECDECK  -d "$LAN_IP" -p tcp --dport "$port" -j ACCEPT
+    iptables  -A QUECDECK  -p tcp --dport "$port" -j DROP
     # IPv6: block all (admin UI is not expected to be reachable via IPv6)
-    ip6tables -A FW6 -p tcp --dport "$port" -j DROP 2>/dev/null || true
+    ip6tables -A QUECDECK6 -p tcp --dport "$port" -j DROP 2>/dev/null || true
 done
 
 # Insert jumps from INPUT into our chains
-iptables  -D INPUT -j FW  2>/dev/null || true
-iptables  -I INPUT -j FW
-ip6tables -D INPUT -j FW6 2>/dev/null || true
-ip6tables -I INPUT -j FW6
+iptables  -D INPUT -j QUECDECK  2>/dev/null || true
+iptables  -I INPUT -j QUECDECK
+ip6tables -D INPUT -j QUECDECK6 2>/dev/null || true
+ip6tables -I INPUT -j QUECDECK6
