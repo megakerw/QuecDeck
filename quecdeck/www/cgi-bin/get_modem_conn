@@ -1,0 +1,10 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_require_post
+
+cgi_output_text
+
+# Connection-dependent — may fail with no active bearer; caller falls back gracefully.
+cache_get_or_fetch "$_CACHE_MODEM_CONN" 3 'AT+CGCONTRDP=1;+QMAP="WWANIP"' 2000

@@ -106,16 +106,12 @@ function processAllInfos() {
       this.isFetching = true;
 
       const _atController = new AbortController();
-      const _atTimeout = setTimeout(() => _atController.abort(), 2000);
+      const _atTimeout = setTimeout(() => _atController.abort(), 5000);
 
-      authFetch("/cgi-bin/get_modem_stats", {
-        method: "POST",
-        signal: _atController.signal,
-      }).then((response) => {
-        clearTimeout(_atTimeout);
-        return response.text();
-      }).then((data) => {
-            const lines = data.split("\n");
+      const _opts = { method: "POST", signal: _atController.signal };
+
+      authFetch("/cgi-bin/get_modem_stats", _opts).then(r => r.text()).then((data) => {
+        const lines = data.split("\n");
 
             // Cache repeated line lookups
             const servingcell_line = lines.find((l) => l.includes('+QENG: "servingcell"'));
@@ -471,27 +467,17 @@ function processAllInfos() {
             // --- MCCMNC ---
             this.mccmnc = qspn_line?.split(",")[4]?.replace(/"/g, "") || "00000";
 
-            // --- APN ---
-            this.apn = lines
-              .find((line) => line.includes("+CGCONTRDP:"))
-              ?.split(",")[2]
-              ?.replace(/"/g, "") || "Unknown";
-
-            // --- IPv4 and IPv6 ---
-            this.ipv4 = cleanIp(lines
-              .find((line) => line.includes("IPV4"))
-              ?.split(",")[4]
-              ?.replace(/"/g, ""));
-
-            this.ipv6 = cleanIp(lines
-              .find((line) => line.includes("IPV6"))
-              ?.split(",")[4]
-              ?.replace(/"/g, ""));
+            authFetch("/cgi-bin/get_modem_conn", { method: "POST" }).then(r => r.text()).then(connData => {
+              const connLines = connData.split("\n");
+              this.apn  = connLines.find(l => l.includes("+CGCONTRDP:"))?.split(",")[2]?.replace(/"/g, "") || "Unknown";
+              this.ipv4 = cleanIp(connLines.find(l => l.includes("IPV4"))?.split(",")[4]?.replace(/"/g, ""));
+              this.ipv6 = cleanIp(connLines.find(l => l.includes("IPV6"))?.split(",")[4]?.replace(/"/g, ""));
+            }).catch(() => {});
 
       }).catch((error) => {
-        clearTimeout(_atTimeout);
         if (error.name !== 'AbortError') console.error("fetchModemInfo error:", error);
       }).finally(() => {
+        clearTimeout(_atTimeout);
         this.isFetching = false;
       });
     },

@@ -236,10 +236,10 @@ function networkSettings() {
           this.mbnAutoSelFetched = settings.mbnAutoSel;
           this.bands = settings.bands;
           this.isGettingBands = false;
-          if (settings.bands === "Failed fetching bands" && rawdata.includes("+CGCONTRDP:")) {
-            // Only retry if there is an active data connection — QCAINFO only
-            // returns band info when connected. Without a SIM or without a
-            // connection, retrying would loop forever.
+          if (settings.bands === "Failed fetching bands" && rawdata.includes('+QCAINFO: "PCC"')) {
+            // Only retry if QCAINFO returned PCC data — that means we're connected
+            // but parsing failed transiently. Without a connection QCAINFO returns
+            // nothing, and retrying would loop forever.
             setTimeout(() => this.init(), 6000);
           }
         })

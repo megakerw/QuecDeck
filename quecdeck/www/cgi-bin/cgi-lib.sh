@@ -126,6 +126,8 @@ _CACHE_DIR=/tmp/quecdeck/cache
 
 _CACHE_MODEM_ALL="$_CACHE_DIR/modem_stats_all"
 _CACHE_DEVICE_INFO="$_CACHE_DIR/device_info"
+_CACHE_DEVICE_SIM="$_CACHE_DIR/device_sim"
+_CACHE_DEVICE_CONN="$_CACHE_DIR/device_conn"
 _CACHE_NEIGHBOUR="$_CACHE_DIR/neighbour_cells"
 _CACHE_SETTINGS="$_CACHE_DIR/settings"
 _CACHE_NETWORK="$_CACHE_DIR/network"

@@ -10,4 +10,4 @@ cgi_output_text
 # settings in one round-trip. JS splits policy vs locked bands by first vs
 # second occurrence of each band-type line; remaining lines go to parseCurrentSettings.
 cache_get_or_fetch "$_CACHE_NETWORK" 5 \
-    'AT+QNWPREFCFG="policy_band";+QNWPREFCFG="lte_band";+QNWPREFCFG= "nsa_nr5g_band";+QNWPREFCFG= "nr5g_band";+QUIMSLOT?;+CGCONTRDP=1;+QNWPREFCFG="mode_pref";+QNWPREFCFG="nr5g_disable_mode";+QNWPREFCFG="rat_acq_order";+QNWPREFCFG="roam_pref";+QMBNCFG="AutoSel";+QCAINFO;+CGDCONT?'
+    'AT+QNWPREFCFG="policy_band";+QNWPREFCFG="lte_band";+QNWPREFCFG="nsa_nr5g_band";+QNWPREFCFG="nr5g_band";+QUIMSLOT?;+QNWPREFCFG="mode_pref";+QNWPREFCFG="nr5g_disable_mode";+QNWPREFCFG="rat_acq_order";+QNWPREFCFG="roam_pref";+QMBNCFG="AutoSel";+QCAINFO;+CGDCONT?'
