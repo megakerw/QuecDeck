@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=cb894343" />
-    <link rel="stylesheet" href="css/styles.css?v=cb894343" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=30c56950" />
+    <link rel="stylesheet" href="css/styles.css?v=30c56950" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=cb894343"></script>
-    <script src="js/utils.js?v=cb894343"></script>
-    <script src="js/alpinejs.min.js?v=cb894343" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=30c56950"></script>
+    <script src="js/utils.js?v=30c56950"></script>
+    <script src="js/alpinejs.min.js?v=30c56950" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="quecdeckWatchCat()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=cb894343"></script>
+        <script src="js/nav.js?v=30c56950"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
 
@@ -33,9 +33,9 @@
               </div>
 
                 <!-- Enable / Disable -->
-                <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex justify-content-between align-items-start mb-2">
                   <div>
-                    <div class="fw-semibold" style="font-size: 0.875rem">Enable Watchcat</div>
+                    <div class="fw-semibold mb-1" style="font-size: 0.875rem">Enable Watchcat</div>
                     <div class="text-muted small" x-show="enabled">Reboots the modem if all ping targets fail.</div>
                     <div class="text-muted small" x-show="!enabled">Currently disabled.</div>
                   </div>
@@ -54,14 +54,28 @@
                   <hr />
 
                   <!-- Disable on no SIM -->
-                  <div class="d-flex justify-content-between align-items-center mb-4">
+                  <div class="d-flex justify-content-between align-items-start mb-4">
                     <div>
-                      <div class="fw-semibold" style="font-size: 0.875rem">Disable if no SIM detected</div>
+                      <div class="fw-semibold mb-1" style="font-size: 0.875rem">Disable if no SIM detected</div>
                       <div class="text-muted small">Resets the failure counter when no SIM is detected, preventing reboots when the SIM card is removed.</div>
                     </div>
                     <div class="form-check form-switch ms-3">
                       <input class="form-check-input" type="checkbox" role="switch" x-model="disableOnNoSim" />
                     </div>
+                  </div>
+
+                  <!-- Reboot rate limiting -->
+                  <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-start">
+                      <div>
+                        <div class="fw-semibold mb-1" style="font-size: 0.875rem">Limit reboot frequency</div>
+                        <div class="text-muted small">Gradually spaces out reboots if the connection stays down, reducing modem flash wear.</div>
+                      </div>
+                      <div class="form-check form-switch ms-3">
+                        <input class="form-check-input" type="checkbox" role="switch" x-model="rebootBackoff" :disabled="capExceeded" />
+                      </div>
+                    </div>
+                    <div class="text-warning small mt-1" x-show="capExceeded">Your cycle time exceeds 1 hour — this setting has no effect.</div>
                   </div>
 
                   <hr />
@@ -131,6 +145,9 @@
                     (~<span x-text="pingInterval * pingFailureCount >= 60
                       ? Math.round(pingInterval * pingFailureCount / 60) + ' min'
                       : (pingInterval * pingFailureCount) + ' sec'"></span> without response).
+                    <span x-show="rebootBackoff && !capExceeded">
+                      Reboots space out progressively if the connection stays down (doubling each cycle, max once per hour).
+                    </span>
                   </div>
 
                 </fieldset>
@@ -187,6 +204,15 @@
                     :style="'width: ' + Math.min(100, (consecutiveFailures / Math.max(pingFailureCount, 1)) * 100) + '%'"
                   ></div>
                 </div>
+                <div x-show="rebootCount > 0" class="mt-3 pt-2 border-top">
+                  <div class="d-flex justify-content-between small text-muted">
+                    <span>Reboots triggered</span>
+                    <span x-text="rebootCount"></span>
+                  </div>
+                  <div x-show="backoffActive" class="small text-warning mt-1">
+                    Reboot rate limited. Next attempt in <span x-text="backoffRemainingText"></span>.
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -206,9 +232,9 @@
               </div>
 
                 <!-- Enable / Disable -->
-                <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex justify-content-between align-items-start mb-2">
                   <div>
-                    <div class="fw-semibold" style="font-size: 0.875rem">Enable Scheduled Restart</div>
+                    <div class="fw-semibold mb-1" style="font-size: 0.875rem">Enable Scheduled Restart</div>
                     <div class="text-muted small" x-show="srEnabled">Reboots the modem on a schedule.</div>
                     <div class="text-muted small" x-show="!srEnabled">Currently disabled.</div>
                   </div>
@@ -284,7 +310,7 @@
         </div>
       </div>
     </main>
-    <script src="js/dark-mode.js?v=cb894343"></script>
-    <script src="js/watchcat.js?v=cb894343"></script>
+    <script src="js/dark-mode.js?v=30c56950"></script>
+    <script src="js/watchcat.js?v=30c56950"></script>
   </body>
 </html>

@@ -6,11 +6,14 @@ function quecdeckWatchCat() {
     pingInterval: 30,
     pingFailureCount: 3,
     disableOnNoSim: true,
+    rebootBackoff: true,
     serviceActive: false,
     isLoading: false,
     response: '',
     stats: [],
     consecutiveFailures: 0,
+    rebootCount: 0,
+    nextRebootAllowed: 0,
     statsUpdatedAt: '',
     statsTimer: null,
     statsFetching: false,
@@ -25,6 +28,21 @@ function quecdeckWatchCat() {
     srResponse: '',
     srServiceActive: false,
     srDeviceTzOffsetMins: 0,
+
+    get capExceeded() {
+      return this.pingInterval * this.pingFailureCount > 3600;
+    },
+
+    get backoffActive() {
+      return this.rebootCount > 0 && this.nextRebootAllowed > Date.now() / 1000;
+    },
+
+    get backoffRemainingText() {
+      const remaining = Math.max(0, this.nextRebootAllowed - Date.now() / 1000);
+      const m = Math.floor(remaining / 60);
+      const s = Math.floor(remaining % 60);
+      return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    },
 
     get validIps() {
       return this.ips.filter((ip) => /^(\d{1,3}\.){3}\d{1,3}$/.test(ip.trim()));
@@ -118,6 +136,7 @@ function quecdeckWatchCat() {
         PING_INTERVAL: this.pingInterval,
         PING_FAILURE_COUNT: this.pingFailureCount,
         DISABLE_ON_NO_SIM: this.disableOnNoSim ? '1' : '0',
+        REBOOT_BACKOFF: this.rebootBackoff ? '1' : '0',
       };
       this.validIps.forEach((ip, i) => {
         params[`TRACK_IP_${i + 1}`] = ip.trim();
@@ -132,6 +151,8 @@ function quecdeckWatchCat() {
         .then((data) => {
           this.response = this.enabled ? 'Saved.' : 'Disabled.';
           this.isLoading = false;
+          this.rebootCount = 0;
+          this.nextRebootAllowed = 0;
           this.fetchSettings();
         })
         .catch((err) => {
@@ -150,6 +171,8 @@ function quecdeckWatchCat() {
             this.pingInterval = data.ping_interval || 30;
             this.pingFailureCount = data.ping_failure_count || 3;
             this.disableOnNoSim = data.disable_on_no_sim !== false;
+            this.rebootBackoff = data.reboot_backoff !== false;
+            if (this.capExceeded) this.rebootBackoff = false;
           }
         });
     },
@@ -164,6 +187,8 @@ function quecdeckWatchCat() {
           if (data && data.stats) {
             this.stats = data.stats;
             this.consecutiveFailures = data.consecutive_failures || 0;
+            this.rebootCount = data.reboot_count || 0;
+            this.nextRebootAllowed = data.next_reboot_allowed || 0;
             const now = new Date();
             this.statsUpdatedAt = now.toLocaleString([], { hour12: false });
           }
@@ -241,6 +266,8 @@ function quecdeckWatchCat() {
         clearTimeout(timer);
         this.$store.errorModal.open('Failed to load settings.');
       });
+      this.$watch('pingInterval', () => { if (this.capExceeded) this.rebootBackoff = false; });
+      this.$watch('pingFailureCount', () => { if (this.capExceeded) this.rebootBackoff = false; });
       this.$watch('serviceActive', (value) => {
         if (value) {
           this.startStatsPolling();

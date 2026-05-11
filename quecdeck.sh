@@ -570,6 +570,7 @@ disable_monitoring_services() {
     trap - EXIT
 
     rm -f /usrdata/quecdeck/var/watchcat.json
+    rm -f /usrdata/quecdeck/var/watchcat_reboot_state.json
     rm -f /usrdata/quecdeck/var/scheduled_restart.json
     systemctl daemon-reload
     echo ""

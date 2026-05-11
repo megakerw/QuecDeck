@@ -3,6 +3,8 @@
 # Run as www-data by systemd; config is written by watchcat_maker CGI.
 
 CONFIG=/usrdata/quecdeck/var/watchcat.json
+REBOOT_STATE=/usrdata/quecdeck/var/watchcat_reboot_state.json
+MAX_REBOOT_INTERVAL=3600
 
 if [ ! -f "$CONFIG" ]; then
     echo "watchcat: config not found: $CONFIG" >&2
@@ -15,8 +17,10 @@ TRACK_IPS=$(grep -o '"track_ips"[^]]*' "$CONFIG" | grep -oE '[0-9]+\.[0-9]+\.[0-
 PING_INTERVAL=$(grep -o '"ping_interval"[^,}]*' "$CONFIG" | grep -o '[0-9]*$')
 PING_FAILURE_COUNT=$(grep -o '"ping_failure_count"[^,}]*' "$CONFIG" | grep -o '[0-9]*$')
 _sim=$(grep -o '"disable_on_no_sim"[^,}]*' "$CONFIG" | grep -o 'true\|false')
+_backoff=$(grep -o '"reboot_backoff"[^,}]*' "$CONFIG" | grep -o 'true\|false')
 [ "$_enabled" = "false" ] && { echo "watchcat: disabled in config, exiting." >&2; exit 0; }
 [ "$_sim" = "true" ] && DISABLE_ON_NO_SIM=1 || DISABLE_ON_NO_SIM=0
+[ "$_backoff" = "false" ] && REBOOT_BACKOFF=0 || REBOOT_BACKOFF=1
 
 # Validate
 case "$PING_INTERVAL" in
@@ -29,6 +33,22 @@ esac
 
 STATS_PATH=/tmp/quecdeck/watchcat_stats.json
 failures=0
+successes=0
+
+# Read persistent reboot state
+reboot_count=0
+last_reboot=0
+if [ "$REBOOT_BACKOFF" = "1" ] && [ -f "$REBOOT_STATE" ]; then
+    reboot_count=$(grep -o '"reboot_count":[0-9]*' "$REBOOT_STATE" | grep -o '[0-9]*$')
+    last_reboot=$(grep -o '"last_reboot":[0-9]*' "$REBOOT_STATE" | grep -o '[0-9]*$')
+    [ -z "$reboot_count" ] && reboot_count=0
+    [ -z "$last_reboot" ]  && last_reboot=0
+    # If the clock has gone backwards (RTC not synced after reboot), anchor
+    # last_reboot to now so the backoff timer can still make forward progress.
+    # Don't write this correction back to flash — it self-corrects on each start.
+    now=$(date +%s)
+    [ "$last_reboot" -gt "$now" ] && last_reboot=$now
+fi
 
 # Wait for the system to settle before starting to ping.
 # Skipped if the system has been up for more than 60 seconds (e.g. during install/update).
@@ -55,6 +75,21 @@ check_sim() {
     /usrdata/quecdeck/atcli 'AT+QSIMSTAT?' 2>/dev/null | grep -qE '^\+QSIMSTAT: [0-9]+,1'
 }
 
+# Calculate minimum wait before the next reboot based on reboot_count.
+# Doubles each time (1x, 2x, 4x, 8x ... cycle_time), capped at MAX_REBOOT_INTERVAL.
+calc_min_wait() {
+    cycle_time=$((PING_INTERVAL * PING_FAILURE_COUNT))
+    multiplier=1
+    i=1
+    while [ "$i" -lt "$reboot_count" ]; do
+        multiplier=$((multiplier * 2))
+        i=$((i + 1))
+    done
+    min_wait=$((multiplier * cycle_time))
+    [ "$min_wait" -gt "$MAX_REBOOT_INTERVAL" ] && min_wait=$MAX_REBOOT_INTERVAL
+    echo "$min_wait"
+}
+
 write_stats() {
     stats="["
     first_stat=1
@@ -66,7 +101,14 @@ write_stats() {
         i=$((i+1))
     done
     stats="$stats]"
-    echo "{\"stats\":$stats,\"consecutive_failures\":$failures}" > "$STATS_PATH"
+
+    next_reboot_allowed=0
+    if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ]; then
+        min_wait=$(calc_min_wait)
+        next_reboot_allowed=$((last_reboot + min_wait))
+    fi
+
+    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"next_reboot_allowed\":$next_reboot_allowed}" > "$STATS_PATH"
 }
 
 while :; do
@@ -88,21 +130,41 @@ while :; do
 
     if [ "$overall_success" = "1" ]; then
         failures=0
+        successes=$((successes + 1))
+        if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ] && [ "$successes" -ge "$PING_FAILURE_COUNT" ]; then
+            reboot_count=0
+            last_reboot=0
+            printf '{"reboot_count":0,"last_reboot":0}\n' > "$REBOOT_STATE"
+        fi
     else
         failures=$((failures + 1))
+        successes=0
     fi
 
     write_stats
 
     if [ "$failures" -ge "$PING_FAILURE_COUNT" ]; then
-        # Last line of defence: don't reboot if there's no SIM — pings will
-        # always fail without one and a reboot won't help.
         if [ "$DISABLE_ON_NO_SIM" = "1" ] && ! check_sim; then
             failures=0
         else
-            echo "$(date): Rebooting after $failures consecutive ping failures."
-            /usrdata/quecdeck/atcli 'AT+CFUN=1,1' 2>/dev/null
-            exit 0
+            should_reboot=1
+            if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ]; then
+                min_wait=$(calc_min_wait)
+                now=$(date +%s)
+                elapsed=$((now - last_reboot))
+                if [ "$elapsed" -lt "$min_wait" ]; then
+                    should_reboot=0
+                    failures=$PING_FAILURE_COUNT
+                fi
+            fi
+
+            if [ "$should_reboot" = "1" ]; then
+                reboot_count=$((reboot_count + 1))
+                printf '{"reboot_count":%d,"last_reboot":%d}\n' "$reboot_count" "$(date +%s)" > "$REBOOT_STATE"
+                echo "$(date): Rebooting after $failures consecutive ping failures (reboot #$reboot_count)."
+                /usrdata/quecdeck/atcli 'AT+CFUN=1,1' 2>/dev/null
+                exit 0
+            fi
         fi
     fi
 

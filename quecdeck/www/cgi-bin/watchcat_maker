@@ -9,6 +9,7 @@ WATCHCAT_ENABLED=$(get_post_param WATCHCAT_ENABLED)
 PING_INTERVAL=$(get_post_param PING_INTERVAL)
 PING_FAILURE_COUNT=$(get_post_param PING_FAILURE_COUNT)
 DISABLE_ON_NO_SIM=$(get_post_param DISABLE_ON_NO_SIM)
+REBOOT_BACKOFF=$(get_post_param REBOOT_BACKOFF)
 
 cgi_output_text
 
@@ -31,10 +32,15 @@ WATCHCAT_ENABLED="${WATCHCAT_ENABLED:-disable}"
 PING_INTERVAL="${PING_INTERVAL:-30}"
 PING_FAILURE_COUNT="${PING_FAILURE_COUNT:-3}"
 DISABLE_ON_NO_SIM="${DISABLE_ON_NO_SIM:-1}"
+REBOOT_BACKOFF="${REBOOT_BACKOFF:-1}"
 
 # Validate
 if ! [[ "$WATCHCAT_ENABLED" =~ ^(enable|disable)$ ]]; then
     cgi_error "Invalid value for WATCHCAT_ENABLED."
+fi
+
+if ! [[ "$REBOOT_BACKOFF" =~ ^[01]$ ]]; then
+    cgi_error "REBOOT_BACKOFF must be 0 or 1."
 fi
 
 if [ "$WATCHCAT_ENABLED" = "enable" ] && [ -z "$TRACK_IPS_COLON" ]; then
@@ -53,6 +59,8 @@ if ! [[ "$DISABLE_ON_NO_SIM" =~ ^[01]$ ]]; then
     cgi_error "DISABLE_ON_NO_SIM must be 0 or 1."
 fi
 
+rm -f /usrdata/quecdeck/var/watchcat_reboot_state.json
+
 if [ "$WATCHCAT_ENABLED" = "enable" ]; then
     ips_space=$(echo "$TRACK_IPS_COLON" | tr ':' ' ')
 
@@ -66,9 +74,10 @@ if [ "$WATCHCAT_ENABLED" = "enable" ]; then
     ips_json="$ips_json]"
 
     sim_val=$([ "$DISABLE_ON_NO_SIM" = "1" ] && echo "true" || echo "false")
+    backoff_val=$([ "$REBOOT_BACKOFF" = "1" ] && echo "true" || echo "false")
 
     # Write config JSON — the static watchcat.sh in script/ reads this at startup
-    echo "{\"enabled\": true, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val}" > /usrdata/quecdeck/var/watchcat.json
+    echo "{\"enabled\": true, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val}" > /usrdata/quecdeck/var/watchcat.json
     chmod 640 /usrdata/quecdeck/var/watchcat.json
 
     # Enable and restart watchcat service (systemd ops need root)
@@ -85,8 +94,9 @@ else
     done
     ips_json="$ips_json]"
     sim_val=$([ "$DISABLE_ON_NO_SIM" = "1" ] && echo "true" || echo "false")
+    backoff_val=$([ "$REBOOT_BACKOFF" = "1" ] && echo "true" || echo "false")
 
-    echo "{\"enabled\": false, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val}" > /usrdata/quecdeck/var/watchcat.json
+    echo "{\"enabled\": false, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val}" > /usrdata/quecdeck/var/watchcat.json
     chmod 640 /usrdata/quecdeck/var/watchcat.json
 
     # Stop and disable watchcat service (systemd ops need root)
