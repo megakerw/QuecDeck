@@ -370,7 +370,7 @@ function networkSettings() {
     },
     applySettingsWithReconnect(changes) {
       this.postNetworkAction("/cgi-bin/save_apn", { ...changes, action: "reconnect" });
-      this.$store.waitModal.start("Reconnecting...", 30, () => this.init());
+      this.$store.waitModal.start("Reconnecting...", 40, () => this.init());
     },
     applySettingsWithSimswap(changes) {
       this.postNetworkAction("/cgi-bin/save_apn", { ...changes, action: "simswap" });
