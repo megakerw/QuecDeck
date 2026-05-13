@@ -275,11 +275,17 @@ function processAllInfos() {
             }
 
             // --- PCI ---
-            // PCI is always at index 4 in +QCAINFO lines regardless of line length or mode.
+            // LTE format: "PCC/SCC",freq,bw,band,cell_state,PCID,... → index 5
+            // NR5G short format omits cell_state: "SCC",freq,bw,band,PCID → index 4
             {
-              const pcc_pci = pcc_line?.split(",")[4]?.trim();
+              const getPci = l => {
+                const p = l.split(",");
+                const v = parseInt(p[5], 10);
+                return isNaN(v) ? p[4]?.trim() : String(v);
+              };
+              const pcc_pci = pcc_line ? getPci(pcc_line) : null;
               const scc_lines = lines.filter((line) => line.includes('+QCAINFO: "SCC"'));
-              const scc = scc_lines.map(l => l.split(",")[4]?.trim()).filter(Boolean).join(", ") || null;
+              const scc = scc_lines.map(getPci).filter(Boolean).join(", ") || null;
               if (this.networkMode === "Disconnected") {
                 this.pciDisplay = "-";
               } else {
@@ -318,15 +324,14 @@ function processAllInfos() {
                 this.cellID = "Unknown";
               }
 
-              const eNBIDStr = longCID && longCID.length > 2 ? longCID.substring(0, longCID.length - 2) : null;
-              this.eNBID = eNBIDStr ? parseInt(eNBIDStr, 16) : "Unknown";
+              const longCIDDec = longCID ? parseInt(longCID, 16) : null;
+              const isNR = this.networkMode === "5G SA TDD" || this.networkMode === "5G SA FDD";
+              // NR 36-bit: >>14 / &0x3FFF — LTE 28-bit: >>8 / &0xFF
+              const nodeID   = longCIDDec !== null ? (isNR ? longCIDDec >> 14    : longCIDDec >> 8)   : null;
+              const sectorID = longCIDDec !== null ? (isNR ? longCIDDec & 0x3FFF : longCIDDec & 0xFF) : null;
+              this.eNBID = nodeID !== null ? nodeID : "Unknown";
 
-              const shortCID = longCID && longCID.length >= 2 ? longCID.substring(longCID.length - 2) : null;
-
-              if (
-                this.networkMode === "5G SA TDD" ||
-                this.networkMode === "5G SA FDD"
-              ) {
+              if (isNR) {
                 const localTac = servingcell_line?.split(",")[8]?.replace(/"/g, "");
                 this.tac = localTac ? localTac + " (" + parseInt(localTac, 16) + ")" : "Unknown";
                 this.csq = "NR-SA Mode";
@@ -356,10 +361,8 @@ function processAllInfos() {
                 this.signalAssessment = this.signalQuality(this.signalPercentage);
               }
 
-              if (longCID && shortCID) {
-                this.cellID =
-                  "Short " + parseInt(shortCID, 16) +
-                  ", Long " + parseInt(longCID, 16);
+              if (longCIDDec !== null && sectorID !== null) {
+                this.cellID = "Short " + sectorID + ", Long " + longCIDDec;
               }
             } else if (this.networkMode === "5G NSA") {
               const longCID = lte_line?.split(",")[4]?.replace(/"/g, "");
@@ -385,7 +388,7 @@ function processAllInfos() {
                 ?.replace(/"/g, "")
                 ?.split(",")[0];
 
-              // +QENG: "NR5G-NSA",MCC,MNC,RSRP,SINR,RSRQ,...
+              // +QENG: "NR5G-NSA",MCC,MNC,PCI,RSRP,SINR,RSRQ,...
               const lte_sig = this.computeSignalMetrics(
                 lte_line?.split(",")[11]?.replace(/"/g, ""),
                 lte_line?.split(",")[12]?.replace(/"/g, ""),
