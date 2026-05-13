@@ -159,10 +159,12 @@ while :; do
             fi
 
             if [ "$should_reboot" = "1" ]; then
-                reboot_count=$((reboot_count + 1))
-                printf '{"reboot_count":%d,"last_reboot":%d}\n' "$reboot_count" "$(date +%s)" > "$REBOOT_STATE"
-                sync
-                sleep 2
+                if [ "$REBOOT_BACKOFF" = "1" ]; then
+                    reboot_count=$((reboot_count + 1))
+                    printf '{"reboot_count":%d,"last_reboot":%d}\n' "$reboot_count" "$(date +%s)" > "$REBOOT_STATE"
+                    sync
+                    sleep 2
+                fi
                 echo "$(date): Rebooting after $failures consecutive ping failures (reboot #$reboot_count)."
                 /usrdata/quecdeck/atcli 'AT+CFUN=1,1' 2>/dev/null
                 exit 0
