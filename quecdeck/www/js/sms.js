@@ -63,7 +63,7 @@ function fetchSMS() {
         const messageHex = data.substring(startIndex, endIndex).trim();
         const message = /^[0-9a-fA-F]+$/.test(messageHex) ? this.convertHexToText(messageHex) : messageHex;
         if (lastIndex !== null && this.messages[lastIndex].sender === sender && (date - this.messages[lastIndex].date) / 1000 <= 1) {
-          this.messages[lastIndex].text += " " + message;
+          this.messages[lastIndex].text += message;
           this.messages[lastIndex].indices.push(index);
           this.dates[lastIndex] = this.formatDate(date);
         } else {
@@ -83,7 +83,7 @@ function fetchSMS() {
 
     parseCustomDate(dateStr) {
       const [datePart, timePart] = dateStr.split(',');
-      const [day, month, year] = datePart.split('/').map(part => parseInt(part, 10));
+      const [year, month, day] = datePart.split('/').map(part => parseInt(part, 10));
       const [hour, minute, second] = timePart.split(':').map(part => parseInt(part, 10));
       return new Date(Date.UTC(2000 + year, month - 1, day, hour, minute, second));
     },
