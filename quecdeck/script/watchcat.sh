@@ -76,11 +76,11 @@ check_sim() {
 }
 
 # Calculate minimum wait before the next reboot based on reboot_count.
-# Doubles each time (1x, 2x, 4x, 8x ... cycle_time), capped at MAX_REBOOT_INTERVAL.
+# Doubles each time (2x, 4x, 8x ... cycle_time), capped at MAX_REBOOT_INTERVAL.
 calc_min_wait() {
     cycle_time=$((PING_INTERVAL * PING_FAILURE_COUNT))
     multiplier=1
-    i=1
+    i=0
     while [ "$i" -lt "$reboot_count" ]; do
         multiplier=$((multiplier * 2))
         i=$((i + 1))
@@ -102,13 +102,16 @@ write_stats() {
     done
     stats="$stats]"
 
-    next_reboot_allowed=0
+    backoff_remaining=0
     if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ]; then
         min_wait=$(calc_min_wait)
-        next_reboot_allowed=$((last_reboot + min_wait))
+        now=$(date +%s)
+        elapsed=$((now - last_reboot))
+        remaining=$((min_wait - elapsed))
+        [ "$remaining" -gt 0 ] && backoff_remaining=$remaining
     fi
 
-    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"next_reboot_allowed\":$next_reboot_allowed}" > "$STATS_PATH"
+    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"backoff_remaining\":$backoff_remaining}" > "$STATS_PATH"
 }
 
 while :; do

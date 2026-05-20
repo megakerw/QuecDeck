@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck — Setup</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=1a3657a7" />
-    <link rel="stylesheet" href="css/styles.css?v=1a3657a7" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=c85d998d" />
+    <link rel="stylesheet" href="css/styles.css?v=c85d998d" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=1a3657a7"></script>
-    <script src="js/dark-mode.js?v=1a3657a7" defer></script>
-    <script src="js/alpinejs.min.js?v=1a3657a7" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=c85d998d"></script>
+    <script src="js/dark-mode.js?v=c85d998d" defer></script>
+    <script src="js/alpinejs.min.js?v=c85d998d" defer></script>
   </head>
   <body>
     <main>
@@ -32,7 +32,9 @@
                 <div>
                   <h5 class="mb-2">Welcome</h5>
                   <p class="text-muted small mb-4">Set a password for the admin account to get started.</p>
-                  <div x-show="error" class="alert alert-danger mb-3" x-text="error"></div>
+                  <template x-if="error">
+                    <div class="alert alert-danger mb-3" x-text="error"></div>
+                  </template>
                   <form @submit.prevent="nextStep()">
                     <div class="mb-3">
                       <label class="form-label">Password</label>
@@ -52,7 +54,9 @@
                 <div>
                   <h5 class="mb-2">Developer Access</h5>
                   <p class="text-muted small mb-4">Optionally set a password for developer access. This unlocks the AT terminal, web console, and cell locking features. You can skip this and set it later via the console.</p>
-                  <div x-show="error" class="alert alert-danger mb-3" x-text="error"></div>
+                  <template x-if="error">
+                    <div class="alert alert-danger mb-3" x-text="error"></div>
+                  </template>
                   <form @submit.prevent="submit()">
                     <div class="mb-3">
                       <label class="form-label">Developer password</label>
@@ -66,7 +70,7 @@
                       <button type="button" class="btn btn-secondary flex-fill" @click="skipDev()" :disabled="submitting">Skip</button>
                       <button type="submit" class="btn btn-primary flex-fill" :disabled="submitting || !devPass || !devPassConfirm">
                         <span x-show="!submitting">Finish</span>
-                        <span x-show="submitting">Setting up...</span>
+                        <span x-show="submitting" style="display:none">Setting up...</span>
                       </button>
                     </div>
                   </form>
@@ -78,6 +82,6 @@
         </div>
       </div>
     </main>
-    <script src="js/setup.js?v=1a3657a7"></script>
+    <script src="js/setup.js?v=c85d998d"></script>
   </body>
 </html>

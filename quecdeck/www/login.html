@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck — Sign In</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=1a3657a7" />
-    <link rel="stylesheet" href="css/styles.css?v=1a3657a7" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=c85d998d" />
+    <link rel="stylesheet" href="css/styles.css?v=c85d998d" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=1a3657a7"></script>
-    <script src="js/dark-mode.js?v=1a3657a7" defer></script>
-    <script src="js/alpinejs.min.js?v=1a3657a7" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=c85d998d"></script>
+    <script src="js/dark-mode.js?v=c85d998d" defer></script>
+    <script src="js/alpinejs.min.js?v=c85d998d" defer></script>
   </head>
   <body>
     <main>
@@ -28,15 +28,21 @@
             <div class="panel-section">
               <h5 class="mb-3">Sign In</h5>
 
-                <div x-show="expired" class="alert alert-warning" role="alert">
-                  Your session expired due to inactivity. Please sign in again.
-                </div>
-                <div x-show="locked" class="alert alert-danger" role="alert">
-                  Too many failed attempts. Try again in 15 minutes.
-                </div>
-                <div x-show="error" class="alert alert-danger" role="alert">
-                  Invalid username or password.
-                </div>
+                <template x-if="expired">
+                  <div class="alert alert-warning" role="alert">
+                    Your session expired due to inactivity. Please sign in again.
+                  </div>
+                </template>
+                <template x-if="locked">
+                  <div class="alert alert-danger" role="alert">
+                    Too many failed attempts. Try again in 15 minutes.
+                  </div>
+                </template>
+                <template x-if="error">
+                  <div class="alert alert-danger" role="alert">
+                    Invalid username or password.
+                  </div>
+                </template>
 
                 <form @submit.prevent="submitLogin($event)">
                   <div class="mb-0">
@@ -53,7 +59,7 @@
                   </div>
                   <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;" :disabled="submitting">
                     <span x-show="!submitting">Sign In</span>
-                    <span x-show="submitting">Signing in...</span>
+                    <span x-show="submitting" style="display:none">Signing in...</span>
                   </button>
                 </form>
             </div>
@@ -62,6 +68,6 @@
       </div>
     </main>
 
-    <script src="js/login.js?v=1a3657a7"></script>
+    <script src="js/login.js?v=c85d998d"></script>
   </body>
 </html>

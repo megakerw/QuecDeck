@@ -13,10 +13,13 @@ function quecdeckWatchCat() {
     stats: [],
     consecutiveFailures: 0,
     rebootCount: 0,
-    nextRebootAllowed: 0,
+    backoffRemainingAtFetch: 0,
+    backoffFetchedAt: 0,
     statsUpdatedAt: '',
     statsTimer: null,
     statsFetching: false,
+    now: Date.now(),
+    nowTimer: null,
 
     // Scheduled restart
     srEnabled: false,
@@ -34,11 +37,13 @@ function quecdeckWatchCat() {
     },
 
     get backoffActive() {
-      return this.rebootCount > 0 && this.nextRebootAllowed > Date.now() / 1000;
+      const elapsed = (this.now - this.backoffFetchedAt) / 1000;
+      return this.rebootCount > 0 && this.backoffRemainingAtFetch - elapsed > 0;
     },
 
     get backoffRemainingText() {
-      const remaining = Math.max(0, this.nextRebootAllowed - Date.now() / 1000);
+      const elapsed = (this.now - this.backoffFetchedAt) / 1000;
+      const remaining = Math.max(0, this.backoffRemainingAtFetch - elapsed);
       const m = Math.floor(remaining / 60);
       const s = Math.floor(remaining % 60);
       return m > 0 ? `${m}m ${s}s` : `${s}s`;
@@ -152,7 +157,8 @@ function quecdeckWatchCat() {
           this.response = this.enabled ? 'Saved.' : 'Disabled.';
           this.isLoading = false;
           this.rebootCount = 0;
-          this.nextRebootAllowed = 0;
+          this.backoffRemainingAtFetch = 0;
+          this.backoffFetchedAt = 0;
           this.fetchSettings();
         })
         .catch((err) => {
@@ -188,7 +194,8 @@ function quecdeckWatchCat() {
             this.stats = data.stats;
             this.consecutiveFailures = data.consecutive_failures || 0;
             this.rebootCount = data.reboot_count || 0;
-            this.nextRebootAllowed = data.next_reboot_allowed || 0;
+            this.backoffRemainingAtFetch = data.backoff_remaining || 0;
+            this.backoffFetchedAt = Date.now();
             const now = new Date();
             this.statsUpdatedAt = now.toLocaleString([], { hour12: false });
           }
@@ -201,12 +208,17 @@ function quecdeckWatchCat() {
       this.stopStatsPolling();
       this.fetchStats();
       this.statsTimer = setInterval(() => this.fetchStats(), 2000);
+      this.nowTimer = setInterval(() => { this.now = Date.now(); }, 1000);
     },
 
     stopStatsPolling() {
       if (this.statsTimer) {
         clearInterval(this.statsTimer);
         this.statsTimer = null;
+      }
+      if (this.nowTimer) {
+        clearInterval(this.nowTimer);
+        this.nowTimer = null;
       }
     },
 

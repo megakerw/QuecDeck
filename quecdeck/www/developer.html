@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=1a3657a7" />
-    <link rel="stylesheet" href="css/styles.css?v=1a3657a7" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=c85d998d" />
+    <link rel="stylesheet" href="css/styles.css?v=c85d998d" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=1a3657a7"></script>
-    <script src="js/utils.js?v=1a3657a7"></script>
-    <script src="js/alpinejs.min.js?v=1a3657a7" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=c85d998d"></script>
+    <script src="js/utils.js?v=c85d998d"></script>
+    <script src="js/alpinejs.min.js?v=c85d998d" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="developerPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=1a3657a7"></script>
+        <script src="js/nav.js?v=c85d998d"></script>
 
         <!-- Developer unlock prompt — shown once status is known and dev is not yet unlocked -->
         <div class="row gy-3 mt-4 justify-content-center" x-show="devStatusLoaded && !devUnlocked">
@@ -28,7 +28,9 @@
               <template x-if="devConfigured">
                 <div>
                   <p class="text-muted small mb-3">Enter your developer password to unlock this section.</p>
-                  <div x-show="devAuthError" class="alert alert-danger py-2 small mb-3" x-text="devAuthError"></div>
+                  <template x-if="devAuthError">
+                    <div class="alert alert-danger py-2 small mb-3" x-text="devAuthError"></div>
+                  </template>
                   <div class="mb-3">
                     <label for="devPasswordInput" class="form-label">Developer Password</label>
                     <input
@@ -46,7 +48,7 @@
                     @click="unlockDev()"
                     :disabled="devUnlocking || !devPassword"
                   >
-                    <span x-show="devUnlocking">Unlocking...</span>
+                    <span x-show="devUnlocking" style="display:none">Unlocking...</span>
                     <span x-show="!devUnlocking">Unlock</span>
                   </button>
                 </div>
@@ -215,7 +217,7 @@
 
       </div>
     </main>
-    <script src="js/dark-mode.js?v=1a3657a7"></script>
-    <script src="js/developer.js?v=1a3657a7"></script>
+    <script src="js/dark-mode.js?v=c85d998d"></script>
+    <script src="js/developer.js?v=c85d998d"></script>
   </body>
 </html>
