@@ -49,8 +49,8 @@ function developerPage() {
     cellLockEnableLTE() {
       const cellNum = this.cellNum;
       const isInt = (v) => /^\d+$/.test(String(v).trim());
-      if (cellNum === null || !isInt(cellNum)) {
-        this.$store.errorModal.open("Please enter a valid number of cells to lock");
+      if (cellNum === null || !isInt(cellNum) || cellNum < 1 || cellNum > 10) {
+        this.$store.errorModal.open("Please enter a valid number of cells to lock (1–10)");
         return;
       }
       const earfcnPciPairs = this.cells.slice(0, parseInt(cellNum));
@@ -174,7 +174,8 @@ function developerPage() {
     sendATCommand() {
       if (!this.atcmd) this.atcmd = "ATI";
       this.isLoading = true;
-      authFetch("/cgi-bin/user_atcommand", { method: "POST", body: new URLSearchParams({ atcmd: this.atcmd, timeout: (this.atTimeout || 5) * 1000 }) })
+      const atTimeout = Math.min(60, Math.max(1, this.atTimeout || 5));
+      authFetch("/cgi-bin/user_atcommand", { method: "POST", body: new URLSearchParams({ atcmd: this.atcmd, timeout: atTimeout * 1000 }) })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
           return res.text();

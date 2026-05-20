@@ -647,6 +647,8 @@ function processAllInfos() {
     updateRefreshRate() {
       if (this.newRefreshRate < 3) {
         this.newRefreshRate = 3;
+      } else if (this.newRefreshRate > 60) {
+        this.newRefreshRate = 60;
       }
 
       clearInterval(this.intervalId);
