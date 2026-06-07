@@ -2,8 +2,10 @@ function logsPage() {
   return {
     connectionEvents: [],
     accessEvents: [],
+    restartEvents: [],
     loadingConn: false,
     loadingAccess: false,
+    loadingRestart: false,
     connUpdatedAt: '',
     accessUpdatedAt: '',
     refreshTimer: null,
@@ -109,6 +111,25 @@ function logsPage() {
         parts.push((local ? 'Local' : 'External') + ' (' + ev.ip + ')');
       }
       return parts.join(' | ');
+    },
+
+    refreshRestart() {
+      this.loadingRestart = true;
+      fetchJSON('/cgi-bin/get_restart_log')
+        .then((data) => { this.restartEvents = data.slice().reverse(); })
+        .catch(() => this.$store.errorModal.open('Failed to load restart log.'))
+        .finally(() => { this.loadingRestart = false; });
+    },
+
+    clearRestartLog() {
+      this.$store.confirmModal.open(
+        'Clear the restart history?',
+        () => {
+          authFetch('/cgi-bin/clear_restart_log', { method: 'POST' })
+            .then(() => { this.restartEvents = []; })
+            .catch(() => this.$store.errorModal.open('Failed to clear restart log.'));
+        }
+      );
     },
 
     refreshConnection() {

@@ -75,7 +75,7 @@ Scan for nearby cells and display network, provider, band, frequency, PCI, and R
 - One-click utilities: reboot, onboard DNS IPv4/IPv6 proxy, IP Passthrough (IPPT), auto-connect (QMAPWAC), GNSS toggle, and SIM hot-swap detection
 
 ### Monitoring
-- **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics and consecutive failure tracking
+- **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics, consecutive failure tracking, and a persistent reboot history log
 - **Scheduled Restart:** schedule daily or weekly reboots at a specified time
 
 ### SMS
@@ -87,10 +87,9 @@ View, read, and delete SMS messages directly from the modem's inbox.
 - **Services:** live status overview of all QuecDeck services (AT Daemon, Firewall, Connection Logger, Watchcat, Scheduled Restart, SSH, Lean Mode, and ttyd)
 
 ### Logs
-- **Connection Events:** timestamped log of connection changes and failures
-- **Access Events:** timestamped log of UI access activity
-
-Both logs keep the last 500 entries and are cleared on reboot.
+- **Connection Events:** timestamped log of connection changes and failures. Keeps the last 500 entries, cleared on reboot.
+- **Access Events:** timestamped log of UI access activity. Keeps the last 500 entries, cleared on reboot.
+- **Watchcat Restarts:** timestamped log of watchcat-triggered reboots, including the failure count and reboot streak number (when backoff is enabled). Keeps the last 50 entries and persists across reboots.
 
 ### Developer
 Requires a separate developer password to unlock. Provides access to:

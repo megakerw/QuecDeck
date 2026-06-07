@@ -39,7 +39,7 @@ function processAllInfos() {
     isPinging: false,
     isUpTimeFetching: false,
     isStatsFetching: false,
-    internetConnectionStatus: "Disconnected",
+    internetConnectionStatus: "Unknown",
     temperature: "0",
     simStatus: "No SIM",
     activeSim: "No SIM",
@@ -697,7 +697,7 @@ function processAllInfos() {
         })
         .catch((error) => {
           console.error("Error:", error);
-          this.internetConnectionStatus = "Disconnected";
+          this.internetConnectionStatus = "Unknown";
         });
 
       this.lastUpdate = new Date().toLocaleString([], { hour12: false });
@@ -718,7 +718,7 @@ function processAllInfos() {
           })
           .catch((error) => {
             console.error("Error:", error);
-            this.internetConnectionStatus = "Disconnected";
+            this.internetConnectionStatus = "Unknown";
           });
 
         this.lastUpdate = new Date().toLocaleString([], { hour12: false });

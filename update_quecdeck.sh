@@ -316,6 +316,8 @@ install_quecdeck() {
     wget -q $GITROOT/quecdeck/www/cgi-bin/get_service_status &
     wget -q $GITROOT/quecdeck/www/cgi-bin/get_scan_status &
     wget -q $GITROOT/quecdeck/www/cgi-bin/get_logs &
+    wget -q $GITROOT/quecdeck/www/cgi-bin/get_restart_log &
+    wget -q $GITROOT/quecdeck/www/cgi-bin/clear_restart_log &
     wget -q $GITROOT/quecdeck/www/cgi-bin/init_setup &
     wait
 

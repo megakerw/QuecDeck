@@ -1,0 +1,13 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_output_json
+
+LOG=/usrdata/quecdeck/var/restart_log.jsonl
+
+[ -f "$LOG" ] || { printf '[]\n'; exit 0; }
+lines=$(cat "$LOG" 2>/dev/null)
+[ -z "$lines" ] && { printf '[]\n'; exit 0; }
+
+printf '%s' "$lines" | awk 'BEGIN{printf "["} NR>1{printf ","} {printf "%s",$0} END{printf "]\n"}'

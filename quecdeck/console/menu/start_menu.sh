@@ -33,7 +33,19 @@ toolkit_menu() {
         read -p "Select an option (1-2): " option
 
         case "$option" in
-            1) cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDeck/main/quecdeck.sh && chmod +x quecdeck.sh && ./quecdeck.sh && cd / ;;
+            1)
+                echo ""
+                display_red "WARNING: Running the installer from the web console (ttyd) is risky."
+                display_red "The update stops and restarts lighttpd, which will kill this session."
+                display_red "If the download fails mid-install, QuecDeck may be left broken."
+                display_red "Use ADB or SSH instead whenever possible."
+                echo ""
+                read -p "Continue anyway? (y/n): " confirm
+                case "$confirm" in
+                    y|Y) cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDeck/main/quecdeck.sh && chmod +x quecdeck.sh && ./quecdeck.sh && cd / ;;
+                    *) display_green "Cancelled." ;;
+                esac
+                ;;
             2) break ;;
             *) echo "Invalid option. Please try again." ;;
         esac

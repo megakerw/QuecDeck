@@ -7,6 +7,7 @@ function quecdeckWatchCat() {
     pingFailureCount: 3,
     disableOnNoSim: true,
     rebootBackoff: true,
+    logRestarts: true,
     serviceActive: false,
     isLoading: false,
     response: '',
@@ -65,7 +66,7 @@ function quecdeckWatchCat() {
         this.validIps.length > 0 &&
         this.pingInterval >= 10 &&
         this.pingInterval <= 600 &&
-        this.pingFailureCount >= 1 &&
+        this.pingFailureCount >= 2 &&
         this.pingFailureCount <= 10
       );
     },
@@ -142,6 +143,7 @@ function quecdeckWatchCat() {
         PING_FAILURE_COUNT: this.pingFailureCount,
         DISABLE_ON_NO_SIM: this.disableOnNoSim ? '1' : '0',
         REBOOT_BACKOFF: this.rebootBackoff ? '1' : '0',
+        LOG_RESTARTS: this.logRestarts ? '1' : '0',
       };
       this.validIps.forEach((ip, i) => {
         params[`TRACK_IP_${i + 1}`] = ip.trim();
@@ -179,6 +181,7 @@ function quecdeckWatchCat() {
             this.disableOnNoSim = data.disable_on_no_sim !== false;
             this.rebootBackoff = data.reboot_backoff !== false;
             if (this.capExceeded) this.rebootBackoff = false;
+            this.logRestarts = data.log_restarts !== false;
           }
         });
     },

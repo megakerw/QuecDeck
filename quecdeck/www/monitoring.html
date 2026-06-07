@@ -1,21 +1,21 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en-GB" data-bs-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=669dc4aa" />
-    <link rel="stylesheet" href="css/styles.css?v=669dc4aa" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=76cafb2c" />
+    <link rel="stylesheet" href="css/styles.css?v=76cafb2c" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=669dc4aa"></script>
-    <script src="js/utils.js?v=669dc4aa"></script>
-    <script src="js/alpinejs.min.js?v=669dc4aa" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=76cafb2c"></script>
+    <script src="js/utils.js?v=76cafb2c"></script>
+    <script src="js/alpinejs.min.js?v=76cafb2c" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="quecdeckWatchCat()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=669dc4aa"></script>
+        <script src="js/nav.js?v=76cafb2c"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
 
@@ -78,6 +78,18 @@
                     <div class="text-warning small mt-1" x-show="capExceeded" style="display:none">Your cycle time exceeds 1 hour — this setting has no effect.</div>
                   </div>
 
+                  <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-start">
+                      <div>
+                        <div class="fw-semibold mb-1" style="font-size: 0.875rem">Log reboot events</div>
+                        <div class="text-muted small">Record watchcat-triggered reboots to a persistent log viewable on the Logs page.</div>
+                      </div>
+                      <div class="form-check form-switch ms-3">
+                        <input class="form-check-input" type="checkbox" role="switch" x-model="logRestarts" />
+                      </div>
+                    </div>
+                  </div>
+
                   <hr />
 
                   <!-- IP Addresses -->
@@ -132,25 +144,30 @@
                       <input
                         type="number"
                         class="form-control"
-                        :class="pingFailureCount < 1 || pingFailureCount > 10 ? 'is-invalid' : ''"
+                        :class="pingFailureCount < 2 || pingFailureCount > 10 ? 'is-invalid' : ''"
                         x-model.number="pingFailureCount"
-                        min="1"
+                        min="2"
                         max="10"
-                        placeholder="1 – 10"
+                        placeholder="2 – 10"
                       />
-                      <div class="text-muted small mt-1" x-show="pingFailureCount >= 1 && pingFailureCount <= 10">Between 1 and 10 consecutive failures.</div>
-                      <div class="text-danger small mt-1" x-show="pingFailureCount < 1 || pingFailureCount > 10" style="display:none">Must be between 1 and 10.</div>
+                      <div class="text-muted small mt-1" x-show="pingFailureCount >= 2 && pingFailureCount <= 10">Between 2 and 10 consecutive failures.</div>
+                      <div class="text-danger small mt-1" x-show="pingFailureCount < 2 || pingFailureCount > 10" style="display:none">Must be between 2 and 10.</div>
                     </div>
                   </div>
+                  <hr x-show="canSave" />
+                  <div class="fw-semibold mb-1" style="font-size: 0.875rem" x-show="canSave">Configuration summary</div>
                   <div class="text-muted small" x-show="canSave">
                     Will reboot after
                     <span x-text="pingFailureCount"></span> failed
-                    <span x-text="pingFailureCount === 1 ? 'ping' : 'pings'"></span>
+                    <span>pings</span>
                     (~<span x-text="pingInterval * pingFailureCount >= 60
                       ? Math.round(pingInterval * pingFailureCount / 60) + ' min'
                       : (pingInterval * pingFailureCount) + ' sec'"></span> without response).
                     <span x-show="rebootBackoff && !capExceeded">
                       Reboots space out progressively if the connection stays down (doubling each cycle, max once per hour).
+                    </span>
+                    <span x-show="logRestarts">
+                      Reboots will be logged to the Logs page.
                     </span>
                   </div>
 
@@ -285,7 +302,7 @@
                   <!-- Time -->
                   <div class="mb-3">
                     <label class="form-label fw-semibold">Time</label>
-                    <input type="time" class="form-control input-mw-160" x-model="srTime" lang="en-GB" />
+                    <input type="time" class="form-control input-mw-160" x-model="srTime" />
                     <div class="text-muted small mt-2">
                       Will restart at
                       <span x-text="String(srHour).padStart(2,'0') + ':' + String(srMinute).padStart(2,'0')"></span>
@@ -314,7 +331,7 @@
         </div>
       </div>
     </main>
-    <script src="js/dark-mode.js?v=669dc4aa"></script>
-    <script src="js/watchcat.js?v=669dc4aa"></script>
+    <script src="js/dark-mode.js?v=76cafb2c"></script>
+    <script src="js/watchcat.js?v=76cafb2c"></script>
   </body>
 </html>

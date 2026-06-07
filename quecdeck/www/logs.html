@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=669dc4aa" />
-    <link rel="stylesheet" href="css/styles.css?v=669dc4aa" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=76cafb2c" />
+    <link rel="stylesheet" href="css/styles.css?v=76cafb2c" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=669dc4aa"></script>
-    <script src="js/utils.js?v=669dc4aa"></script>
-    <script src="js/alpinejs.min.js?v=669dc4aa" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=76cafb2c"></script>
+    <script src="js/utils.js?v=76cafb2c"></script>
+    <script src="js/alpinejs.min.js?v=76cafb2c" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="logsPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=669dc4aa"></script>
+        <script src="js/nav.js?v=76cafb2c"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
 
@@ -83,11 +83,41 @@
             </div>
           </div>
 
+          <div class="col-12 col-lg-6">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title d-flex align-items-center gap-2 mb-3">
+                Watchcat Restarts
+                <button type="button" class="btn btn-sm btn-danger ms-auto" @click="clearRestartLog()">Clear</button>
+              </div>
+              <div x-show="restartEvents.length === 0 && !loadingRestart" class="text-muted small">No watchcat restarts recorded yet.</div>
+              <div x-show="restartEvents.length > 0" style="max-height:420px; overflow-y:auto">
+                <table class="table table-sm mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col" style="width:1%;white-space:nowrap">Time</th>
+                      <th scope="col">Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="ev in restartEvents" :key="ev.ts">
+                      <tr>
+                        <td class="text-muted text-nowrap" x-text="formatTs(ev.ts)"></td>
+                        <td x-text="ev.detail"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div x-show="restartEvents.length > 0" class="small mt-auto pt-2">Last 50 entries. Persists across reboots.<span x-show="restartEvents.some(e => e.detail.includes('reboot streak'))"> Streak # resets after sustained connectivity.</span></div>
+            </div>
+          </div>
+
         </div>
+
       </div>
     </main>
 
-    <script src="js/logs.js?v=669dc4aa"></script>
-    <script src="js/dark-mode.js?v=669dc4aa"></script>
+    <script src="js/logs.js?v=76cafb2c"></script>
+    <script src="js/dark-mode.js?v=76cafb2c"></script>
   </body>
 </html>

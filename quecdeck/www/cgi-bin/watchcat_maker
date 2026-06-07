@@ -10,6 +10,7 @@ PING_INTERVAL=$(get_post_param PING_INTERVAL)
 PING_FAILURE_COUNT=$(get_post_param PING_FAILURE_COUNT)
 DISABLE_ON_NO_SIM=$(get_post_param DISABLE_ON_NO_SIM)
 REBOOT_BACKOFF=$(get_post_param REBOOT_BACKOFF)
+LOG_RESTARTS=$(get_post_param LOG_RESTARTS)
 
 cgi_output_text
 
@@ -33,6 +34,7 @@ PING_INTERVAL="${PING_INTERVAL:-30}"
 PING_FAILURE_COUNT="${PING_FAILURE_COUNT:-3}"
 DISABLE_ON_NO_SIM="${DISABLE_ON_NO_SIM:-1}"
 REBOOT_BACKOFF="${REBOOT_BACKOFF:-1}"
+LOG_RESTARTS="${LOG_RESTARTS:-1}"
 
 # Validate
 if ! [[ "$WATCHCAT_ENABLED" =~ ^(enable|disable)$ ]]; then
@@ -43,6 +45,10 @@ if ! [[ "$REBOOT_BACKOFF" =~ ^[01]$ ]]; then
     cgi_error "REBOOT_BACKOFF must be 0 or 1."
 fi
 
+if ! [[ "$LOG_RESTARTS" =~ ^[01]$ ]]; then
+    cgi_error "LOG_RESTARTS must be 0 or 1."
+fi
+
 if [ "$WATCHCAT_ENABLED" = "enable" ] && [ -z "$TRACK_IPS_COLON" ]; then
     cgi_error "At least one valid IP address is required to enable Watchcat."
 fi
@@ -51,8 +57,8 @@ if ! [[ "$PING_INTERVAL" =~ ^[0-9]+$ ]] || [ "$PING_INTERVAL" -lt 10 ] || [ "$PI
     cgi_error "Ping interval must be between 10 and 600 seconds."
 fi
 
-if ! [[ "$PING_FAILURE_COUNT" =~ ^[0-9]+$ ]] || [ "$PING_FAILURE_COUNT" -lt 1 ] || [ "$PING_FAILURE_COUNT" -gt 10 ]; then
-    cgi_error "Failure count must be between 1 and 10."
+if ! [[ "$PING_FAILURE_COUNT" =~ ^[0-9]+$ ]] || [ "$PING_FAILURE_COUNT" -lt 2 ] || [ "$PING_FAILURE_COUNT" -gt 10 ]; then
+    cgi_error "Failure count must be between 2 and 10."
 fi
 
 if ! [[ "$DISABLE_ON_NO_SIM" =~ ^[01]$ ]]; then
@@ -75,9 +81,10 @@ if [ "$WATCHCAT_ENABLED" = "enable" ]; then
 
     sim_val=$([ "$DISABLE_ON_NO_SIM" = "1" ] && echo "true" || echo "false")
     backoff_val=$([ "$REBOOT_BACKOFF" = "1" ] && echo "true" || echo "false")
+    log_val=$([ "$LOG_RESTARTS" = "1" ] && echo "true" || echo "false")
 
     # Write config JSON — the static watchcat.sh in script/ reads this at startup
-    echo "{\"enabled\": true, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val}" > /usrdata/quecdeck/var/watchcat.json
+    echo "{\"enabled\": true, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}" > /usrdata/quecdeck/var/watchcat.json
     chmod 640 /usrdata/quecdeck/var/watchcat.json
 
     # Enable and restart watchcat service (systemd ops need root)
@@ -95,8 +102,9 @@ else
     ips_json="$ips_json]"
     sim_val=$([ "$DISABLE_ON_NO_SIM" = "1" ] && echo "true" || echo "false")
     backoff_val=$([ "$REBOOT_BACKOFF" = "1" ] && echo "true" || echo "false")
+    log_val=$([ "$LOG_RESTARTS" = "1" ] && echo "true" || echo "false")
 
-    echo "{\"enabled\": false, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val}" > /usrdata/quecdeck/var/watchcat.json
+    echo "{\"enabled\": false, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}" > /usrdata/quecdeck/var/watchcat.json
     chmod 640 /usrdata/quecdeck/var/watchcat.json
 
     # Stop and disable watchcat service (systemd ops need root)

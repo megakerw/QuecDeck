@@ -18,9 +18,11 @@ PING_INTERVAL=$(grep -o '"ping_interval"[^,}]*' "$CONFIG" | grep -o '[0-9]*$')
 PING_FAILURE_COUNT=$(grep -o '"ping_failure_count"[^,}]*' "$CONFIG" | grep -o '[0-9]*$')
 _sim=$(grep -o '"disable_on_no_sim"[^,}]*' "$CONFIG" | grep -o 'true\|false')
 _backoff=$(grep -o '"reboot_backoff"[^,}]*' "$CONFIG" | grep -o 'true\|false')
+_log=$(grep -o '"log_restarts"[^,}]*' "$CONFIG" | grep -o 'true\|false')
 [ "$_enabled" = "false" ] && { echo "watchcat: disabled in config, exiting." >&2; exit 0; }
 [ "$_sim" = "true" ] && DISABLE_ON_NO_SIM=1 || DISABLE_ON_NO_SIM=0
 [ "$_backoff" = "false" ] && REBOOT_BACKOFF=0 || REBOOT_BACKOFF=1
+[ "$_log" = "false" ] && LOG_RESTARTS=0 || LOG_RESTARTS=1
 
 # Validate
 case "$PING_INTERVAL" in
@@ -32,8 +34,20 @@ esac
 [ -z "$TRACK_IPS" ] && { echo "watchcat: no track_ips in config" >&2; exit 1; }
 
 STATS_PATH=/tmp/quecdeck/watchcat_stats.json
+RESTART_LOG=/usrdata/quecdeck/var/restart_log.jsonl
 failures=0
 successes=0
+
+log_restart() {
+    local reason="$1" detail="$2"
+    mkdir -p "$(dirname "$RESTART_LOG")"
+    printf '{"ts":%d,"reason":"%s","detail":"%s"}\n' "$(date +%s)" "$reason" "$detail" >> "$RESTART_LOG"
+    local count
+    count=$(wc -l < "$RESTART_LOG" 2>/dev/null || echo 0)
+    if [ "$count" -gt 50 ]; then
+        tail -50 "$RESTART_LOG" > "${RESTART_LOG}.tmp" && mv "${RESTART_LOG}.tmp" "$RESTART_LOG"
+    fi
+}
 
 # Read persistent reboot state
 reboot_count=0
@@ -51,9 +65,9 @@ if [ "$REBOOT_BACKOFF" = "1" ] && [ -f "$REBOOT_STATE" ]; then
 fi
 
 # Wait for the system to settle before starting to ping.
-# Skipped if the system has been up for more than 60 seconds (e.g. during install/update).
+# Skipped if the system has been up for more than 65 seconds (e.g. during install/update).
 uptime_secs=$(awk '{print int($1)}' /proc/uptime)
-[ "$uptime_secs" -lt 60 ] && { sleep 60 & wait $!; }
+[ "$uptime_secs" -lt 65 ] && { sleep 65 & wait $!; }
 
 # Per-IP miss counters stored in temp files
 MISS_DIR=/tmp/quecdeck/watchcat_miss
@@ -165,10 +179,14 @@ while :; do
                 if [ "$REBOOT_BACKOFF" = "1" ]; then
                     reboot_count=$((reboot_count + 1))
                     printf '{"reboot_count":%d,"last_reboot":%d}\n' "$reboot_count" "$(date +%s)" > "$REBOOT_STATE"
-                    sync
-                    sleep 2
+                    _detail="$failures consecutive ping failures (reboot streak #$reboot_count)"
+                else
+                    _detail="$failures consecutive ping failures"
                 fi
-                echo "$(date): Rebooting after $failures consecutive ping failures (reboot #$reboot_count)."
+                [ "$LOG_RESTARTS" = "1" ] && log_restart "watchcat" "$_detail"
+                sync
+                sleep 2
+                echo "$(date): $_detail"
                 /usrdata/quecdeck/atcli 'AT+CFUN=1,1' 2>/dev/null
                 exit 0
             fi

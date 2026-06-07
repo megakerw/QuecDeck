@@ -1,0 +1,10 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_require_post
+cgi_output_json
+
+LOG=/usrdata/quecdeck/var/restart_log.jsonl
+
+> "$LOG"
+printf '{"ok":true}\n'
