@@ -400,7 +400,7 @@ stage_release() {
     # that (presence AND staleness) requires a fresh opkg index, so do all of
     # this here in staging where it overlaps with the old site still serving.
     # Reading the installed-package database and comparing against the index
-    # never touches the live lighttpd process; only the eventual `opkg install`
+    # never touches the live lighttpd process; only the eventual opkg install
     # (deferred to the swap, since its postinst scripts may restart the
     # service) needs that controlled window.
     echo "Checking lighttpd package status..."

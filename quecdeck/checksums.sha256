@@ -3,7 +3,7 @@
 # NOTE: protects against partial repo tampering; a full repo compromise
 # would require updating this file too.
 
-f2130565a688d2ce16de60999b308aa20bc416e3dbe5b7d7f656237801f97587 *update_quecdeck.sh
+e85202a6738d7c3cef8f079782bf5a7b81e9316a98d395363652d9b89e0027dc *update_quecdeck.sh
 383663bb8fc014d7ec4ed39ebdf55d02e6287548ef6cc71cfec242bc3aa032db *quecdeck/script/create_watchcat.sh
 cd3b16c20ed5778538a6945160fe61983c09d42603b14d057525367ab12d906d *quecdeck/script/remove_watchcat.sh
 68ddedb3ef29f1730c5caaae1d19edf2275461bff2cc2fd8e009f2ff5ce3c201 *quecdeck/script/watchcat.sh
