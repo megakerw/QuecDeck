@@ -85,7 +85,7 @@ ensure_entware_installed() {
         opkg install shadow-useradd
     fi
 
-    if [ ! -f "/opt/bin/wget" ]; then
+    if ! opkg list-installed 2>/dev/null | grep -q '^wget-ssl '; then
         echo "Installing wget-ssl and ca-certificates..."
         opkg install wget-ssl ca-certificates
     fi

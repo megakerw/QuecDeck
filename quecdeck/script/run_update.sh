@@ -43,7 +43,7 @@ echo $$ > "$PID_FILE"
 # process while downloads are in progress, then the file is overwritten with
 # the installer's PID once it's launched.
 (
-    if [ ! -x "/opt/bin/wget" ]; then
+    if ! opkg list-installed 2>/dev/null | grep -q '^wget-ssl '; then
         opkg install wget-ssl ca-certificates >> "$LOG" 2>&1 || abort "Failed to install wget-ssl."
     fi
 
