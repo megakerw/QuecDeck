@@ -87,7 +87,8 @@ ensure_entware_installed() {
 
     if ! opkg list-installed 2>/dev/null | grep -q '^wget-ssl '; then
         echo "Installing wget-ssl and ca-certificates..."
-        opkg install wget-ssl ca-certificates
+        opkg update
+        opkg install wget-ssl ca-certificates || { echo -e "\e[1;31mFailed to install wget-ssl.\e[0m"; exit 1; }
     fi
 
     remount_ro
@@ -300,7 +301,7 @@ install_quecdeck() {
     set_quecdeck_passwd || return 1
     mkdir -p /tmp/quecdeck
     /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-    echo "e85202a6738d7c3cef8f079782bf5a7b81e9316a98d395363652d9b89e0027dc  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
+    echo "072bbc50a5b58655a5d6885acca269450477816d50167de64709141660f93ae1  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
     echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
     chmod +x /tmp/quecdeck/update_quecdeck.sh
     /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }

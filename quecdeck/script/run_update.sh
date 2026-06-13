@@ -43,8 +43,9 @@ echo $$ > "$PID_FILE"
 # process while downloads are in progress, then the file is overwritten with
 # the installer's PID once it's launched.
 (
-    if ! opkg list-installed 2>/dev/null | grep -q '^wget-ssl '; then
-        opkg install wget-ssl ca-certificates >> "$LOG" 2>&1 || abort "Failed to install wget-ssl."
+    if ! /opt/bin/opkg list-installed 2>/dev/null | grep -q '^wget-ssl '; then
+        /opt/bin/opkg update >> "$LOG" 2>&1
+        /opt/bin/opkg install wget-ssl ca-certificates >> "$LOG" 2>&1 || abort "Failed to install wget-ssl."
     fi
 
     /opt/bin/wget --timeout=30 --tries=2 -q -O "$CHECKSUMS" "$GITROOT/quecdeck/checksums.sha256" || abort "Failed to download checksums."

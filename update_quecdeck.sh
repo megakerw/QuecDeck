@@ -331,8 +331,9 @@ stage_release() {
             case "\$line" in '#'*|'') continue ;; esac
             expected=\$(echo "\$line" | awk '{print \$1}')
             key=\$(echo "\$line" | awk '{print \$2}')
-            # Map repo-relative path to staged path
+            # Map repo-relative path to staged path; skip entries not under quecdeck/
             rel=\${key#*quecdeck/}
+            [ "\$rel" = "\$key" ] && continue
             file="\$STAGE_DIR/\$rel"
             if [ -f "\$file" ]; then
                 actual=\$(sha256sum "\$file" | awk '{print \$1}')
