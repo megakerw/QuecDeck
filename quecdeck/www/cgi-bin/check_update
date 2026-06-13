@@ -21,7 +21,7 @@ if printf '%s' "$api_response" | grep -qi "rate limit"; then
     exit 0
 fi
 
-latest_tag=$(printf '%s' "$api_response" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
+latest_tag=$(printf '%s' "$api_response" | grep -o '"tag_name" *: *"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
 if [ -z "$latest_tag" ]; then
     printf '{"error":"Could not parse release info","current":"%s"}\n' "$current"
     exit 0

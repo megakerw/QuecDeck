@@ -85,14 +85,6 @@ ensure_entware_installed() {
         opkg install shadow-useradd
     fi
 
-    if [ ! -f "/usr/bin/curl" ] && [ ! -f "/opt/bin/curl" ]; then
-        echo "Installing curl..."
-        opkg update && opkg install curl
-        if [ "$?" -ne 0 ]; then
-            echo -e "\e[1;31mFailed to install curl. Please check your internet connection and try again.\e[0m"
-            exit 1
-        fi
-    fi
     remount_ro
     trap - EXIT
 }
@@ -240,14 +232,17 @@ install_quecdeck_release() {
     mkdir -p /tmp/quecdeck
 
     echo "Fetching latest release info..."
-    _api=$(curl -sf --max-time 10 \
-        -H "Accept: application/vnd.github.v3+json" \
+    _api=$(wget --timeout=10 --tries=1 -q -O - \
         "https://api.github.com/repos/$GITUSER/$REPONAME/releases/latest" 2>/dev/null)
     if [ -z "$_api" ]; then
         echo -e "\e[1;31mCould not reach GitHub API. Aborting.\e[0m"
         return 1
     fi
-    _tag=$(printf '%s' "$_api" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
+    if printf '%s' "$_api" | grep -qi "rate limit"; then
+        echo -e "\e[1;31mGitHub API rate limit exceeded. Try again later.\e[0m"
+        return 1
+    fi
+    _tag=$(printf '%s' "$_api" | grep -o '"tag_name" *: *"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
     if [ -z "$_tag" ]; then
         echo -e "\e[1;31mCould not determine latest release. Aborting.\e[0m"
         return 1
