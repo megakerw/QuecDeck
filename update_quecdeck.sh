@@ -38,6 +38,7 @@ Description=Update $DIR_NAME temporary service
 
 [Service]
 Type=oneshot
+TimeoutStartSec=0
 ExecStart=/bin/bash $TMP_SCRIPT
 StandardOutput=append:$LOG_FILE
 StandardError=append:$LOG_FILE
@@ -563,22 +564,23 @@ swap_in_release() {
         echo "Scheduled restart preserved and restarted."
     fi
 
-    # Verify the swap actually produced a working site before declaring success.
-    # A single fixed-delay check is too brittle. lighttpd can take a few extra
-    # seconds to bind on a loaded/slow device, especially right after opkg just
-    # restarted it via a postinst script, so poll for up to ~20s before giving up.
-    echo "Verifying the new site responds..."
+    # Verify the swap produced a working site. Probe the LAN IP lighttpd binds
+    # to (not loopback, which may not be listening if lighttpd is bound to a
+    # specific interface). Poll for up to ~20s to allow for slow startup.
+    _health_ip=\$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
+    printf '%s' "\$_health_ip" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}\$' || _health_ip="192.168.225.1"
+    echo "Verifying the new site responds on \$_health_ip..."
     _health_ok=0
     for _i in 1 2 3 4 5 6 7 8 9 10; do
         sleep 2
         if systemctl is-active lighttpd >/dev/null 2>&1 && \
-           /opt/bin/wget --timeout=10 --tries=1 -q -O /dev/null --no-check-certificate "https://127.0.0.1/login.html"; then
+           /opt/bin/wget --timeout=10 --tries=1 -q -O /dev/null --no-check-certificate "https://\$_health_ip/login.html"; then
             _health_ok=1
             break
         fi
     done
     if [ "\$_health_ok" != "1" ]; then
-        echo -e "\e[1;31mPost-swap health check failed. The new site is not responding.\e[0m"
+        echo -e "\e[1;31mPost-swap health check failed. The new site is not responding on \$_health_ip.\e[0m"
         return 1
     fi
 
