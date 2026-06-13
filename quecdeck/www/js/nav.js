@@ -11,6 +11,7 @@
     { href: '/sms.html',        label: 'SMS' },
     { href: '/deviceinfo.html', label: 'Device Information' },
     { href: '/logs.html',       label: 'Logs' },
+    { href: '/update.html',     label: 'Update' },
     { href: '/developer.html',  label: 'Developer' },
   ];
 

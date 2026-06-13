@@ -23,7 +23,7 @@ ensure_entware_installed() {
     remount_rw
     if [ ! -f "/opt/bin/opkg" ]; then
         echo -e "\e[1;32mInstalling Entware/OPKG...\e[0m"
-        cd /tmp && wget -O installentware.sh "$GITROOT/installentware.sh"
+        cd /tmp && wget --timeout=30 --tries=2 -O installentware.sh "$GITROOT/installentware.sh"
         echo "7b4546ccf4d37b3e3b85f40e2dd204933070354a8d3f735f0ad158b484612c1a  installentware.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f /tmp/installentware.sh; exit 1; }
         echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
         chmod +x installentware.sh && ./installentware.sh
@@ -206,11 +206,11 @@ uninstall_entware() {
 
 set_quecdeck_passwd(){
     mkdir -p /usrdata/root/bin
-    wget -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
+    wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
     echo "06d795a46fe7e3696ba5927ae7f5be86909147a925f1a56c5a46dde86624fde6  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
     chmod +x /usrdata/root/bin/quecdeckpasswd
-    wget -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
+    wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
     echo "b0844740689a6ed2d0795b31cb44e57f7ab4dac49cc796cbdc22997beada64bc  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
     chmod +x /usrdata/root/bin/quecdeckdevpasswd
@@ -232,14 +232,75 @@ set_root_passwd() {
     /opt/bin/passwd
 }
 
-# Function to install/update QuecDeck
+# Function to install/update QuecDeck from latest GitHub release
+install_quecdeck_release() {
+    echo -e "\e[1;32mInstalling latest QuecDeck release...\e[0m"
+    ensure_entware_installed
+    set_quecdeck_passwd || return 1
+    mkdir -p /tmp/quecdeck
+
+    echo "Fetching latest release info..."
+    _api=$(curl -sf --max-time 10 \
+        -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/repos/$GITUSER/$REPONAME/releases/latest" 2>/dev/null)
+    if [ -z "$_api" ]; then
+        echo -e "\e[1;31mCould not reach GitHub API. Aborting.\e[0m"
+        return 1
+    fi
+    _tag=$(printf '%s' "$_api" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
+    if [ -z "$_tag" ]; then
+        echo -e "\e[1;31mCould not determine latest release. Aborting.\e[0m"
+        return 1
+    fi
+    echo -e "\e[1;32mLatest release: $_tag\e[0m"
+
+    _tag_root="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$_tag"
+    _checksums=/tmp/quecdeck/release_checksums.sha256
+    wget --timeout=30 --tries=2 -q -O "$_checksums" "$_tag_root/quecdeck/checksums.sha256" || {
+        echo -e "\e[1;31mFailed to download release checksums.\e[0m"
+        return 1
+    }
+    _expected=$(grep -E '^[a-f0-9]{64} \*update_quecdeck\.sh$' "$_checksums" | awk '{print $1}')
+    rm -f "$_checksums"
+    if [ -z "$_expected" ]; then
+        echo -e "\e[1;31mCould not find hash for update_quecdeck.sh in release checksums.\e[0m"
+        return 1
+    fi
+
+    wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_quecdeck.sh "$_tag_root/update_quecdeck.sh" || {
+        echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"
+        return 1
+    }
+    _actual=$(sha256sum /tmp/quecdeck/update_quecdeck.sh | awk '{print $1}')
+    if [ "$_actual" != "$_expected" ]; then
+        echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"
+        rm -f /tmp/quecdeck/update_quecdeck.sh
+        return 1
+    fi
+    echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
+    chmod +x /tmp/quecdeck/update_quecdeck.sh
+    /tmp/quecdeck/update_quecdeck.sh "$_tag" || {
+        echo -e "\e[1;31mQuecDeck update failed.\e[0m"
+        rm -f /tmp/quecdeck/update_quecdeck.sh
+        return 1
+    }
+    rm -f /tmp/quecdeck/update_quecdeck.sh
+    if [ ! -f /opt/etc/.htpasswd ]; then
+        lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
+        [ -z "$lan_ip" ] && lan_ip="192.168.225.1"
+        echo ""
+        echo -e "\e[1;33mOpen https://${lan_ip} in your browser to complete setup.\e[0m"
+    fi
+}
+
+# Function to install/update QuecDeck from main branch
 install_quecdeck() {
     echo -e "\e[1;32mInstalling/updating QuecDeck...\e[0m"
     ensure_entware_installed
     set_quecdeck_passwd || return 1
     mkdir -p /tmp/quecdeck
-    wget -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-    echo "5e3962565b6c19c08e081342b1cfcbd45d46a663fd9447e3db1e1454728e6ef8  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
+    wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
+    echo "e02b2cd66e5ebdcb3996b81197db6963547cac1ebc38782d50b1af9735f14da4  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
     echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
     chmod +x /tmp/quecdeck/update_quecdeck.sh
     /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
@@ -331,7 +392,7 @@ uninstall_quecdeck_components() {
     # Check if Lighttpd service is installed and remove it if present
     if [ -f "/lib/systemd/system/lighttpd.service" ]; then
         systemctl stop lighttpd 2>/dev/null
-        opkg --force-remove --force-removal-of-dependent-packages remove lighttpd-mod-authn_file lighttpd-mod-auth lighttpd-mod-magnet lighttpd-mod-cgi lighttpd-mod-openssl lighttpd-mod-proxy lighttpd \
+        opkg --force-remove --force-removal-of-dependent-packages remove lighttpd lighttpd-mod-cgi lighttpd-mod-magnet lighttpd-mod-openssl lighttpd-mod-proxy \
             && result_lighttpd="REMOVED" || result_lighttpd="FAILED"
         rm -f /lib/systemd/system/lighttpd.service
         rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
@@ -351,7 +412,7 @@ uninstall_quecdeck_components() {
     rmdir /usrdata/root 2>/dev/null
     systemctl daemon-reload
     [ -d "$QUECDECK_DIR" ] && result_files="REMOVED"
-    rm -rf "$QUECDECK_DIR"
+    rm -rf "$QUECDECK_DIR" "${QUECDECK_DIR}.old" "${QUECDECK_DIR}.new"
 
     remount_ro
     trap - EXIT
@@ -450,10 +511,10 @@ sshd_service() {
 
             # Download and install service file and IP update script
             mkdir -p /tmp/quecdeck
-            wget -q -O /tmp/quecdeck/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
+            wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
             echo "ae6b24c1f3b9f4d03987997c508e45cfa3af6cf94b63a2d0ad3148b32d0577a2  /tmp/quecdeck/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f /tmp/quecdeck/sshd.service; return; }
             echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
-            wget -q -O /tmp/quecdeck/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
+            wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
             echo "dc10b79739f1d788cfcdfc805e4f84fe1f7da5df29aacc3e3f7f76f0cc1eef19  /tmp/quecdeck/update_sshd_ip.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_sshd_ip.sh.\e[0m"; rm -f /tmp/quecdeck/update_sshd_ip.sh; return; }
             echo -e "\e[1;32mIntegrity verified: update_sshd_ip.sh\e[0m"
             trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
@@ -518,10 +579,10 @@ lean_mode_service() {
         1)
             echo -e "\e[1;32mInstalling Lean Mode...\e[0m"
             mkdir -p /usrdata/quecdeck/script /usrdata/quecdeck/systemd
-            wget -q -O /usrdata/quecdeck/script/lean_mode.sh "$GITROOT/quecdeck/script/lean_mode.sh" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
+            wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/script/lean_mode.sh "$GITROOT/quecdeck/script/lean_mode.sh" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
             echo "d6ede9ef2a3b6716ae0cf58a8934c62ec1f2f6e1b8a88e2f01f52eefec2f2a54  /usrdata/quecdeck/script/lean_mode.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean_mode.sh.\e[0m"; rm -f /usrdata/quecdeck/script/lean_mode.sh; return; }
             echo -e "\e[1;32mIntegrity verified: lean_mode.sh\e[0m"
-            wget -q -O /usrdata/quecdeck/systemd/lean-mode.service "$GITROOT/quecdeck/systemd/lean-mode.service" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
+            wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/systemd/lean-mode.service "$GITROOT/quecdeck/systemd/lean-mode.service" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
             echo "146beb37b2840d5aaad4323b6979dcc9a03373ea56ee2e9d7dcfabaad6ff91d0  /usrdata/quecdeck/systemd/lean-mode.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean-mode.service.\e[0m"; rm -f /usrdata/quecdeck/systemd/lean-mode.service; return; }
             echo -e "\e[1;32mIntegrity verified: lean-mode.service\e[0m"
             chmod +x /usrdata/quecdeck/script/lean_mode.sh
@@ -595,32 +656,38 @@ while true; do
     echo -e "\e[92m============================================================\e[0m"
     echo ""
     echo "Select an option:"
-    echo -e "\e[93m1) Install/Update QuecDeck\e[0m" # Yellow
-    echo -e "\e[93m2) SSH server (install/uninstall)\e[0m" # Yellow
-    echo -e "\e[33m3) Lean Mode (install/uninstall) [EXPERIMENTAL]\e[0m" # Dark Yellow/Orange
-    echo -e "\e[91m4) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m" # Light Red
-    echo -e "\e[91m5) Uninstall QuecDeck\e[0m" # Light Red
-    echo -e "\e[91m6) Uninstall Entware/OPKG\e[0m" # Light Red
-    echo -e "\e[95m7) Set QuecDeck (admin) password\e[0m" # Light Purple
-    echo -e "\e[95m8) Set Developer access (devadmin) password\e[0m" # Light Purple
-    echo -e "\e[94m9) Set Console/ttyd (root) password\e[0m" # Light Blue
-    echo -e "\e[91m10) Reboot\e[0m" # Light Red
-    echo -e "\e[93m11) Exit\e[0m" # Yellow
+    echo -e "\e[93m1) Install/Update QuecDeck (latest release)\e[0m"
+    echo -e "\e[93m2) Install/Update QuecDeck (main branch)\e[0m"
+    echo -e "\e[93m3) SSH server (install/uninstall)\e[0m"
+    echo -e "\e[33m4) Lean Mode (install/uninstall) [EXPERIMENTAL]\e[0m"
+    echo -e "\e[91m5) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m"
+    echo -e "\e[91m6) Uninstall QuecDeck\e[0m"
+    echo -e "\e[91m7) Uninstall Entware/OPKG\e[0m"
+    echo -e "\e[95m8) Set QuecDeck (admin) password\e[0m"
+    echo -e "\e[95m9) Set Developer access (devadmin) password\e[0m"
+    echo -e "\e[94m10) Set Console/ttyd (root) password\e[0m"
+    echo -e "\e[91m11) Reboot\e[0m"
+    echo -e "\e[93m12) Exit\e[0m"
     read -p "Enter your choice: " choice
 
     case $choice in
         1)
-            install_quecdeck
+            install_quecdeck_release
             echo ""
             read -p "Press Enter to return to menu..."
             ;;
         2)
-            sshd_service
+            install_quecdeck
+            echo ""
+            read -p "Press Enter to return to menu..."
             ;;
         3)
-            lean_mode_service
+            sshd_service
             ;;
         4)
+            lean_mode_service
+            ;;
+        5)
             echo -e "\e[1;31mThis will disable Watchcat and Scheduled Restart.\e[0m"
             read -p "Are you sure? (y/n): " confirm
             case "$confirm" in
@@ -628,14 +695,14 @@ while true; do
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        5)
+        6)
             uninstall_quecdeck_components
             ;;
-        6)
+        7)
             if [ -d "$QUECDECK_DIR/www" ]; then
                 echo -e "\e[1;31mWARNING: QuecDeck is still installed.\e[0m"
                 echo -e "\e[1;31mUninstalling Entware will break QuecDeck and all its services.\e[0m"
-                echo -e "\e[1;31mRun option 5 to uninstall QuecDeck first.\e[0m"
+                echo -e "\e[1;31mRun option 6 to uninstall QuecDeck first.\e[0m"
                 read -p "Continue anyway? (y/n): " quecdeck_warn_confirm
                 case "$quecdeck_warn_confirm" in
                     y|Y) ;;
@@ -653,28 +720,28 @@ while true; do
                     ;;
             esac
             ;;
-        7)
+        8)
             read -p "Set QuecDeck (admin) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_adminpasswd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        8)
+        9)
             read -p "Set Developer access (devadmin) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_devpasswd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        9)
+        10)
             read -p "Set Console/ttyd (root) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_root_passwd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        10)
+        11)
             read -p "Reboot the modem? (y/n): " reboot_confirm
             case "$reboot_confirm" in
                 y|Y)
@@ -687,7 +754,7 @@ while true; do
                 *) echo -e "\e[1;33mReboot cancelled.\e[0m" ;;
             esac
             ;;
-        11)
+        12)
             echo -e "\e[1;32mGoodbye!\e[0m"
             break
             ;;

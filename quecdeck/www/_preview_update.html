@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en-GB" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Update Page Preview</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=ebbf7e2b" />
+    <link rel="stylesheet" href="css/styles.css?v=ebbf7e2b" />
+    <link rel="icon" href="favicon.ico" />
+    <script src="js/bootstrap.bundle.min.js?v=ebbf7e2b"></script>
+    <script src="js/alpinejs.min.js?v=ebbf7e2b" defer></script>
+    <style>
+      .preview-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--bs-secondary-color);
+        margin-bottom: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4">
+        <h5 class="mb-4 text-muted">Update Page — State Preview</h5>
+
+        <div class="row gy-3 mb-4 align-items-stretch">
+
+          <!-- Idle: not yet checked -->
+          <div class="col-12 col-md-4">
+            <div class="preview-label">Idle — not checked</div>
+            <div class="panel-section" style="position:relative">
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                <div class="text-muted small"></div>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-primary btn-sm">Check for updates</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Up to date -->
+          <div class="col-12 col-md-4">
+            <div class="preview-label">Up to date</div>
+            <div class="panel-section" style="position:relative">
+              <span class="badge text-bg-success position-absolute top-0 end-0 m-3">Up to date</span>
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                <div class="text-muted small">1.0.0</div>
+              </div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Latest version</div>
+                <div class="text-muted small">1.0.0</div>
+              </div>
+              <div class="text-muted small mb-4">Last checked: 12/06/2026, 14:32:01</div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-primary btn-sm">Re-check</button>
+                <button class="btn btn-outline-primary btn-sm">Force reinstall</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Update available -->
+          <div class="col-12 col-md-4">
+            <div class="preview-label">Update available</div>
+            <div class="panel-section" style="position:relative">
+              <span class="badge text-bg-warning text-dark position-absolute top-0 end-0 m-3">Update available</span>
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                <div class="text-muted small">1.0.0</div>
+              </div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Latest version</div>
+                <div class="text-muted small">1.1.0</div>
+                <a href="#" class="small text-muted">Release notes</a>
+              </div>
+              <div class="text-muted small mb-4">Last checked: 12/06/2026, 14:32:01</div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-primary btn-sm">Re-check</button>
+                <button class="btn btn-success btn-sm">Update to 1.1.0</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="row gy-3 mb-4 align-items-stretch">
+
+          <!-- Updating -->
+          <div class="col-12 col-md-4">
+            <div class="preview-label">Updating</div>
+            <div class="panel-section" style="position:relative">
+              <span class="badge text-bg-primary position-absolute top-0 end-0 m-3">Updating</span>
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Updating</div>
+                <div class="text-muted small">1.0.0 → 1.1.0</div>
+              </div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">Downloading installer...
+update_quecdeck.sh integrity verified.
+Update started (tag: v1.1.0).
+Running pre-flight checks...
+Pre-flight checks passed.
+Downloading new release...
+Downloading files...
+Fonts copied from existing install.
+atcli up to date, copying from existing install.
+All files downloaded.
+Verifying file integrity...
+All checksums verified OK.
+Checking lighttpd package status...
+Lighttpd packages are present and up to date.</div>
+              </div>
+              <div class="d-flex align-items-center gap-2 text-muted small">
+                <span class="spinner-border spinner-border-sm"></span>
+                <span>Installing…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Updating: reconnecting -->
+          <div class="col-12 col-md-4">
+            <div class="preview-label">Updating — reconnecting</div>
+            <div class="panel-section" style="position:relative">
+              <span class="badge text-bg-primary position-absolute top-0 end-0 m-3">Updating</span>
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Updating</div>
+                <div class="text-muted small">1.0.0 → 1.1.0</div>
+              </div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">Switching to new release (web UI will be briefly unavailable)...
+Stopping services for swap...
+</div>
+              </div>
+              <div class="d-flex align-items-center gap-2 text-muted small">
+                <span class="spinner-border spinner-border-sm"></span>
+                <span class="text-info">Reconnecting. Web server restarting…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Updating: stall warning -->
+          <div class="col-12 col-md-4">
+            <div class="preview-label">Updating — stall warning</div>
+            <div class="panel-section" style="position:relative">
+              <span class="badge text-bg-primary position-absolute top-0 end-0 m-3">Updating</span>
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Updating</div>
+                <div class="text-muted small">1.0.0 → 1.1.0</div>
+              </div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">Installing lighttpd packages...
+</div>
+              </div>
+              <div class="d-flex align-items-center gap-2 text-muted small">
+                <span class="spinner-border spinner-border-sm"></span>
+                <span>Installing…</span>
+              </div>
+              <div class="text-warning small mt-2">No progress detected. The device may need a manual reboot.</div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="row gy-3 mb-4 align-items-stretch">
+
+          <!-- Done -->
+          <div class="col-12 col-md-4" x-data="{ reloadCountdown: 7 }">
+            <div class="preview-label">Done</div>
+            <div class="panel-section" style="position:relative">
+              <span class="badge text-bg-success position-absolute top-0 end-0 m-3">Updated</span>
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                <div class="text-muted small">1.1.0</div>
+              </div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">All checksums verified OK.
+Switching to new release (web UI will be briefly unavailable)...
+Stopping services for swap...
+Switch complete.
+
+Install Summary
+============================================
+  Stage release           OK
+  Switch to release       OK
+  QuecDeck                OK
+  Firewall                OK
+  ttyd                    OK
+  Lighttpd                SKIPPED
+============================================</div>
+              </div>
+              <div class="text-success small mt-1 mb-3">Update complete.</div>
+              <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-primary btn-sm">Reload now</button>
+                <span class="text-muted small">Reloading in 7s</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Failed: rollback ok -->
+          <div class="col-12 col-md-4">
+            <div class="preview-label">Failed — rollback ok</div>
+            <div class="panel-section" style="position:relative">
+              <span class="badge text-bg-danger position-absolute top-0 end-0 m-3">Update failed</span>
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                <div class="text-muted small">1.0.0</div>
+              </div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">Installing lighttpd packages...
+Failed to install lighttpd packages (or it timed out).
+Rolling back to previous installation...
+Rollback complete. Previous version restored.
+
+Install Summary
+============================================
+  Stage release           OK
+  Switch to release       FAILED
+  QuecDeck                FAILED
+  Firewall                FAILED
+  ttyd                    FAILED
+  Lighttpd                FAILED
+  Rollback                OK
+============================================</div>
+              </div>
+              <div class="text-warning small mt-1 mb-3">Update failed. Previous version has been restored.</div>
+              <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-primary btn-sm">Reload now</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Failed: rollback failed -->
+          <div class="col-12 col-md-4">
+            <div class="preview-label">Failed — rollback failed</div>
+            <div class="panel-section" style="position:relative">
+              <span class="badge text-bg-danger position-absolute top-0 end-0 m-3">Update failed</span>
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                <div class="text-muted small"></div>
+              </div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">Installing lighttpd packages...
+Failed to install lighttpd packages (or it timed out).
+Rolling back to previous installation...
+No previous installation found. Cannot roll back automatically.
+Re-run the installer via ADB or SSH to recover.
+
+Install Summary
+============================================
+  Stage release           OK
+  Switch to release       FAILED
+  QuecDeck                FAILED
+  Firewall                FAILED
+  ttyd                    FAILED
+  Lighttpd                FAILED
+  Rollback                FAILED
+============================================</div>
+              </div>
+              <div class="text-danger small mt-1 mb-3">Update failed. Rollback was not possible. Re-run the installer via ADB or SSH to recover.</div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Reconnecting timeout -->
+        <div class="row gy-3 mb-4">
+          <div class="col-12 col-md-4">
+            <div class="preview-label">Updating — reconnect timeout</div>
+            <div class="panel-section" style="position:relative">
+              <span class="badge text-bg-primary position-absolute top-0 end-0 m-3">Updating</span>
+              <div class="panel-title">Software Update</div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Updating</div>
+                <div class="text-muted small">1.0.0 → 1.1.0</div>
+              </div>
+              <div class="mb-4">
+                <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">Switching to new release (web UI will be briefly unavailable)...
+Stopping services for swap...
+</div>
+              </div>
+              <div class="d-flex align-items-center gap-2 text-muted small">
+                <span class="spinner-border spinner-border-sm"></span>
+                <span class="text-warning">Taking longer than expected. Try refreshing manually.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+    <script src="js/dark-mode.js?v=ebbf7e2b"></script>
+  </body>
+</html>

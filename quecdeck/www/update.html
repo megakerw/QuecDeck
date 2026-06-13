@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en-GB" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QuecDeck</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=094d407a" />
+    <link rel="stylesheet" href="css/styles.css?v=094d407a" />
+    <link rel="icon" href="favicon.ico" />
+    <script src="js/bootstrap.bundle.min.js?v=094d407a"></script>
+    <script src="js/utils.js?v=094d407a"></script>
+    <script src="js/alpinejs.min.js?v=094d407a" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="updatePage()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=094d407a"></script>
+
+        <div class="row gy-3 mt-4 mb-4 align-items-stretch">
+          <div class="col-12 col-md-6">
+            <div class="panel-section" style="position:relative">
+              <div class="panel-title">Software Update</div>
+
+              <!-- Idle / checked states -->
+              <div x-show="!updating && !done && !failed">
+                <span x-show="checked" class="badge position-absolute top-0 end-0 m-3"
+                  :class="updateAvailable ? 'text-bg-warning text-dark' : 'text-bg-success'"
+                  x-text="updateAvailable ? 'Update available' : 'Up to date'"></span>
+
+                <div class="mb-4">
+                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                  <div class="text-muted small" x-text="currentVersion"></div>
+                </div>
+
+                <div class="mb-4" x-show="checked">
+                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Latest version</div>
+                  <div class="text-muted small" x-text="latestVersion"></div>
+                  <a x-show="updateAvailable && latestTag" :href="'https://github.com/megakerw/QuecDeck/releases/tag/' + latestTag" target="_blank" rel="noopener" class="small text-muted">Release notes</a>
+                </div>
+
+                <div class="text-muted small mb-4" x-show="checkedAt" x-text="'Last checked: ' + checkedAt"></div>
+
+                <div class="d-flex gap-2">
+                  <button class="btn btn-primary btn-sm" :disabled="checking" @click="checkForUpdates()"
+                    x-text="checking ? 'Checking...' : (checked ? 'Re-check' : 'Check for updates')"></button>
+                  <button x-show="updateAvailable" class="btn btn-success btn-sm" @click="triggerUpdate(false)"
+                    x-text="'Update to ' + latestVersion"></button>
+                  <button x-show="checked && !updateAvailable" class="btn btn-outline-primary btn-sm" @click="triggerUpdate(true)">Force reinstall</button>
+                </div>
+
+                <div x-show="checkError" class="text-danger small mt-2" x-text="checkError"></div>
+
+              </div>
+
+              <!-- Updating -->
+              <div x-show="updating && !done && !failed">
+                <span class="badge text-bg-primary position-absolute top-0 end-0 m-3">Updating</span>
+                <div class="mb-4">
+                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Updating</div>
+                  <div class="text-muted small" x-text="currentVersion + (latestVersion && latestVersion !== currentVersion ? ' → ' + latestVersion : latestVersion || currentVersion)"></div>
+                </div>
+                <div class="mb-4">
+                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logbox"
+                    x-text="log || 'Starting…'"></div>
+                </div>
+                <div class="d-flex align-items-center gap-2 text-muted small">
+                  <span class="spinner-border spinner-border-sm"></span>
+                  <span :class="reconnectingTimeout ? 'text-warning' : reconnecting ? 'text-info' : ''"
+                    x-text="reconnectingTimeout ? 'Taking longer than expected. Try refreshing manually.' : reconnecting ? 'Reconnecting. Web server restarting…' : 'Installing…'"></span>
+                </div>
+                <div x-show="stallWarning" class="text-warning small mt-2">No progress detected. The device may need a manual reboot.</div>
+              </div>
+
+              <!-- Done -->
+              <div x-show="done">
+                <span class="badge text-bg-success position-absolute top-0 end-0 m-3">Updated</span>
+                <div class="mb-4">
+                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                  <div class="text-muted small" x-text="latestVersion || currentVersion"></div>
+                </div>
+                <div class="mb-4">
+                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logboxDone"
+                    x-text="log"></div>
+                </div>
+                <div class="text-success small mt-1 mb-3">Update complete.</div>
+                <div class="d-flex align-items-center gap-3">
+                  <button class="btn btn-primary btn-sm" @click="location.reload()">Reload now</button>
+                  <span x-show="reloadCountdown > 0" class="text-muted small">Reloading in <span x-text="reloadCountdown"></span>s</span>
+                </div>
+              </div>
+
+              <!-- Failed -->
+              <div x-show="failed">
+                <span class="badge text-bg-danger position-absolute top-0 end-0 m-3">Update failed</span>
+                <div class="mb-4">
+                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                  <div class="text-muted small" x-text="currentVersion"></div>
+                </div>
+                <div class="mb-4">
+                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
+                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logboxFailed"
+                    x-text="log"></div>
+                </div>
+                <div x-show="rollback === 'ok'" class="text-warning small mt-1 mb-3">Update failed. Previous version has been restored.</div>
+                <div x-show="rollback === 'failed'" class="text-danger small mt-1 mb-3">Update failed. Rollback was not possible. Re-run the installer via ADB or SSH to recover.</div>
+                <div x-show="rollback === 'none'" class="text-danger small mt-1 mb-3">Update failed. Check the log above for details.</div>
+                <div x-show="rollback !== 'failed'" class="d-flex align-items-center gap-3">
+                  <button class="btn btn-primary btn-sm" @click="location.reload()">Reload now</button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="js/update.js?v=094d407a"></script>
+    <script src="js/dark-mode.js?v=094d407a"></script>
+  </body>
+</html>

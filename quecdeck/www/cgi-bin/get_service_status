@@ -53,5 +53,8 @@ else
     sshd_json="null"
 fi
 
-printf '{"watchcat":{"running":%s,"config":%s},"scheduled_restart":%s,"ttyd":{"running":%s},"atcmd_daemon":{"running":%s},"connection_logger":{"running":%s},"lean_mode":%s,"firewall":%s,"sshd":%s}\n' \
-    "$watchcat_running" "$watchcat_config" "$sched_config" "$ttyd_running" "$atcmd_running" "$connlog_running" "$lean_mode_json" "$firewall_json" "$sshd_json"
+quecdeck_version=$(cat /usrdata/quecdeck/version 2>/dev/null | tr -d '[:space:]')
+[ -z "$quecdeck_version" ] && quecdeck_version="unknown"
+
+printf '{"watchcat":{"running":%s,"config":%s},"scheduled_restart":%s,"ttyd":{"running":%s},"atcmd_daemon":{"running":%s},"connection_logger":{"running":%s},"lean_mode":%s,"firewall":%s,"sshd":%s,"quecdeck_version":"%s"}\n' \
+    "$watchcat_running" "$watchcat_config" "$sched_config" "$ttyd_running" "$atcmd_running" "$connlog_running" "$lean_mode_json" "$firewall_json" "$sshd_json" "$quecdeck_version"

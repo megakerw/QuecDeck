@@ -1,0 +1,27 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_require_post
+cgi_read_post
+cgi_output_json
+
+tag=$(get_post_param tag)
+
+if ! echo "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    printf '{"ok":false,"error":"Invalid version tag"}\n'
+    exit 0
+fi
+
+PID_FILE=/tmp/quecdeck_update.pid
+if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+    printf '{"ok":false,"error":"An update is already in progress"}\n'
+    exit 0
+fi
+
+sudo /usrdata/quecdeck/script/run_update.sh "$tag"
+if [ $? -ne 0 ]; then
+    printf '{"ok":false,"error":"Failed to start update process"}\n'
+    exit 0
+fi
+
+printf '{"ok":true,"tag":"%s"}\n' "$tag"

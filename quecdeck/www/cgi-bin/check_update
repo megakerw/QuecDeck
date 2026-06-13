@@ -1,0 +1,43 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+cgi_check_cors
+cgi_output_json
+
+VERSION_FILE=/usrdata/quecdeck/version
+current=$(cat "$VERSION_FILE" 2>/dev/null | tr -d '[:space:]')
+[ -z "$current" ] && current="unknown"
+
+api_response=$(wget --timeout=10 --tries=1 -q -O - \
+    "https://api.github.com/repos/megakerw/QuecDeck/releases/latest" 2>/dev/null)
+
+if [ -z "$api_response" ]; then
+    printf '{"error":"Could not reach GitHub API","current":"%s"}\n' "$current"
+    exit 0
+fi
+
+if printf '%s' "$api_response" | grep -qi "rate limit"; then
+    printf '{"error":"GitHub API rate limit exceeded. Try again later.","current":"%s"}\n' "$current"
+    exit 0
+fi
+
+latest_tag=$(printf '%s' "$api_response" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
+if [ -z "$latest_tag" ]; then
+    printf '{"error":"Could not parse release info","current":"%s"}\n' "$current"
+    exit 0
+fi
+if ! printf '%s' "$latest_tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    printf '{"error":"Latest release tag is not a stable release","current":"%s"}\n' "$current"
+    exit 0
+fi
+
+latest=${latest_tag#v}
+
+if [ "$current" = "$latest" ]; then
+    update_available=false
+else
+    update_available=true
+fi
+
+printf '{"current":"%s","latest":"%s","tag":"%s","update_available":%s}\n' \
+    "$current" "$latest" "$latest_tag" "$update_available"

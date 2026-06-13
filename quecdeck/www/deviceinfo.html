@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=76cafb2c" />
-    <link rel="stylesheet" href="css/styles.css?v=76cafb2c" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=094d407a" />
+    <link rel="stylesheet" href="css/styles.css?v=094d407a" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=76cafb2c"></script>
-    <script src="js/utils.js?v=76cafb2c"></script>
-    <script src="js/alpinejs.min.js?v=76cafb2c" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=094d407a"></script>
+    <script src="js/utils.js?v=094d407a"></script>
+    <script src="js/alpinejs.min.js?v=094d407a" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="fetchDeviceInfo()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=76cafb2c"></script>
+        <script src="js/nav.js?v=094d407a"></script>
 
         <div class="row gy-3 mt-4 mb-0 align-items-stretch">
           <div class="col-md">
@@ -147,7 +147,7 @@
                   <a href="https://github.com/megakerw/QuecDeck" target="_blank" class="text-reset">repository</a>
                   for more information. All rights reserved. 2026
                 </span>
-                <span>QuecDeck 1.0</span>
+                <span x-text="quecdeckVersion ? 'QuecDeck ' + quecdeckVersion : 'QuecDeck'"></span>
               </div>
             </div>
           </div>
@@ -155,7 +155,7 @@
 
       </div>
     </main>
-    <script src="js/dark-mode.js?v=76cafb2c"></script>
-    <script src="js/deviceinfo.js?v=76cafb2c"></script>
+    <script src="js/dark-mode.js?v=094d407a"></script>
+    <script src="js/deviceinfo.js?v=094d407a"></script>
   </body>
 </html>

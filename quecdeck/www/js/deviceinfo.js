@@ -37,6 +37,7 @@ function fetchDeviceInfo() {
     phoneNumber: "Unknown",
     upnpEnabled: false,
     services: null,
+    quecdeckVersion: '',
 
     fetchATCommand() {
       fetchText("/cgi-bin/get_device_info", { method: "POST" })
@@ -125,7 +126,7 @@ function fetchDeviceInfo() {
 
     fetchServiceStatus() {
       fetchJSON("/cgi-bin/get_service_status")
-        .then((data) => { this.services = data; })
+        .then((data) => { this.services = data; this.quecdeckVersion = data.quecdeck_version || ''; })
         .catch(() => {});
     },
 

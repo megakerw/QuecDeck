@@ -8,6 +8,7 @@
 CHECKSUMS_FILE="quecdeck/checksums.sha256"
 
 CHECKSUMMED_FILES=(
+  update_quecdeck.sh
   quecdeck/script/create_watchcat.sh
   quecdeck/script/remove_watchcat.sh
   quecdeck/script/watchcat.sh
@@ -56,6 +57,8 @@ CHECKSUMMED_FILES=(
   quecdeck/www/js/network.js
   quecdeck/www/js/logs.js
   quecdeck/www/js/setup.js
+  quecdeck/www/js/nav.js
+  quecdeck/www/js/update.js
   quecdeck/www/css/styles.css
   quecdeck/www/cgi-bin/auth_login
   quecdeck/www/cgi-bin/auth_logout
@@ -90,10 +93,20 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/run_cell_scan
   quecdeck/www/cgi-bin/cgi-lib.sh
   quecdeck/www/cgi-bin/get_service_status
+  quecdeck/www/cgi-bin/get_scan_status
   quecdeck/www/cgi-bin/get_logs
+  quecdeck/www/cgi-bin/get_restart_log
+  quecdeck/www/cgi-bin/clear_restart_log
+  quecdeck/www/cgi-bin/check_update
+  quecdeck/www/cgi-bin/trigger_update
+  quecdeck/www/cgi-bin/get_update_log
   quecdeck/www/cgi-bin/init_setup
   quecdeck/console/.profile
   quecdeck/bin/atcli
+  quecdeck/lighttpd.conf
+  quecdeck/version
+  quecdeck/script/run_update.sh
+  quecdeck/www/update.html
   quecdeck/www/login.html
   quecdeck/www/setup.html
   quecdeck/www/favicon.ico
@@ -142,6 +155,7 @@ HTML_FILES=(
   quecdeck/www/settings.html
   quecdeck/www/monitoring.html
   quecdeck/www/logs.html
+  quecdeck/www/update.html
   quecdeck/www/scanner.html
   quecdeck/www/sms.html
   quecdeck/www/deviceinfo.html
