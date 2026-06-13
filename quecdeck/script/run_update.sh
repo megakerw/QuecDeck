@@ -43,13 +43,17 @@ echo $$ > "$PID_FILE"
 # process while downloads are in progress, then the file is overwritten with
 # the installer's PID once it's launched.
 (
-    wget --timeout=30 --tries=2 -q -O "$CHECKSUMS" "$GITROOT/quecdeck/checksums.sha256" || abort "Failed to download checksums."
+    if [ ! -x "/opt/bin/wget" ]; then
+        opkg install wget-ssl ca-certificates >> "$LOG" 2>&1 || abort "Failed to install wget-ssl."
+    fi
+
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "$CHECKSUMS" "$GITROOT/quecdeck/checksums.sha256" || abort "Failed to download checksums."
 
     expected_hash=$(grep -E '^[a-f0-9]{64} \*update_quecdeck\.sh$' "$CHECKSUMS" | awk '{print $1}')
     rm -f "$CHECKSUMS"
     [ -z "$expected_hash" ] && abort "Could not find hash for update_quecdeck.sh in checksums."
 
-    wget --timeout=30 --tries=2 -q -O "$UPDATE_SCRIPT" "$GITROOT/update_quecdeck.sh" || abort "Failed to download update_quecdeck.sh."
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "$UPDATE_SCRIPT" "$GITROOT/update_quecdeck.sh" || abort "Failed to download update_quecdeck.sh."
 
     actual_hash=$(sha256sum "$UPDATE_SCRIPT" | awk '{print $1}')
     if [ "$actual_hash" != "$expected_hash" ]; then

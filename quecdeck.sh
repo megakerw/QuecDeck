@@ -85,6 +85,11 @@ ensure_entware_installed() {
         opkg install shadow-useradd
     fi
 
+    if [ ! -f "/opt/bin/wget" ]; then
+        echo "Installing wget-ssl and ca-certificates..."
+        opkg install wget-ssl ca-certificates
+    fi
+
     remount_ro
     trap - EXIT
 }
@@ -198,11 +203,11 @@ uninstall_entware() {
 
 set_quecdeck_passwd(){
     mkdir -p /usrdata/root/bin
-    wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
+    /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
     echo "06d795a46fe7e3696ba5927ae7f5be86909147a925f1a56c5a46dde86624fde6  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
     chmod +x /usrdata/root/bin/quecdeckpasswd
-    wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
+    /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
     echo "b0844740689a6ed2d0795b31cb44e57f7ab4dac49cc796cbdc22997beada64bc  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
     chmod +x /usrdata/root/bin/quecdeckdevpasswd
@@ -232,7 +237,7 @@ install_quecdeck_release() {
     mkdir -p /tmp/quecdeck
 
     echo "Fetching latest release info..."
-    _api=$(wget --timeout=10 --tries=1 -q -O - \
+    _api=$(/opt/bin/wget --timeout=10 --tries=1 -q -O - \
         "https://api.github.com/repos/$GITUSER/$REPONAME/releases/latest" 2>/dev/null)
     if [ -z "$_api" ]; then
         echo -e "\e[1;31mCould not reach GitHub API. Aborting.\e[0m"
@@ -251,7 +256,7 @@ install_quecdeck_release() {
 
     _tag_root="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$_tag"
     _checksums=/tmp/quecdeck/release_checksums.sha256
-    wget --timeout=30 --tries=2 -q -O "$_checksums" "$_tag_root/quecdeck/checksums.sha256" || {
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "$_checksums" "$_tag_root/quecdeck/checksums.sha256" || {
         echo -e "\e[1;31mFailed to download release checksums.\e[0m"
         return 1
     }
@@ -262,7 +267,7 @@ install_quecdeck_release() {
         return 1
     fi
 
-    wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_quecdeck.sh "$_tag_root/update_quecdeck.sh" || {
+    /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_quecdeck.sh "$_tag_root/update_quecdeck.sh" || {
         echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"
         return 1
     }
@@ -294,8 +299,8 @@ install_quecdeck() {
     ensure_entware_installed
     set_quecdeck_passwd || return 1
     mkdir -p /tmp/quecdeck
-    wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-    echo "e02b2cd66e5ebdcb3996b81197db6963547cac1ebc38782d50b1af9735f14da4  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
+    /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
+    echo "f2130565a688d2ce16de60999b308aa20bc416e3dbe5b7d7f656237801f97587  /tmp/quecdeck/update_quecdeck.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
     echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
     chmod +x /tmp/quecdeck/update_quecdeck.sh
     /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
@@ -506,10 +511,10 @@ sshd_service() {
 
             # Download and install service file and IP update script
             mkdir -p /tmp/quecdeck
-            wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
+            /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
             echo "ae6b24c1f3b9f4d03987997c508e45cfa3af6cf94b63a2d0ad3148b32d0577a2  /tmp/quecdeck/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f /tmp/quecdeck/sshd.service; return; }
             echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
-            wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
+            /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
             echo "dc10b79739f1d788cfcdfc805e4f84fe1f7da5df29aacc3e3f7f76f0cc1eef19  /tmp/quecdeck/update_sshd_ip.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_sshd_ip.sh.\e[0m"; rm -f /tmp/quecdeck/update_sshd_ip.sh; return; }
             echo -e "\e[1;32mIntegrity verified: update_sshd_ip.sh\e[0m"
             trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
@@ -574,10 +579,10 @@ lean_mode_service() {
         1)
             echo -e "\e[1;32mInstalling Lean Mode...\e[0m"
             mkdir -p /usrdata/quecdeck/script /usrdata/quecdeck/systemd
-            wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/script/lean_mode.sh "$GITROOT/quecdeck/script/lean_mode.sh" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
+            /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/script/lean_mode.sh "$GITROOT/quecdeck/script/lean_mode.sh" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
             echo "d6ede9ef2a3b6716ae0cf58a8934c62ec1f2f6e1b8a88e2f01f52eefec2f2a54  /usrdata/quecdeck/script/lean_mode.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean_mode.sh.\e[0m"; rm -f /usrdata/quecdeck/script/lean_mode.sh; return; }
             echo -e "\e[1;32mIntegrity verified: lean_mode.sh\e[0m"
-            wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/systemd/lean-mode.service "$GITROOT/quecdeck/systemd/lean-mode.service" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
+            /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/systemd/lean-mode.service "$GITROOT/quecdeck/systemd/lean-mode.service" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
             echo "146beb37b2840d5aaad4323b6979dcc9a03373ea56ee2e9d7dcfabaad6ff91d0  /usrdata/quecdeck/systemd/lean-mode.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean-mode.service.\e[0m"; rm -f /usrdata/quecdeck/systemd/lean-mode.service; return; }
             echo -e "\e[1;32mIntegrity verified: lean-mode.service\e[0m"
             chmod +x /usrdata/quecdeck/script/lean_mode.sh

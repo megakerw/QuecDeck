@@ -88,7 +88,7 @@ preflight_check() {
     echo "Running pre-flight checks..."
     _pf_checksums=/tmp/quecdeck_preflight.sha256
 
-    wget --timeout=30 --tries=2 -q -O "\$_pf_checksums" "$GITROOT/quecdeck/checksums.sha256" || {
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "\$_pf_checksums" "$GITROOT/quecdeck/checksums.sha256" || {
         echo "FATAL: Could not reach repository. Aborting update."
         rm -f "\$_pf_checksums"
         return 1
@@ -129,82 +129,82 @@ stage_release() {
     echo "Downloading files..."
 
     cd \$STAGE_DIR/systemd
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/lighttpd.service &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/watchcat.service &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/scheduled_restart.service &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/atcmd-daemon.service &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/lean-mode.service &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/connection-logger.service &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/firewall.service &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/lighttpd.service &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/watchcat.service &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/scheduled_restart.service &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/atcmd-daemon.service &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/lean-mode.service &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/connection-logger.service &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/firewall.service &
     wait
 
     cd \$STAGE_DIR/script
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/remove_watchcat.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/create_watchcat.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/lighttpd_prestart.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/lean_mode.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/create_scheduled_restart.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/remove_scheduled_restart.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/atcmd_queue_daemon.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/connection_logger.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/watchcat.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/scheduled_restart.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/write_htpasswd.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/firewall.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/run_update.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/remove_watchcat.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/create_watchcat.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/lighttpd_prestart.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/lean_mode.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/create_scheduled_restart.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/remove_scheduled_restart.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/atcmd_queue_daemon.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/connection_logger.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/watchcat.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/scheduled_restart.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/write_htpasswd.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/firewall.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/run_update.sh &
     wait
 
     cd \$STAGE_DIR/console
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/console/.profile
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/console/.profile
 
     cd \$STAGE_DIR/console/menu
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/console/menu/start_menu.sh
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/console/menu/start_menu.sh
 
-    wget --timeout=30 --tries=2 -q -O "\$STAGE_DIR/auth.lua" $GITROOT/quecdeck/auth.lua
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "\$STAGE_DIR/auth.lua" $GITROOT/quecdeck/auth.lua
     printf '%s\n' "${GITTREE#v}" > "\$STAGE_DIR/version"
-    wget --timeout=30 --tries=2 -q -O "\$STAGE_DIR/lighttpd.conf" $GITROOT/quecdeck/lighttpd.conf || { echo -e "\e[1;31mFailed to download lighttpd.conf.\e[0m"; return 1; }
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "\$STAGE_DIR/lighttpd.conf" $GITROOT/quecdeck/lighttpd.conf || { echo -e "\e[1;31mFailed to download lighttpd.conf.\e[0m"; return 1; }
 
     cd \$STAGE_DIR/www
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/deviceinfo.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/login.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/setup.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/developer.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/favicon.ico &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/index.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/network.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/settings.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/sms.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/scanner.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/monitoring.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/logs.html &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/update.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/deviceinfo.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/login.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/setup.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/developer.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/favicon.ico &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/index.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/network.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/settings.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/sms.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/scanner.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/monitoring.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/logs.html &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/update.html &
     wait
 
     cd \$STAGE_DIR/www/js
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/alpinejs.min.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/bootstrap.bundle.min.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/dark-mode.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/nav.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/utils.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/parse-settings.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/populate-bands.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/login.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/home.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/settings.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/scanner.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/deviceinfo.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/developer.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/sms.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/watchcat.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/network.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/logs.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/setup.js &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/update.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/alpinejs.min.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/bootstrap.bundle.min.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/dark-mode.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/nav.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/utils.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/parse-settings.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/populate-bands.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/login.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/home.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/settings.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/scanner.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/deviceinfo.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/developer.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/sms.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/watchcat.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/network.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/logs.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/setup.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/update.js &
     wait
 
     cd \$STAGE_DIR/www/css
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/css/bootstrap.min.css &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/css/styles.css &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/css/bootstrap.min.css &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/css/styles.css &
     wait
 
     # Fonts are large binary files that never change between updates. Copy
@@ -215,66 +215,66 @@ stage_release() {
         echo "Fonts copied from existing install."
     else
         echo "Downloading fonts..."
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-300italic.woff2 &
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-300.woff2 &
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-500italic.woff2 &
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-500.woff2 &
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-600italic.woff2 &
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-600.woff2 &
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-700italic.woff2 &
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-700.woff2 &
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-italic.woff2 &
-        wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-regular.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-300italic.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-300.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-500italic.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-500.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-600italic.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-600.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-700italic.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-700.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-italic.woff2 &
+        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-regular.woff2 &
         wait
     fi
 
     cd \$STAGE_DIR/www/cgi-bin
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_login &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_logout &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_dev &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_modem_stats &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_device_info &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_device_sim &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_modem_conn &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_settings &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_setting &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_network_info &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_bands &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/save_apn &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/save_network_pref &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_cell_lock &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_neighbour_cells &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_sms &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/delete_sms &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/user_atcommand &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_ping &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_uptime &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_system_stats &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_watchcat_status &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_watchcat_stats &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/watchcat_maker &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/toggle_ttyd &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_scheduled_restart &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/scheduled_restart_maker &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_set_lanip &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_ippt_status &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_upnp_status &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/run_cell_scan &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/cgi-lib.sh &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_service_status &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_scan_status &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_logs &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_restart_log &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/clear_restart_log &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/check_update &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/trigger_update &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_update_log &
-    wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/init_setup &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_login &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_logout &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_dev &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_modem_stats &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_device_info &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_device_sim &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_modem_conn &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_settings &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_setting &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_network_info &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_bands &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/save_apn &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/save_network_pref &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_cell_lock &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_neighbour_cells &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_sms &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/delete_sms &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/user_atcommand &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_ping &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_uptime &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_system_stats &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_watchcat_status &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_watchcat_stats &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/watchcat_maker &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/toggle_ttyd &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_scheduled_restart &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/scheduled_restart_maker &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_set_lanip &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_ippt_status &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_upnp_status &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/run_cell_scan &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/cgi-lib.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_service_status &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_scan_status &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_logs &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_restart_log &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/clear_restart_log &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/check_update &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/trigger_update &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_update_log &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/init_setup &
     wait
 
     # atcli is a compiled binary (~350 KB). Copy forward from the live install
     # when the repo checksum matches it, instead of re-downloading.
-    _atcli_expected=\$(wget --timeout=30 --tries=2 -qO- "$GITROOT/quecdeck/checksums.sha256" 2>/dev/null | \
+    _atcli_expected=\$(/opt/bin/wget --timeout=30 --tries=2 -qO- "$GITROOT/quecdeck/checksums.sha256" 2>/dev/null | \
         awk '/[*]quecdeck\/bin\/atcli/{print \$1}')
     _atcli_current=""
     [ -f "\$QUECDECK_DIR/atcli" ] && _atcli_current=\$(sha256sum "\$QUECDECK_DIR/atcli" 2>/dev/null | awk '{print \$1}')
@@ -283,7 +283,7 @@ stage_release() {
         cp -f "\$QUECDECK_DIR/atcli" "\$STAGE_DIR/atcli"
     else
         echo "Downloading atcli..."
-        wget --timeout=30 --tries=2 -q -O "\$STAGE_DIR/atcli" "$GITROOT/quecdeck/bin/atcli" || {
+        /opt/bin/wget --timeout=30 --tries=2 -q -O "\$STAGE_DIR/atcli" "$GITROOT/quecdeck/bin/atcli" || {
             echo -e "\e[1;31mFailed to download atcli.\e[0m"
             return 1
         }
@@ -321,7 +321,7 @@ stage_release() {
     echo "Verifying file integrity..."
     CHECKSUMS_FILE="/tmp/quecdeck/checksums.sha256"
     mkdir -p /tmp/quecdeck
-    wget --timeout=30 --tries=2 -q -O "\$CHECKSUMS_FILE" "$GITROOT/quecdeck/checksums.sha256"
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "\$CHECKSUMS_FILE" "$GITROOT/quecdeck/checksums.sha256"
     if [ ! -s "\$CHECKSUMS_FILE" ]; then
         echo "WARNING: Could not download checksums file, skipping verification."
     else
@@ -571,7 +571,7 @@ swap_in_release() {
     for _i in 1 2 3 4 5 6 7 8 9 10; do
         sleep 2
         if systemctl is-active lighttpd >/dev/null 2>&1 && \
-           wget --timeout=10 --tries=1 -q -O /dev/null --no-check-certificate "https://127.0.0.1/login.html"; then
+           /opt/bin/wget --timeout=10 --tries=1 -q -O /dev/null --no-check-certificate "https://127.0.0.1/login.html"; then
             _health_ok=1
             break
         fi
@@ -640,13 +640,13 @@ install_ttyd() {
 
     echo -e "\e[1;32mInstalling ttyd...\e[0m"
     cd $QUECDECK_DIR/console || return 1
-    wget --timeout=60 --tries=2 -q -O ttyd https://github.com/tsl0922/ttyd/releases/download/\${TTYD_VERSION}/ttyd.armhf || { echo -e "\e[1;31mFailed to download ttyd.\e[0m"; return 1; }
+    /opt/bin/wget --timeout=60 --tries=2 -q -O ttyd https://github.com/tsl0922/ttyd/releases/download/\${TTYD_VERSION}/ttyd.armhf || { echo -e "\e[1;31mFailed to download ttyd.\e[0m"; return 1; }
     echo "\${TTYD_HASH}  ttyd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for ttyd.\e[0m"; rm -f ttyd; return 1; }
     chmod +x ttyd
-    wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/console/ttyd.bash" || { echo -e "\e[1;31mFailed to download ttyd.bash.\e[0m"; return 1; }
+    /opt/bin/wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/console/ttyd.bash" || { echo -e "\e[1;31mFailed to download ttyd.bash.\e[0m"; return 1; }
     chmod +x ttyd.bash
     cd $QUECDECK_DIR/systemd/ || return 1
-    wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/systemd/ttyd.service" || { echo -e "\e[1;31mFailed to download ttyd.service.\e[0m"; return 1; }
+    /opt/bin/wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/systemd/ttyd.service" || { echo -e "\e[1;31mFailed to download ttyd.service.\e[0m"; return 1; }
     cp -f $QUECDECK_DIR/systemd/ttyd.service /lib/systemd/system/
     ln -sf /usrdata/quecdeck/console/ttyd /bin
 
