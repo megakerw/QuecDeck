@@ -108,6 +108,10 @@ function updatePage() {
       });
     },
 
+    ackUpdate() {
+      fetch('/cgi-bin/get_update_log?ack=1').catch(() => {});
+    },
+
     startReloadCountdown() {
       this.reloadCountdown = 10;
       this.reloadTimer = setInterval(() => {
@@ -148,6 +152,7 @@ function updatePage() {
               this.done = true;
               this.updating = false;
               clearInterval(this.pollTimer);
+              this.ackUpdate();
               this.$nextTick(() => { const b = this.$refs.logboxDone; if (b) b.scrollTop = b.scrollHeight; });
               this.startReloadCountdown();
             } else if (data.status === 'failed') {
@@ -155,6 +160,7 @@ function updatePage() {
               this.rollback = data.rollback || 'none';
               this.updating = false;
               clearInterval(this.pollTimer);
+              this.ackUpdate();
               this.$nextTick(() => { const b = this.$refs.logboxFailed; if (b) b.scrollTop = b.scrollHeight; });
             }
           })
@@ -183,6 +189,7 @@ function updatePage() {
           if (data.status === 'done' || data.status === 'failed') {
             this.logDecoder = new TextDecoder('utf-8');
             this.appendLogChunk(data.log, true);
+            this.ackUpdate();
             if (data.status === 'done') {
               this.done = true;
               this.$nextTick(() => { const b = this.$refs.logboxDone; if (b) b.scrollTop = b.scrollHeight; });

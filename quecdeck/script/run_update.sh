@@ -6,16 +6,16 @@
 TAG="${1:-}"
 LOG=/tmp/install_quecdeck.log
 PID_FILE=/tmp/quecdeck_update.pid
+STATUS_FILE=/tmp/quecdeck_update.status
 CHECKSUMS=/tmp/quecdeck_update_checksums.sha256
 UPDATE_SCRIPT=/tmp/quecdeck_update.sh
 GITROOT="https://raw.githubusercontent.com/megakerw/QuecDeck/$TAG"
 
-# Writes a message to the log, marks the run as failed with a sentinel that
-# get_update_log can detect, then exits the calling (sub)shell.
+# Writes a message to the log, records failure in the status file,
+# then exits the calling (sub)shell.
 abort() {
     echo "$1" | tee -a "$LOG"
-    echo "===UPDATE_FAILED===" >> "$LOG"
-    rm -f "$PID_FILE"
+    echo "failed" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" && rm -f "$PID_FILE"
     exit 1
 }
 
@@ -33,11 +33,9 @@ fi
 [ -L "$UPDATE_SCRIPT" ] && { echo "Security: $UPDATE_SCRIPT is a symlink."; exit 1; }
 
 mkdir -p /tmp/quecdeck
+echo "running" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
 > "$LOG"
 chmod 644 "$LOG"
-chown www-data "$LOG"
-echo $$ > "$PID_FILE"
-chown www-data "$PID_FILE"
 
 # Run all downloads and the installer itself in a background subshell so this
 # script returns immediately, keeping the trigger_update CGI response fast.
@@ -69,10 +67,10 @@ chown www-data "$PID_FILE"
 
     nohup "$UPDATE_SCRIPT" "$TAG" >> "$LOG" 2>&1 &
     _update_pid=$!
-    echo "$_update_pid" > "$PID_FILE"
+    echo "$_update_pid" > "${PID_FILE}.tmp" && mv "${PID_FILE}.tmp" "$PID_FILE"
     disown "$_update_pid"
     echo "Update started (tag: $TAG)." | tee -a "$LOG"
 ) &
 _bg_pid=$!
-echo "$_bg_pid" > "$PID_FILE"
+echo "$_bg_pid" > "${PID_FILE}.tmp" && mv "${PID_FILE}.tmp" "$PID_FILE"
 echo "Downloading installer..." | tee -a "$LOG"

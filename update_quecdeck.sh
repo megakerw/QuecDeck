@@ -63,6 +63,7 @@ GITROOTDEV="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITDEVTREE"
 QUECDECK_DIR="/usrdata/quecdeck"
 STAGE_DIR="\${QUECDECK_DIR}.new"
 OLD_DIR="\${QUECDECK_DIR}.old"
+STATUS_FILE=/tmp/quecdeck_update.status
 export HOME=/usrdata/root
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin:/usrdata/root/bin
 
@@ -75,7 +76,18 @@ remount_ro() {
 }
 
 remount_rw
-trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
+
+_update_status="failed"
+
+_update_cleanup() {
+    if echo "\$_update_status" > "\${STATUS_FILE}.tmp" && mv "\${STATUS_FILE}.tmp" "\$STATUS_FILE"; then
+        rm -f /tmp/quecdeck_update.pid
+    else
+        rm -f "\${STATUS_FILE}.tmp"
+    fi
+    remount_ro
+}
+trap '_update_cleanup' EXIT
 
 # Preserve lean mode, watchcat, and scheduled restart state across updates
 lean_mode_was_installed=0
@@ -731,11 +743,18 @@ _show_result "ttyd"               "\$result_ttyd"
 [ "\$result_rollback" != "N/A" ] && _show_result "Rollback"          "\$result_rollback"
 echo "============================================"
 
+if [ "\$result_quecdeck" = "OK" ]; then
+    _update_status="done"
+elif [ "\$result_rollback" = "OK" ]; then
+    _update_status="failed:rollback_ok"
+elif [ "\$result_rollback" = "FAILED" ]; then
+    _update_status="failed:rollback_failed"
+fi
+
 rm -f /tmp/install_quecdeck.sh
 rm -f /lib/systemd/system/install_quecdeck.service
 rm -f /lib/systemd/system/multi-user.target.wants/install_quecdeck.service
 systemctl daemon-reload
-[ ! -f /tmp/quecdeck_update.pid ] && rm -f /tmp/install_quecdeck.log
 remount_ro
 exit 0
 EOF
