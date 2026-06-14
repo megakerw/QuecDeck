@@ -186,20 +186,20 @@ function updatePage() {
             this.checkForUpdates();
             return;
           }
-          if (data.status === 'done' || data.status === 'failed') {
+          if (data.status === 'done') {
+            // "done" on fresh load is stale (ack race with "Reload now"); go straight to idle.
+            this.ackUpdate();
+            this.checkForUpdates();
+            return;
+          }
+          if (data.status === 'failed') {
             this.logDecoder = new TextDecoder('utf-8');
             this.appendLogChunk(data.log, true);
             this.ackUpdate();
-            if (data.status === 'done') {
-              this.done = true;
-              this.$nextTick(() => { const b = this.$refs.logboxDone; if (b) b.scrollTop = b.scrollHeight; });
-              this.checkForUpdates();
-            } else {
-              this.failed = true;
-              this.rollback = data.rollback || 'none';
-              this.$nextTick(() => { const b = this.$refs.logboxFailed; if (b) b.scrollTop = b.scrollHeight; });
-              this.checkForUpdates();
-            }
+            this.failed = true;
+            this.rollback = data.rollback || 'none';
+            this.$nextTick(() => { const b = this.$refs.logboxFailed; if (b) b.scrollTop = b.scrollHeight; });
+            this.checkForUpdates();
             return;
           }
           this.checkForUpdates();

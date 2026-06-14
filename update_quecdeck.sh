@@ -89,6 +89,12 @@ _update_cleanup() {
 }
 trap '_update_cleanup' EXIT
 
+# Overwrite the PID file with this script's own PID. run_update.sh wrote the
+# outer update_quecdeck.sh PID, but that process can exit (when systemctl start
+# returns) before our EXIT trap fires. Tracking our own PID ensures the
+# dead-PID check in get_update_log only fires when this script is truly dead.
+echo \$\$ > /tmp/quecdeck_update.pid.tmp && mv /tmp/quecdeck_update.pid.tmp /tmp/quecdeck_update.pid
+
 # Preserve lean mode, watchcat, and scheduled restart state across updates
 lean_mode_was_installed=0
 [ -L /lib/systemd/system/multi-user.target.wants/lean-mode.service ] && lean_mode_was_installed=1
