@@ -35,7 +35,9 @@ fi
 mkdir -p /tmp/quecdeck
 > "$LOG"
 chmod 644 "$LOG"
+chown www-data "$LOG"
 echo $$ > "$PID_FILE"
+chown www-data "$PID_FILE"
 
 # Run all downloads and the installer itself in a background subshell so this
 # script returns immediately, keeping the trigger_update CGI response fast.
