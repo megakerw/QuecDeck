@@ -104,7 +104,6 @@ CHECKSUMMED_FILES=(
   quecdeck/console/.profile
   quecdeck/bin/atcli
   quecdeck/lighttpd.conf
-  quecdeck/version
   quecdeck/script/run_update.sh
   quecdeck/www/update.html
   quecdeck/www/login.html

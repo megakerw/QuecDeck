@@ -735,6 +735,7 @@ rm -f /tmp/install_quecdeck.sh
 rm -f /lib/systemd/system/install_quecdeck.service
 rm -f /lib/systemd/system/multi-user.target.wants/install_quecdeck.service
 systemctl daemon-reload
+[ ! -f /tmp/quecdeck_update.pid ] && rm -f /tmp/install_quecdeck.log
 remount_ro
 exit 0
 EOF
