@@ -369,7 +369,7 @@ stage_release() {
     if [ -d "\$QUECDECK_DIR/var" ]; then
         cp -rf "\$QUECDECK_DIR/var/." "\$STAGE_DIR/var/" 2>/dev/null || true
     fi
-    chown www-data "\$STAGE_DIR/var"
+    chown -R www-data "\$STAGE_DIR/var"
     chmod 700 "\$STAGE_DIR/var"
     [ -f "\$QUECDECK_DIR/server.crt" ] && cp -f "\$QUECDECK_DIR/server.crt" "\$STAGE_DIR/server.crt"
     [ -f "\$QUECDECK_DIR/server.key" ] && cp -f "\$QUECDECK_DIR/server.key" "\$STAGE_DIR/server.key"
@@ -519,10 +519,10 @@ swap_in_release() {
     if [ "\$lean_mode_was_installed" = "1" ]; then
         ln -sf /lib/systemd/system/lean-mode.service /lib/systemd/system/multi-user.target.wants/lean-mode.service
     fi
-    if [ "\$watchcat_was_installed" = "1" ] && [ -f "\$QUECDECK_DIR/var/watchcat.json" ]; then
+    if [ "\$watchcat_was_installed" = "1" ] && [ -s "\$QUECDECK_DIR/var/watchcat.json" ]; then
         ln -sf /lib/systemd/system/watchcat.service /lib/systemd/system/multi-user.target.wants/watchcat.service
     fi
-    if [ "\$scheduled_restart_was_installed" = "1" ] && [ -f "\$QUECDECK_DIR/var/scheduled_restart.json" ]; then
+    if [ "\$scheduled_restart_was_installed" = "1" ] && [ -s "\$QUECDECK_DIR/var/scheduled_restart.json" ]; then
         ln -sf /lib/systemd/system/scheduled_restart.service /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
     fi
 
@@ -555,11 +555,11 @@ swap_in_release() {
         systemctl start --no-block lean-mode
         echo "Lean Mode preserved."
     fi
-    if [ "\$watchcat_was_installed" = "1" ] && [ -f "\$QUECDECK_DIR/var/watchcat.json" ]; then
+    if [ "\$watchcat_was_installed" = "1" ] && [ -s "\$QUECDECK_DIR/var/watchcat.json" ]; then
         systemctl restart watchcat
         echo "Watchcat preserved and restarted."
     fi
-    if [ "\$scheduled_restart_was_installed" = "1" ] && [ -f "\$QUECDECK_DIR/var/scheduled_restart.json" ]; then
+    if [ "\$scheduled_restart_was_installed" = "1" ] && [ -s "\$QUECDECK_DIR/var/scheduled_restart.json" ]; then
         systemctl restart scheduled_restart
         echo "Scheduled restart preserved and restarted."
     fi
@@ -623,11 +623,11 @@ _revert_swap() {
         ln -sf /lib/systemd/system/lean-mode.service /lib/systemd/system/multi-user.target.wants/lean-mode.service
         systemctl start --no-block lean-mode 2>/dev/null
     fi
-    if [ "\$watchcat_was_installed" = "1" ] && [ -f "\$QUECDECK_DIR/var/watchcat.json" ]; then
+    if [ "\$watchcat_was_installed" = "1" ] && [ -s "\$QUECDECK_DIR/var/watchcat.json" ]; then
         ln -sf /lib/systemd/system/watchcat.service /lib/systemd/system/multi-user.target.wants/watchcat.service
         systemctl start watchcat 2>/dev/null || true
     fi
-    if [ "\$scheduled_restart_was_installed" = "1" ] && [ -f "\$QUECDECK_DIR/var/scheduled_restart.json" ]; then
+    if [ "\$scheduled_restart_was_installed" = "1" ] && [ -s "\$QUECDECK_DIR/var/scheduled_restart.json" ]; then
         ln -sf /lib/systemd/system/scheduled_restart.service /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
         systemctl start scheduled_restart 2>/dev/null || true
     fi

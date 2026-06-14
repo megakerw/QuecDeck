@@ -6,7 +6,7 @@ cgi_check_cors
 cgi_output_json
 
 # Watchcat: read config and check if the process is running
-if [ -f /usrdata/quecdeck/var/watchcat.json ]; then
+if [ -s /usrdata/quecdeck/var/watchcat.json ]; then
     watchcat_config=$(cat /usrdata/quecdeck/var/watchcat.json)
 else
     watchcat_config='{"enabled":false}'
@@ -14,7 +14,7 @@ fi
 pgrep -f 'watchcat\.sh' > /dev/null 2>&1 && watchcat_running="true" || watchcat_running="false"
 
 # Scheduled restart: read config
-if [ -f /usrdata/quecdeck/var/scheduled_restart.json ]; then
+if [ -s /usrdata/quecdeck/var/scheduled_restart.json ]; then
     sched_config=$(cat /usrdata/quecdeck/var/scheduled_restart.json)
 else
     sched_config='{"enabled":false,"type":"daily","day":1,"hour":3,"minute":0}'

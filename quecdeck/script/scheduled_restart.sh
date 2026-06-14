@@ -4,8 +4,8 @@
 
 CONFIG=/usrdata/quecdeck/var/scheduled_restart.json
 
-if [ ! -f "$CONFIG" ]; then
-    echo "scheduled_restart: config not found: $CONFIG" >&2
+if [ ! -s "$CONFIG" ]; then
+    echo "scheduled_restart: config not found or empty: $CONFIG" >&2
     exit 1
 fi
 

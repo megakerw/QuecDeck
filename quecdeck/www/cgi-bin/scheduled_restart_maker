@@ -38,9 +38,11 @@ if ! [[ "$MINUTE" =~ ^[0-9]+$ ]] || [ "$MINUTE" -lt 0 ] || [ "$MINUTE" -gt 59 ];
 fi
 
 if [ "$ENABLED" = "enable" ]; then
-    # Write config JSON — the static scheduled_restart.sh in script/ reads this at startup
-    echo "{\"enabled\": true, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" \
-        > /usrdata/quecdeck/var/scheduled_restart.json
+    # Write config JSON atomically — the static scheduled_restart.sh in script/ reads this at startup
+    _tmp=$(mktemp /usrdata/quecdeck/var/scheduled_restart.json.XXXXXX)
+    echo "{\"enabled\": true, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" > "$_tmp" \
+        && mv "$_tmp" /usrdata/quecdeck/var/scheduled_restart.json \
+        || { rm -f "$_tmp"; cgi_error "Failed to write scheduled restart config."; }
     chmod 640 /usrdata/quecdeck/var/scheduled_restart.json
 
     /opt/bin/sudo /usrdata/quecdeck/script/create_scheduled_restart.sh
@@ -58,8 +60,10 @@ if [ "$ENABLED" = "enable" ]; then
         echo "Scheduled restart enabled — every ${day_name} at ${time_str}."
     fi
 else
-    echo "{\"enabled\": false, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" \
-        > /usrdata/quecdeck/var/scheduled_restart.json
+    _tmp=$(mktemp /usrdata/quecdeck/var/scheduled_restart.json.XXXXXX)
+    echo "{\"enabled\": false, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" > "$_tmp" \
+        && mv "$_tmp" /usrdata/quecdeck/var/scheduled_restart.json \
+        || { rm -f "$_tmp"; cgi_error "Failed to write scheduled restart config."; }
     chmod 640 /usrdata/quecdeck/var/scheduled_restart.json
 
     /opt/bin/sudo /usrdata/quecdeck/script/remove_scheduled_restart.sh

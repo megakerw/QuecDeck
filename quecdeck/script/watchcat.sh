@@ -6,8 +6,8 @@ CONFIG=/usrdata/quecdeck/var/watchcat.json
 REBOOT_STATE=/usrdata/quecdeck/var/watchcat_reboot_state.json
 MAX_REBOOT_INTERVAL=3600
 
-if [ ! -f "$CONFIG" ]; then
-    echo "watchcat: config not found: $CONFIG" >&2
+if [ ! -s "$CONFIG" ]; then
+    echo "watchcat: config not found or empty: $CONFIG" >&2
     exit 1
 fi
 

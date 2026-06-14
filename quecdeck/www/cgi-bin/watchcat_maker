@@ -83,8 +83,11 @@ if [ "$WATCHCAT_ENABLED" = "enable" ]; then
     backoff_val=$([ "$REBOOT_BACKOFF" = "1" ] && echo "true" || echo "false")
     log_val=$([ "$LOG_RESTARTS" = "1" ] && echo "true" || echo "false")
 
-    # Write config JSON — the static watchcat.sh in script/ reads this at startup
-    echo "{\"enabled\": true, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}" > /usrdata/quecdeck/var/watchcat.json
+    # Write config JSON atomically — the static watchcat.sh in script/ reads this at startup
+    _tmp=$(mktemp /usrdata/quecdeck/var/watchcat.json.XXXXXX)
+    echo "{\"enabled\": true, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}" > "$_tmp" \
+        && mv "$_tmp" /usrdata/quecdeck/var/watchcat.json \
+        || { rm -f "$_tmp"; cgi_error "Failed to write watchcat config."; }
     chmod 640 /usrdata/quecdeck/var/watchcat.json
 
     # Enable and restart watchcat service (systemd ops need root)
@@ -104,7 +107,10 @@ else
     backoff_val=$([ "$REBOOT_BACKOFF" = "1" ] && echo "true" || echo "false")
     log_val=$([ "$LOG_RESTARTS" = "1" ] && echo "true" || echo "false")
 
-    echo "{\"enabled\": false, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}" > /usrdata/quecdeck/var/watchcat.json
+    _tmp=$(mktemp /usrdata/quecdeck/var/watchcat.json.XXXXXX)
+    echo "{\"enabled\": false, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}" > "$_tmp" \
+        && mv "$_tmp" /usrdata/quecdeck/var/watchcat.json \
+        || { rm -f "$_tmp"; cgi_error "Failed to write watchcat config."; }
     chmod 640 /usrdata/quecdeck/var/watchcat.json
 
     # Stop and disable watchcat service (systemd ops need root)

@@ -36,6 +36,10 @@ elif grep -q "===UPDATE_FAILED===" "$LOG" 2>/dev/null; then
     status="failed"
 elif [ -f "$PID_FILE" ] && ! kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
     status="failed"
+elif [ -z "$(find "$LOG" -mmin -5 2>/dev/null)" ]; then
+    # Log hasn't been written to in over 5 minutes with no terminal marker —
+    # the process stalled or was killed without cleaning up.
+    status="failed"
 else
     status="running"
 fi
@@ -54,3 +58,7 @@ if [ "$status" = "failed" ]; then
 fi
 
 printf '{"log":"%s","offset":%s,"status":"%s","rollback":"%s"}\n' "$chunk_b64" "$total" "$status" "$rollback"
+
+if [ "$status" = "done" ] || [ "$status" = "failed" ]; then
+    rm -f "$LOG" "$PID_FILE"
+fi

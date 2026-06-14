@@ -187,7 +187,6 @@ function updatePage() {
               this.done = true;
               this.$nextTick(() => { const b = this.$refs.logboxDone; if (b) b.scrollTop = b.scrollHeight; });
               this.checkForUpdates();
-              this.startReloadCountdown();
             } else {
               this.failed = true;
               this.rollback = data.rollback || 'none';
