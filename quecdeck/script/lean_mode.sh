@@ -10,7 +10,7 @@ while [ $i -lt 15 ]; do
     i=$((i+1))
 done
 
-# Stop GPS/location services — not needed for data-only RGMII operation.
+# Stop GPS/location services (not needed for data-only RGMII operation).
 # Use systemctl stop so supervised services don't respawn.
 systemctl stop loc_launcher.service location_hal_daemon.service 2>/dev/null
 killall edgnss-daemon 2>/dev/null

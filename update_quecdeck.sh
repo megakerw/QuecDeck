@@ -90,10 +90,15 @@ preflight_check() {
     _pf_checksums=/tmp/quecdeck_preflight.sha256
 
     /opt/bin/wget --timeout=30 --tries=2 -q -O "\$_pf_checksums" "$GITROOT/quecdeck/checksums.sha256" || {
-        echo "FATAL: Could not reach repository. Aborting update."
+        echo "FATAL: Could not download release files. Check network connectivity and that the release tag exists."
         rm -f "\$_pf_checksums"
         return 1
     }
+    if [ ! -s "\$_pf_checksums" ]; then
+        echo "FATAL: Release checksums file is empty. The release tag may not exist."
+        rm -f "\$_pf_checksums"
+        return 1
+    fi
     rm -f "\$_pf_checksums"
 
     # The new release is staged alongside the live install before swapping in,
@@ -318,49 +323,60 @@ stage_release() {
     chown root:root \$STAGE_DIR/script/run_update.sh
     chmod 700 \$STAGE_DIR/script/run_update.sh
 
+    # Detect empty files from failed downloads before checksum verification
+    _empty=\$(find "\$STAGE_DIR" -type f -empty 2>/dev/null)
+    if [ -n "\$_empty" ]; then
+        echo "FATAL: One or more downloads produced empty files (possible network failure):"
+        printf '%s\n' "\$_empty" | while IFS= read -r _f; do echo "  \$_f"; done
+        return 1
+    fi
+
     # Verify integrity of all downloaded files against published checksums
     echo "Verifying file integrity..."
     CHECKSUMS_FILE="/tmp/quecdeck/checksums.sha256"
     mkdir -p /tmp/quecdeck
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "\$CHECKSUMS_FILE" "$GITROOT/quecdeck/checksums.sha256"
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "\$CHECKSUMS_FILE" "$GITROOT/quecdeck/checksums.sha256" || {
+        echo "FATAL: Could not download checksums file. Aborting."
+        return 1
+    }
     if [ ! -s "\$CHECKSUMS_FILE" ]; then
-        echo "WARNING: Could not download checksums file, skipping verification."
-    else
-        verify_ok=1
-        while IFS= read -r line; do
-            # Skip comments and blank lines
-            case "\$line" in '#'*|'') continue ;; esac
-            expected=\$(echo "\$line" | awk '{print \$1}')
-            key=\$(echo "\$line" | awk '{print \$2}')
-            # Map repo-relative path to staged path; skip entries not under quecdeck/
-            rel=\${key#*quecdeck/}
-            [ "\$rel" = "\$key" ] && continue
-            file="\$STAGE_DIR/\$rel"
-            if [ -f "\$file" ]; then
-                actual=\$(sha256sum "\$file" | awk '{print \$1}')
-                if [ "\$actual" != "\$expected" ]; then
-                    echo "ERROR: Checksum mismatch: \$file"
-                    echo "  Expected: \$expected"
-                    echo "  Got:      \$actual"
-                    verify_ok=0
-                fi
-            else
-                case "\$rel" in
-                    bin/atcli|systemd/ttyd.service|console/ttyd.bash|quecdeckdevpasswd) ;;
-                    *)
-                        echo "ERROR: File missing from staged release: \$file"
-                        verify_ok=0
-                        ;;
-                esac
-            fi
-        done < "\$CHECKSUMS_FILE"
-        rm -f "\$CHECKSUMS_FILE"
-        if [ "\$verify_ok" != "1" ]; then
-            echo "FATAL: One or more files failed checksum verification. Staged release may be compromised."
-            return 1
-        fi
-        echo "All checksums verified OK."
+        echo "FATAL: Checksums file is empty after download. Aborting."
+        return 1
     fi
+    verify_ok=1
+    while IFS= read -r line; do
+        # Skip comments and blank lines
+        case "\$line" in '#'*|'') continue ;; esac
+        expected=\$(echo "\$line" | awk '{print \$1}')
+        key=\$(echo "\$line" | awk '{print \$2}')
+        # Map repo-relative path to staged path; skip entries not under quecdeck/
+        rel=\${key#*quecdeck/}
+        [ "\$rel" = "\$key" ] && continue
+        file="\$STAGE_DIR/\$rel"
+        if [ -f "\$file" ]; then
+            actual=\$(sha256sum "\$file" | awk '{print \$1}')
+            if [ "\$actual" != "\$expected" ]; then
+                echo "ERROR: Checksum mismatch: \$file"
+                echo "  Expected: \$expected"
+                echo "  Got:      \$actual"
+                verify_ok=0
+            fi
+        else
+            case "\$rel" in
+                bin/atcli|systemd/ttyd.service|console/ttyd.bash|quecdeckdevpasswd) ;;
+                *)
+                    echo "ERROR: File missing from staged release: \$file"
+                    verify_ok=0
+                    ;;
+            esac
+        fi
+    done < "\$CHECKSUMS_FILE"
+    rm -f "\$CHECKSUMS_FILE"
+    if [ "\$verify_ok" != "1" ]; then
+        echo "FATAL: One or more files failed checksum verification. Staged release may be compromised."
+        return 1
+    fi
+    echo "All checksums verified OK."
 
     # Carry forward state that lives outside the downloaded release: watchcat/
     # scheduled-restart config, lan_ip, and the TLS certificate (so HTTPS clients
@@ -547,7 +563,7 @@ swap_in_release() {
 
     systemctl daemon-reload
     systemctl start lighttpd || { echo -e "\e[1;31mWARNING: lighttpd failed to start. Check 'systemctl status lighttpd' for details.\e[0m"; return 1; }
-    systemctl restart firewall
+    systemctl restart firewall || echo "WARNING: Firewall failed to restart."
     systemctl restart atcmd-daemon
     systemctl restart connection-logger
 
@@ -668,6 +684,7 @@ result_ttyd="FAILED"
 result_firewall="FAILED"
 result_rollback="N/A"
 result_lighttpd="N/A"
+_lighttpd_needs_install=0
 
 preflight_check || exit 1
 

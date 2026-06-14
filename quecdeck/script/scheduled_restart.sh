@@ -1,5 +1,5 @@
 #!/bin/sh
-# Scheduled restart — reads config from scheduled_restart.json at startup.
+# Scheduled restart. Reads config from scheduled_restart.json at startup.
 # Run as www-data by systemd; config is written by scheduled_restart_maker CGI.
 
 CONFIG=/usrdata/quecdeck/var/scheduled_restart.json

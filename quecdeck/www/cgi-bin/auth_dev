@@ -5,8 +5,8 @@
 # runs). Checks the provided password against /opt/etc/.htpasswd_dev using
 # the fixed "devadmin" username.
 #
-# GET  — returns {"unlocked": true/false} for the current session.
-# POST — validates password; on success sets dev_unlocked=1 in the session
+# GET: returns {"unlocked": true/false} for the current session.
+# POST: validates password; on success sets dev_unlocked=1 in the session
 #        file and returns {"unlocked": true}.
 #
 # Brute-force protection: 5 failed attempts trigger a 15-minute lockout,
@@ -18,8 +18,8 @@
 token=$(printf '%s' "${HTTP_COOKIE:-}" | tr ';' '\n' | sed 's/^ *//' | \
     grep '^session=' | head -1 | cut -d= -f2)
 
-# Validate token format before using in a file path — defense in depth;
-# auth.lua enforces the same constraint before this script runs.
+# Validate token format before using in a file path (defense in depth;
+# auth.lua enforces the same constraint before this script runs).
 if ! printf '%s' "$token" | grep -qE '^[A-Za-z0-9]{1,128}$'; then
     cgi_output_json
     printf '{"unlocked":false}\n'
@@ -95,7 +95,7 @@ _session_write() {
 }
 
 if validate_htpasswd "/opt/etc/.htpasswd_dev" "devadmin" "$password"; then
-    # Success — clear lockout state and mark session as dev-unlocked.
+    # Success: clear lockout state and mark session as dev-unlocked.
     printf 'dev_unlocked=1\n' | _session_write
     log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_success\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
     cgi_output_json

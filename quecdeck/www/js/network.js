@@ -155,7 +155,7 @@ function networkSettings() {
       this.nsa_bands = (bands.nsa_nr5g_band || []).join(":");
       this.sa_bands = (bands.nr5g_band || []).join(":");
 
-      // Show checkboxes immediately with no locked state — parseLockedBands
+      // Show checkboxes immediately with no locked state. parseLockedBands
       // will call populateBands again once locked bands are fetched.
       populateBands(
         this.lte_bands,
@@ -240,7 +240,7 @@ function networkSettings() {
           const simdetVal = rawdata.split('\n').find(l => l.includes('+QSIMDET:'))?.split(':')[1]?.trim().split(',')[1]?.trim();
           this.hotswapEnabled = simdetVal === '1';
           if (settings.bands === "Failed fetching bands" && rawdata.includes('+QCAINFO: "PCC"')) {
-            // Only retry if QCAINFO returned PCC data — that means we're connected
+            // Only retry if QCAINFO returned PCC data, which means we're connected
             // but parsing failed transiently. Without a connection QCAINFO returns
             // nothing, and retrying would loop forever.
             setTimeout(() => this.init(), 6000);
@@ -262,7 +262,7 @@ function networkSettings() {
       if (!this._networkModeHandler) {
         this._networkModeHandler = () => {
           if (this.lte_bands !== null) {
-            // Band data already in memory — repopulate for the new mode instantly.
+            // Band data already in memory. Repopulate for the new mode instantly.
             populateBands(
               this.lte_bands,
               this.nsa_bands,

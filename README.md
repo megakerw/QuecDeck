@@ -50,7 +50,7 @@ cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDe
 
 Select **Install/Update QuecDeck** from the menu. On first access, a setup wizard will guide you through setting your passwords.
 
-To update, run the same command and select **Install/Update QuecDeck** again. Your settings and service state are preserved across updates.
+To update, run the same command and select **Install/Update QuecDeck** again, or use the Update page in the web UI. Your settings and service state are preserved across updates.
 
 ## Features
 
@@ -90,6 +90,9 @@ View, read, and delete SMS messages directly from the modem's inbox.
 - **Connection Events:** timestamped log of connection changes and failures. Keeps the last 500 entries, cleared on reboot.
 - **Access Events:** timestamped log of UI access activity. Keeps the last 500 entries, cleared on reboot.
 - **Watchcat Restarts:** timestamped log of watchcat-triggered reboots, including the failure count and reboot streak number (when backoff is enabled). Keeps the last 50 entries and persists across reboots.
+
+### Update
+Check the installed version against the latest GitHub release and trigger an in-place update directly from the web UI. The update log streams in real time. If the update fails, the previous installation is automatically restored.
 
 ### Developer
 Requires a separate developer password to unlock. Provides access to:
@@ -141,8 +144,10 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 ### Frontend
 The UI is built with [Bootstrap 5](https://getbootstrap.com/) and [Alpine.js](https://alpinejs.dev/) for reactive data binding. All assets are version-pinned with cache-busting query parameters managed by a pre-commit git hook.
 
-### Installation
-QuecDeck is installed and updated via shell scripts that download files directly from this repository. The installer (`quecdeck.sh`) handles Entware/opkg setup, firewall deployment, service registration, and root/console password configuration. On first access, a setup wizard guides the user through setting the admin and (optionally) developer passwords. State (watchcat config, scheduled restarts, lean mode) is preserved across updates.
+### Installation and Updates
+QuecDeck is installed via `quecdeck.sh`, which handles Entware/opkg setup, firewall deployment, service registration, and root/console password configuration. On first access, a setup wizard guides the user through setting the admin and (optionally) developer passwords.
+
+Updates can be triggered from the Update page in the web UI or by re-running `quecdeck.sh`. Both paths use the same update installer (`update_quecdeck.sh`), which downloads the target release, verifies SHA-256 checksums for every file against `quecdeck/checksums.sha256`, and stages the new version alongside the running install. Once verified, the old install is moved aside and the new one swapped in atomically. A health check runs after the swap; if it fails, the installer rolls back to the previous version automatically. State (watchcat config, scheduled restarts, lean mode) is preserved across updates.
 
 ### Optional Components
 - **SSH:** OpenSSH server. A pre-start script (`update_sshd_ip.sh`) updates `sshd_config`'s `ListenAddress` to the current LAN IP before the daemon starts, restricting it to LAN only. Requires a root password to be set first.

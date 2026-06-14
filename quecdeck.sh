@@ -110,7 +110,7 @@ uninstall_entware() {
     [ -f /opt/etc/init.d/rc.unslung ] && /opt/etc/init.d/rc.unslung stop
     systemctl stop opt.mount 2>/dev/null
 
-    # Stop sshd if installed — it is an Entware package and won't survive Entware removal
+    # Stop sshd if installed (it is an Entware package and won't survive Entware removal)
     [ -f /lib/systemd/system/sshd.service ] && result_sshd="REMOVED"
     systemctl stop sshd 2>/dev/null
 
@@ -456,7 +456,7 @@ sshd_service() {
         1)
             ensure_entware_installed
 
-            # Refuse to install if root has no password — sshd with PermitRootLogin yes
+            # Refuse to install if root has no password. sshd with PermitRootLogin yes
             # and no password set would leave the device wide open on the LAN.
             root_pw=$(grep "^root:" /opt/etc/shadow 2>/dev/null | cut -d: -f2)
             case "$root_pw" in
@@ -484,7 +484,7 @@ sshd_service() {
                     ;;
             esac
 
-            # Warn if firewall is not active — port 22 will be exposed on WAN
+            # Warn if firewall is not active (port 22 will be exposed on WAN)
             if ! systemctl is-active firewall >/dev/null 2>&1; then
                 echo -e "\e[1;31mWARNING: Firewall is not running.\e[0m"
                 echo -e "\e[1;31mWithout it, SSH port 22 will be accessible from the WAN interface.\e[0m"
@@ -587,7 +587,7 @@ lean_mode_service() {
             echo -e "\e[1;32mInstalling Lean Mode...\e[0m"
             mkdir -p /usrdata/quecdeck/script /usrdata/quecdeck/systemd
             /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/script/lean_mode.sh "$GITROOT/quecdeck/script/lean_mode.sh" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
-            echo "d6ede9ef2a3b6716ae0cf58a8934c62ec1f2f6e1b8a88e2f01f52eefec2f2a54  /usrdata/quecdeck/script/lean_mode.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean_mode.sh.\e[0m"; rm -f /usrdata/quecdeck/script/lean_mode.sh; return; }
+            echo "1289206e9c115c3e20e66f5fb4ca92bb230a1be1a2ad06d1c23e0583d3995f42  /usrdata/quecdeck/script/lean_mode.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean_mode.sh.\e[0m"; rm -f /usrdata/quecdeck/script/lean_mode.sh; return; }
             echo -e "\e[1;32mIntegrity verified: lean_mode.sh\e[0m"
             /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/systemd/lean-mode.service "$GITROOT/quecdeck/systemd/lean-mode.service" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
             echo "146beb37b2840d5aaad4323b6979dcc9a03373ea56ee2e9d7dcfabaad6ff91d0  /usrdata/quecdeck/systemd/lean-mode.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean-mode.service.\e[0m"; rm -f /usrdata/quecdeck/systemd/lean-mode.service; return; }

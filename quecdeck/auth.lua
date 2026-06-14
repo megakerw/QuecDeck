@@ -1,4 +1,4 @@
--- auth.lua — Session-based authentication for QuecDeck
+-- Session-based authentication for QuecDeck
 -- Runs via mod_magnet on every HTTPS request.
 
 local TIMEOUT  = 1800            -- seconds of inactivity before session expires
@@ -18,8 +18,8 @@ if path:find("%.%.", 1, true) then
 end
 
 -- Redirect to setup wizard if no admin password has been configured yet.
--- Use a shell test rather than io.open — lighttpd runs as www-data but its
--- only supplementary group is dialout, so htpasswd files are root:dialout 640.
+-- Use a shell test rather than io.open (lighttpd runs as www-data but its
+-- only supplementary group is dialout, so htpasswd files are root:dialout 640).
 local ret = os.execute("test -s /opt/etc/.htpasswd 2>/dev/null")
 local setup_needed = not (ret == true or ret == 0)
 if setup_needed then

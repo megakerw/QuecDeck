@@ -1,14 +1,14 @@
 // Seconds from AT+CFUN=1,1 being sent until the modem is reachable again.
 const REBOOT_WAIT_SECS = 55;
 
-// Auth-aware fetch wrapper — redirects to login if the session has expired.
+// Auth-aware fetch wrapper. Redirects to login if the session has expired.
 // auth.lua returns a 302 to /login.html which fetch() follows silently;
 // response.redirected lets us detect this and navigate instead of parsing HTML.
 //
 // On session expiry: navigates to login preserving the current page as ?next=
 // so the user lands back where they were after re-authenticating. Throws a
 // SessionExpiredError so callers' finally() blocks still run (e.g. to reset
-// isFetching flags) — important on iOS Safari where BFCache can keep a page
+// isFetching flags), important on iOS Safari where BFCache can keep a page
 // alive after window.location.replace() is called.
 function authFetch(url, options) {
   return Promise.resolve()
@@ -213,7 +213,7 @@ function cleanIp(ip) {
 // On BFCache restore (iOS Safari backgrounding), in-flight fetches are
 // cancelled and their rejections are delivered when the page resumes. This
 // leaves loading flags set and status values null, disabling buttons. A
-// forced reload restores clean state — same effect as the user refreshing.
+// forced reload restores clean state (same effect as the user refreshing).
 window.addEventListener('pageshow', (event) => {
   if (event.persisted) window.location.reload();
 });

@@ -25,12 +25,12 @@ log_event() {
 }
 
 # Parses response from AT+QENG="servingcell" and sets:
-#   sc_state    — CONNECT | NOCONN | NOSERVICE | SEARCH | LIMSRV
-#   sc_mode     — LTE | NR5G-SA | NR5G-NSA | WCDMA | (empty when not registered)
-#   sc_cell_id  — hex cell identifier
-#   sc_pci      — physical cell ID (integer)
-#   sc_earfcn   — frequency (integer)
-#   sc_band     — primary band number (integer)
+#   sc_state    : CONNECT | NOCONN | NOSERVICE | SEARCH | LIMSRV
+#   sc_mode     : LTE | NR5G-SA | NR5G-NSA | WCDMA | (empty when not registered)
+#   sc_cell_id  : hex cell identifier
+#   sc_pci      : physical cell ID (integer)
+#   sc_earfcn   : frequency (integer)
+#   sc_band     : primary band number (integer)
 parse_qeng() {
     local response="$1"
     local sc_line lte_line
@@ -110,7 +110,7 @@ band_label() {
 # Wait for the AT command daemon to settle before first poll.
 sleep 15
 
-# Initial poll — log startup event.
+# Initial poll: log startup event.
 ts=$(date +%s)
 if [ -p "$_ATCMD_NOTIFY" ]; then
     response=$(atcmd_run 'AT+QENG="servingcell"' 10000)

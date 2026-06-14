@@ -64,7 +64,7 @@ function quecdeckSettings() {
       });
       // The QMAP command resets the network stack, so the HTTP connection may
       // drop before a response arrives. The CGI schedules AT+CFUN=1,1 server-side
-      // so the modem reboots regardless — swallow any network error here.
+      // so the modem reboots regardless. Swallow any network error here.
       this.sendSetting(action).catch(() => {});
     },
 
@@ -180,7 +180,7 @@ function quecdeckSettings() {
           }
         })
         .catch(() => {
-          // Connection drop here is expected — the device reboots when
+          // Connection drop here is expected: the device reboots when
           // the LAN IP changes. Only surface an error if the wait modal
           // isn't already running (i.e. something failed before the
           // reboot was triggered).

@@ -326,7 +326,7 @@ function processAllInfos() {
 
               const longCIDDec = longCID ? parseInt(longCID, 16) : null;
               const isNR = this.networkMode === "5G SA TDD" || this.networkMode === "5G SA FDD";
-              // NR 36-bit: >>14 / &0x3FFF — LTE 28-bit: >>8 / &0xFF
+              // NR 36-bit: >>14 / &0x3FFF; LTE 28-bit: >>8 / &0xFF
               const nodeID   = longCIDDec !== null ? (isNR ? longCIDDec >> 14    : longCIDDec >> 8)   : null;
               const sectorID = longCIDDec !== null ? (isNR ? longCIDDec & 0x3FFF : longCIDDec & 0xFF) : null;
               this.eNBID = nodeID !== null ? nodeID : "Unknown";

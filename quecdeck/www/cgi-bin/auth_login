@@ -2,7 +2,7 @@
 
 . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
 
-# Only accept POST — redirect GET requests (e.g. iOS Safari BFCache restoring this URL) to home.
+# Only accept POST. Redirect GET requests (e.g. iOS Safari BFCache restoring this URL) to home.
 # auth.lua will then forward valid sessions through or redirect to login if the session is expired.
 if [ "$REQUEST_METHOD" != "POST" ]; then
     printf 'Status: 303 See Other\r\nLocation: /\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n'
@@ -18,7 +18,7 @@ password=$(get_post_param "password")
 ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
 json_error() { printf 'Status: 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n\r\n{"ok":false,"error":"%s"}' "$1"; }
 
-# Brute-force protection — 5 attempts, then 15-minute lockout per IP
+# Brute-force protection: 5 attempts, then 15-minute lockout per IP
 FAILURE_DIR="/tmp/quecdeck/auth_failures"
 mkdir -p "$FAILURE_DIR" && chmod 700 "$FAILURE_DIR"
 
@@ -36,8 +36,8 @@ wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $
 
 now=$(date +%s)
 
-# Validate username and password before any lockout check or logging — ensures
-# $username is safe to embed in JSON log strings.
+# Validate username and password before any lockout check or logging.
+# Ensures $username is safe to embed in JSON log strings.
 if ! printf '%s' "$username" | grep -qE '^[a-zA-Z0-9_-]{1,64}$'; then
     json_error "invalid"; exit 0
 fi
@@ -84,10 +84,10 @@ if [ -z "$role" ]; then
     exit 0
 fi
 
-# Successful login — clear failure record
+# Successful login: clear failure record
 rm -f "$failure_file"
 
-# Create session — directory must be 700 so other local users cannot list tokens.
+# Create session. Directory must be 700 so other local users cannot list tokens.
 # Use umask to set permissions atomically on creation rather than a separate chmod.
 (umask 077; mkdir -p /tmp/quecdeck/sessions)
 token=$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 64)

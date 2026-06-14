@@ -1,5 +1,5 @@
 #!/bin/sh
-# Watchcat ping watchdog — reads config from watchcat.json at startup.
+# Watchcat ping watchdog. Reads config from watchcat.json at startup.
 # Run as www-data by systemd; config is written by watchcat_maker CGI.
 
 CONFIG=/usrdata/quecdeck/var/watchcat.json
@@ -59,7 +59,7 @@ if [ "$REBOOT_BACKOFF" = "1" ] && [ -f "$REBOOT_STATE" ]; then
     [ -z "$last_reboot" ]  && last_reboot=0
     # If the clock has gone backwards (RTC not synced after reboot), anchor
     # last_reboot to now so the backoff timer can still make forward progress.
-    # Don't write this correction back to flash — it self-corrects on each start.
+    # Don't write this correction back to flash; it self-corrects on each start.
     now=$(date +%s)
     [ "$last_reboot" -gt "$now" ] && last_reboot=$now
 fi
@@ -140,7 +140,7 @@ while :; do
         i=$((i+1))
     done
 
-    # Reset all per-IP miss counts on any success — network is up
+    # Reset all per-IP miss counts on any success (network is up)
     if [ "$overall_success" = "1" ]; then
         i=1; for ip in $TRACK_IPS; do _set_miss "$i" 0; i=$((i+1)); done
     fi

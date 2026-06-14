@@ -4,7 +4,7 @@
 
 cgi_check_cors
 
-# Only accept POST — silently redirect GET (e.g. BFCache restores) to login.
+# Only accept POST. Silently redirect GET (e.g. BFCache restores) to login.
 if [ "$REQUEST_METHOD" != "POST" ]; then
     printf 'Status: 303 See Other\r\nLocation: /login.html\r\nContent-Length: 0\r\n\r\n'
     exit 0

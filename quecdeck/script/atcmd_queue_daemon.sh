@@ -1,7 +1,7 @@
 #!/bin/bash
 # AT command queue daemon.
 #
-# Processes AT commands one at a time in submission order — each command is
+# Processes AT commands one at a time in submission order: each command is
 # fully sent to the modem and its response received before the next begins.
 #
 # Normal AT commands are dispatched via atcli (setuid root), which opens
@@ -36,7 +36,7 @@ trap _cleanup EXIT INT TERM
 
 while IFS= read -r _line <&5; do
     [ -z "$_line" ] && continue
-    # Require a tab separator — malformed lines are silently dropped.
+    # Require a tab separator. Malformed lines are silently dropped.
     case "$_line" in *$'\t'*) ;; *) continue ;; esac
     _id="${_line%%$'\t'*}"
 
@@ -53,8 +53,8 @@ while IFS= read -r _line <&5; do
 
     _resp_fifo="$_QUEUE_DIR/${_id}.resp.fifo"
 
-    # Normal AT command — dispatch via atcli and deliver response.
-    # Strip \r — atcli does not strip CR from modem's \r\n line endings.
+    # Normal AT command: dispatch via atcli and deliver response.
+    # Strip \r (atcli does not strip CR from modem's \r\n line endings).
     _result=$("$_ATCLI" ${_timeout:+-t "$_timeout"} "$_cmd" 2>/dev/null | tr -d '\r')
 
     if [ -p "$_resp_fifo" ]; then

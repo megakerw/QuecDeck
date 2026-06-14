@@ -1,5 +1,5 @@
 #!/bin/bash
-# Shared CGI helpers — source this at the top of each CGI script:
+# Shared CGI helpers. Source this at the top of each CGI script:
 #   . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
 
 # Reject cross-origin requests. Doubles as CSRF protection: browsers always send
@@ -106,7 +106,7 @@ log_access_event() {
 # ---------------------------------------------------------------------------
 # On-demand AT response cache.
 #
-# Read CGIs call cache_get_or_fetch — response is served from a file if fresh,
+# Read CGIs call cache_get_or_fetch: response is served from a file if fresh,
 # otherwise fetched live, cached atomically via temp+mv, and returned.
 # Write CGIs call cache_refresh on directly affected files (so the next page
 # render sees immediate results) and cache_invalidate on secondary files.
@@ -118,8 +118,8 @@ log_access_event() {
 # is served instead.
 #
 # Retry: cache_get_or_fetch retries once if the response is non-empty but
-# didn't end with OK (transient modem error). Empty results — where the modem
-# is silent and the handler timed out — are not retried to avoid stacking up
+# didn't end with OK (transient modem error). Empty results (where the modem
+# is silent and the handler timed out) are not retried to avoid stacking up
 # timeout delays that would exceed the client request timeout.
 # ---------------------------------------------------------------------------
 _CACHE_DIR=/tmp/quecdeck/cache
@@ -150,7 +150,7 @@ at_response_ok() {
 
 
 # Atomically write content to a cache file via temp file + mv.
-# Cache dir is 700 so only its owner can enter — files inside are 644 so that
+# Cache dir is 700 so only its owner can enter, but files inside are 644 so that
 # root (debug) and www-data (CGI) can both read them regardless of which user
 # created the file. The directory's 700 is the security boundary.
 cache_write() {
@@ -180,15 +180,13 @@ cache_refresh() {
 # Retries once on a non-empty invalid response before falling back to stale
 # cache; see block comment above for the retry/validation policy.
 #
-# No per-file locking: concurrent misses for the same file each submit an AT
-# command to the daemon queue. The daemon serialises them; the result is the
-# same for all callers and the cost of a duplicate command is one extra
-# 50-100 ms round trip — cheaper than returning empty on first boot.
+# No per-file locking: concurrent misses each submit an AT command; the daemon
+# serialises them. Duplicate cost is ~50-100 ms, cheaper than an empty result.
 cache_get_or_fetch() {
     local f="$1" ttl="$2" at_cmd="$3" at_timeout="${4:-3000}"
     local result
     if [ -f /tmp/quecdeck/qscan.active ]; then
-        # Treat as stale if older than 5 minutes — max scan is 215 s, so a
+        # Treat as stale if older than 5 minutes (max scan is 215 s), so a
         # flag this old means the scan process was killed without cleanup.
         if find /tmp/quecdeck/qscan.active -mmin +5 2>/dev/null | grep -q .; then
             rm -f /tmp/quecdeck/qscan.active
@@ -205,7 +203,7 @@ cache_get_or_fetch() {
     # 700: cache files contain sensitive modem data (IPs, APN, cell info).
     mkdir -p "$_CACHE_DIR" && chmod 700 "$_CACHE_DIR"
     # Retry once if the modem returned a non-empty response that didn't end with
-    # OK — those are transient errors where a second attempt may succeed.
+    # OK: those are transient errors where a second attempt may succeed.
     # Empty results (timeout) are not retried to avoid stacking timeout delays.
     local attempt=0
     result=""
@@ -219,28 +217,14 @@ cache_get_or_fetch() {
         cache_write "$f" "$result"
         printf '%s' "$result"
     else
-        # All attempts failed — serve stale cache rather than bad data.
+        # All attempts failed. Serve stale cache rather than bad data.
         [ -f "$f" ] && cat "$f"
     fi
 }
 
-# Send an AT command (or semicolon-joined batch) to the modem and return the
-# response on stdout, with \r stripped from each line.
-#
-# When the atcmd-queue-daemon is running (/tmp/quecdeck/atcmd.notify exists
-# as a named pipe), the command is submitted to the daemon's FIFO queue.
-# Commands are processed strictly in submission order; each command is fully
-# sent and its response received before the next begins. The response is
-# delivered via a per-request named pipe — zero extra latency, no polling.
-#
-# Queue depth limit: if _ATCMD_QUEUE_LIMIT requests are already pending, the
-# call blocks (sleeping 1 s per retry) until a slot opens or at_timeout
-# elapses, at which point it returns empty.
-#
-# The notify FIFO is kept open O_RDWR by the daemon so client O_WRONLY opens
-# (plain shell redirects) always complete immediately without blocking.
-#
-# Fallback (no daemon): atcli directly on /dev/smd11.
+# Send an AT command to the modem via the queue daemon (if running) and return
+# the response on stdout with \r stripped. Falls back to atcli directly if the
+# daemon is not up. Blocks if the queue is full; returns empty on timeout.
 #
 # Usage: atcmd_run <cmd> [at_timeout_ms]
 _ATCMD_NOTIFY=/tmp/quecdeck/atcmd.notify
@@ -272,20 +256,12 @@ atcmd_run() {
 
         mkfifo "$_resp" 2>/dev/null || return
 
-        # Open response FIFO before notifying the daemon. The daemon may
-        # process the command and close its fd before this process is
-        # scheduled again — holding our own fd open keeps the pipe buffer
-        # alive so the response is not lost.
+        # Open before notifying; if the daemon responds before we're scheduled,
+        # holding fd 8 keeps the pipe buffer alive so the response is not lost.
         exec 8<>"$_resp"
 
-        # Notify daemon: write id\tcmd\ttimeout_ms in a single atomic write (well
-        # under PIPE_BUF so no interleaving with concurrent clients). Timeout is
-        # in milliseconds and forwarded directly to atcli -t. Long-running commands
-        # (e.g. QSCAN at 215000 ms) get the right deadline this way. The daemon
-        # holds the notify FIFO open O_RDWR so this O_WRONLY open always completes
-        # immediately — no blocking, no fork.
-        # On failure, clean up and return empty rather than falling back to
-        # atcli, which would race against the daemon for /dev/smd11.
+        # Notify daemon: id\tcmd\ttimeout_ms in a single atomic write (under PIPE_BUF).
+        # On failure, clean up and return empty.
         printf '%s\t%s\t%s\n' "$_id" "$cmd" "$at_timeout" > "$_ATCMD_NOTIFY" || {
             exec 8>&-
             rm -f "$_resp"

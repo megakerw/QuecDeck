@@ -24,7 +24,7 @@ chunk_b64=$(tail -c "+$((offset + 1))" "$LOG" | tr -d '\033' | sed 's/\[[0-9;]*m
 
 if grep -q "Install Summary" "$LOG" 2>/dev/null; then
     # The installer always prints the summary and exits 0, even when a
-    # critical step failed (it just records FAILED in that row) — so the
+    # critical step failed (it just records FAILED in that row), so the
     # marker alone doesn't mean success. Check the rows that actually gate
     # whether QuecDeck ended up usable.
     if grep -qE '(Lighttpd|QuecDeck)[^A-Za-z].*FAILED' "$LOG" 2>/dev/null; then
@@ -37,8 +37,8 @@ elif grep -q "===UPDATE_FAILED===" "$LOG" 2>/dev/null; then
 elif [ -f "$PID_FILE" ] && ! kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
     status="failed"
 elif [ -z "$(find "$LOG" -mmin -5 2>/dev/null)" ]; then
-    # Log hasn't been written to in over 5 minutes with no terminal marker —
-    # the process stalled or was killed without cleaning up.
+    # Log hasn't been written to in over 5 minutes with no terminal marker.
+    # The process stalled or was killed without cleaning up.
     status="failed"
 else
     status="running"

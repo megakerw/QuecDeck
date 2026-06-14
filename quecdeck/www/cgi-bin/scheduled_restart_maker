@@ -38,7 +38,7 @@ if ! [[ "$MINUTE" =~ ^[0-9]+$ ]] || [ "$MINUTE" -lt 0 ] || [ "$MINUTE" -gt 59 ];
 fi
 
 if [ "$ENABLED" = "enable" ]; then
-    # Write config JSON atomically — the static scheduled_restart.sh in script/ reads this at startup
+    # Write config JSON atomically. The static scheduled_restart.sh in script/ reads this at startup
     _tmp=$(mktemp /usrdata/quecdeck/var/scheduled_restart.json.XXXXXX)
     echo "{\"enabled\": true, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" > "$_tmp" \
         && mv "$_tmp" /usrdata/quecdeck/var/scheduled_restart.json \

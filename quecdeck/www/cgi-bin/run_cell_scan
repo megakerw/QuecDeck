@@ -36,7 +36,7 @@ fi
 
 log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_start\",\"watchcat_paused\":$([ "$watchcat_was_running" = "1" ] && echo true || echo false)}"
 
-# Signal to cache_get_or_fetch that the modem is busy — CGIs will serve
+# Signal to cache_get_or_fetch that the modem is busy. CGIs will serve
 # existing cached data rather than attempting live AT commands.
 touch /tmp/quecdeck/qscan.active
 
@@ -62,7 +62,7 @@ fi
 # Run the cell scan in the background. AT+QSCAN streams +QSCAN: URCs as cells
 # are found, then sends OK when complete. atcmd_handler.sh breaks on OK immediately.
 # Outer timeout = 215 s (180 s max scan + 35 s handler overhead).
-# The optional third AT+QSCAN parameter (firmware scan duration) is omitted —
+# The optional third AT+QSCAN parameter (firmware scan duration) is omitted;
 # on this firmware it causes some scan modes to return immediate OK with no results.
 #
 # The scan runs in the background so we can emit keepalive newlines every second.

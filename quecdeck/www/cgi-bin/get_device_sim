@@ -6,5 +6,5 @@ cgi_require_post
 
 cgi_output_text
 
-# SIM-dependent — will error if no SIM; caller handles absent fields gracefully.
+# SIM-dependent: will error if no SIM; caller handles absent fields gracefully.
 cache_get_or_fetch "$_CACHE_DEVICE_SIM" 5 'AT+CIMI;+ICCID;+CNUM' 2000
