@@ -10,11 +10,11 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
     action=$(get_post_param action)
     if [ "$action" = "start" ]; then
         cgi_output_json
-        /opt/bin/sudo /bin/systemctl start ttyd
+        /opt/bin/sudo /bin/systemctl start ttyd >/dev/null 2>/dev/null
         echo '{"running": true}'
     elif [ "$action" = "stop" ]; then
         cgi_output_json
-        /opt/bin/sudo /bin/systemctl stop ttyd
+        /opt/bin/sudo /bin/systemctl stop ttyd >/dev/null 2>/dev/null
         echo '{"running": false}'
     else
         printf 'Status: 400 Bad Request\r\n'

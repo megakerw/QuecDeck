@@ -18,7 +18,7 @@ if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; t
     exit 0
 fi
 
-/opt/bin/sudo /usrdata/quecdeck/script/run_update.sh "$tag"
+/opt/bin/sudo /usrdata/quecdeck/script/run_update.sh "$tag" >/dev/null
 if [ $? -ne 0 ]; then
     printf '{"ok":false,"error":"Failed to start update process"}\n'
     exit 0
