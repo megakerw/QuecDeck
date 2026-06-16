@@ -474,8 +474,6 @@ stage_release() {
 }
 
 swap_in_release() {
-    echo -e "\e[1;32mSwitching to new release (web UI will be briefly unavailable)...\e[0m"
-
     _had_previous=0
     [ -d "\$QUECDECK_DIR/www" ] && _had_previous=1
 
@@ -495,8 +493,34 @@ swap_in_release() {
     # reporting a "rollback" (let alone a failed one) would be actively misleading.
     _swap_committed=0
 
-    echo "Stopping services for swap..."
-    systemctl stop lighttpd 2>/dev/null
+    # Only stop/start lighttpd if config, the unit file, or packages changed.
+    # Pure content updates (HTML/JS/CSS/CGI/auth.lua) go live without a restart:
+    # the mv is atomic so lighttpd serves new content immediately, and mod_magnet
+    # reloads auth.lua on the next request when it detects the mtime change.
+    _need_lighttpd_restart=0
+    if [ "\$_lighttpd_needs_install" = "1" ] || [ "\$_had_previous" = "0" ]; then
+        _need_lighttpd_restart=1
+    else
+        # lighttpd_prestart.sh patches server.bind and the socket line in the
+        # live lighttpd.conf to the LAN IP, while the staged file (from the
+        # repo) always has 0.0.0.0. Normalize both to 0.0.0.0 before diffing
+        # so a mere IP patch doesn't force an unnecessary restart.
+        _conf_norm='s/server\.bind = "[0-9.]*"/server.bind = "0.0.0.0"/;s/== "[0-9.]*:443"/== "0.0.0.0:443"/'
+        diff -q <(sed "\$_conf_norm" "\$STAGE_DIR/lighttpd.conf") \
+                <(sed "\$_conf_norm" "\$QUECDECK_DIR/lighttpd.conf") >/dev/null 2>&1 \
+            || _need_lighttpd_restart=1
+        diff -q "\$STAGE_DIR/systemd/lighttpd.service" "/lib/systemd/system/lighttpd.service" >/dev/null 2>&1 \
+            || _need_lighttpd_restart=1
+    fi
+
+    if [ "\$_need_lighttpd_restart" = "1" ]; then
+        echo -e "\e[1;32mSwitching to new release (web UI will be briefly unavailable)...\e[0m"
+    else
+        echo -e "\e[1;32mSwitching to new release (web UI stays up)...\e[0m"
+    fi
+
+    echo "Preparing for swap..."
+    [ "\$_need_lighttpd_restart" = "1" ] && systemctl stop lighttpd 2>/dev/null
     systemctl stop watchcat 2>/dev/null
     systemctl stop scheduled_restart 2>/dev/null
     systemctl stop atcmd-daemon 2>/dev/null
@@ -580,8 +604,19 @@ swap_in_release() {
     fi
 
     systemctl daemon-reload
-    systemctl start lighttpd || { echo -e "\e[1;31mWARNING: lighttpd failed to start. Check 'systemctl status lighttpd' for details.\e[0m"; return 1; }
-    systemctl restart firewall || echo "WARNING: Firewall failed to restart."
+    if [ "\$_need_lighttpd_restart" = "1" ]; then
+        systemctl start lighttpd || { echo -e "\e[1;31mWARNING: lighttpd failed to start. Check 'systemctl status lighttpd' for details.\e[0m"; return 1; }
+    fi
+    _need_firewall_restart=0
+    if [ "\$_had_previous" = "0" ]; then
+        _need_firewall_restart=1
+    else
+        diff -q "\$QUECDECK_DIR/script/firewall.sh" "\$OLD_DIR/script/firewall.sh" >/dev/null 2>&1 \
+            || _need_firewall_restart=1
+        diff -q "\$QUECDECK_DIR/systemd/firewall.service" "\$OLD_DIR/systemd/firewall.service" >/dev/null 2>&1 \
+            || _need_firewall_restart=1
+    fi
+    [ "\$_need_firewall_restart" = "1" ] && { systemctl restart firewall || echo "WARNING: Firewall failed to restart."; }
     systemctl restart atcmd-daemon
     systemctl restart connection-logger
 
@@ -598,21 +633,26 @@ swap_in_release() {
         echo "Scheduled restart preserved and restarted."
     fi
 
-    # Verify the swap produced a working site. Probe the LAN IP lighttpd binds
-    # to (not loopback, which may not be listening if lighttpd is bound to a
-    # specific interface). Poll for up to ~20s to allow for slow startup.
+    # Verify the new site is serving. If lighttpd was restarted, poll for up to
+    # ~20s to allow for slow startup. If it stayed up, just confirm it is still
+    # active (the mv is atomic so content is already live).
     _health_ip=\$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
     printf '%s' "\$_health_ip" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}\$' || _health_ip="192.168.225.1"
-    echo "Verifying the new site responds on \$_health_ip..."
     _health_ok=0
-    for _i in 1 2 3 4 5 6 7 8 9 10; do
-        sleep 2
-        if systemctl is-active lighttpd >/dev/null 2>&1 && \
-           /opt/bin/wget --timeout=10 --tries=1 -q -O /dev/null --no-check-certificate "https://\$_health_ip/login.html"; then
-            _health_ok=1
-            break
-        fi
-    done
+    if [ "\$_need_lighttpd_restart" = "1" ]; then
+        echo "Verifying the new site responds on \$_health_ip..."
+        for _i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 2
+            if systemctl is-active lighttpd >/dev/null 2>&1 && \
+               /opt/bin/wget --timeout=10 --tries=1 -q -O /dev/null --no-check-certificate "https://\$_health_ip/login.html"; then
+                _health_ok=1
+                break
+            fi
+        done
+    else
+        systemctl is-active lighttpd >/dev/null 2>&1 && _health_ok=1
+        [ "\$_health_ok" = "1" ] && echo "lighttpd stayed up through the swap."
+    fi
     if [ "\$_health_ok" != "1" ]; then
         echo -e "\e[1;31mPost-swap health check failed. The new site is not responding on \$_health_ip.\e[0m"
         return 1
@@ -699,7 +739,7 @@ result_stage="FAILED"
 result_swap="FAILED"
 result_quecdeck="FAILED"
 result_ttyd="FAILED"
-result_firewall="FAILED"
+result_firewall="N/A"
 result_rollback="N/A"
 result_lighttpd="N/A"
 _lighttpd_needs_install=0

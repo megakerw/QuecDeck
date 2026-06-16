@@ -49,8 +49,8 @@ function updatePage() {
 
     triggerUpdate(force) {
       const msg = force
-        ? 'This will force-reinstall ' + this.latestVersion + '. The web UI will be briefly unavailable.'
-        : 'This will update to ' + this.latestVersion + '. The web UI will be briefly unavailable.';
+        ? 'This will force-reinstall ' + this.latestVersion + '. The web UI may be briefly unavailable.'
+        : 'This will update to ' + this.latestVersion + '. The web UI may be briefly unavailable.';
 
       this.$store.confirmModal.open(msg, () => {
         this.beginUpdatingView();
