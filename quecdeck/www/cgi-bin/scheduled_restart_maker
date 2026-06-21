@@ -18,8 +18,6 @@ DAY="${DAY:-1}"
 HOUR="${HOUR:-3}"
 MINUTE="${MINUTE:-0}"
 
-cgi_output_text
-
 # Validate
 if ! [[ "$ENABLED" =~ ^(enable|disable)$ ]]; then
     cgi_error "Invalid ENABLED value."
@@ -37,14 +35,17 @@ if ! [[ "$MINUTE" =~ ^[0-9]+$ ]] || [ "$MINUTE" -lt 0 ] || [ "$MINUTE" -gt 59 ];
     cgi_error "MINUTE must be 0-59."
 fi
 
-if [ "$ENABLED" = "enable" ]; then
-    # Write config JSON atomically. The static scheduled_restart.sh in script/ reads this at startup
-    _tmp=$(mktemp /usrdata/quecdeck/var/scheduled_restart.json.XXXXXX)
-    echo "{\"enabled\": true, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" > "$_tmp" \
-        && mv "$_tmp" /usrdata/quecdeck/var/scheduled_restart.json \
-        || { rm -f "$_tmp"; cgi_error "Failed to write scheduled restart config."; }
-    chmod 640 /usrdata/quecdeck/var/scheduled_restart.json
+cgi_output_text
 
+# Write config JSON atomically. The static scheduled_restart.sh in script/ reads this at startup
+enabled_val=$([ "$ENABLED" = "enable" ] && echo "true" || echo "false")
+_tmp=$(mktemp /usrdata/quecdeck/var/scheduled_restart.json.XXXXXX)
+echo "{\"enabled\": $enabled_val, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" > "$_tmp" \
+    && mv "$_tmp" /usrdata/quecdeck/var/scheduled_restart.json \
+    || { rm -f "$_tmp"; cgi_error "Failed to write scheduled restart config."; }
+chmod 640 /usrdata/quecdeck/var/scheduled_restart.json
+
+if [ "$ENABLED" = "enable" ]; then
     /opt/bin/sudo /usrdata/quecdeck/script/create_scheduled_restart.sh
 
     case "$DAY" in
@@ -60,14 +61,7 @@ if [ "$ENABLED" = "enable" ]; then
         echo "Scheduled restart enabled — every ${day_name} at ${time_str}."
     fi
 else
-    _tmp=$(mktemp /usrdata/quecdeck/var/scheduled_restart.json.XXXXXX)
-    echo "{\"enabled\": false, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" > "$_tmp" \
-        && mv "$_tmp" /usrdata/quecdeck/var/scheduled_restart.json \
-        || { rm -f "$_tmp"; cgi_error "Failed to write scheduled restart config."; }
-    chmod 640 /usrdata/quecdeck/var/scheduled_restart.json
-
     /opt/bin/sudo /usrdata/quecdeck/script/remove_scheduled_restart.sh
-
     echo "Scheduled restart disabled."
 fi
 

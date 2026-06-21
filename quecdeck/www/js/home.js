@@ -105,12 +105,7 @@ function processAllInfos() {
       if (this.isFetching) return;
       this.isFetching = true;
 
-      const _atController = new AbortController();
-      const _atTimeout = setTimeout(() => _atController.abort(), 5000);
-
-      const _opts = { method: "POST", signal: _atController.signal };
-
-      authFetch("/cgi-bin/get_modem_stats", _opts).then(r => r.text()).then((data) => {
+      fetchWithTimeout(authFetch, "/cgi-bin/get_modem_stats", 5000, { method: "POST" }).then(r => r.text()).then((data) => {
         const lines = data.split("\n");
 
             // Cache repeated line lookups
@@ -480,7 +475,6 @@ function processAllInfos() {
       }).catch((error) => {
         if (error.name !== 'AbortError') console.error("fetchModemInfo error:", error);
       }).finally(() => {
-        clearTimeout(_atTimeout);
         this.isFetching = false;
       });
     },
@@ -495,16 +489,9 @@ function processAllInfos() {
     requestPing() {
       if (this.isPinging) return Promise.resolve(null);
       this.isPinging = true;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000);
-      return authFetch("/cgi-bin/get_ping", { signal: controller.signal })
+      return fetchWithTimeout(authFetch, "/cgi-bin/get_ping", 3000)
         .then((response) => response.text())
-        .then((data) => {
-          clearTimeout(timeout);
-          return data;
-        })
         .catch((error) => {
-          clearTimeout(timeout);
           console.error("Error:", error);
           throw error;
         })
@@ -633,15 +620,13 @@ function processAllInfos() {
     fetchUpTime() {
       if (this.isUpTimeFetching) return;
       this.isUpTimeFetching = true;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
-      fetchText("/cgi-bin/get_uptime", { signal: controller.signal })
+      fetchWithTimeout(fetchText, "/cgi-bin/get_uptime", 4000)
         .then((data) => {
           // Example: 01:17:02 up 3 days,  2:41,  load average: 0.65, 0.66, 0.60
           this.uptime = this.formatUptime(data);
         })
         .catch(() => {})
-        .finally(() => { clearTimeout(timer); this.isUpTimeFetching = false; });
+        .finally(() => { this.isUpTimeFetching = false; });
     },
 
     updateRefreshRate() {
@@ -664,9 +649,7 @@ function processAllInfos() {
     fetchSystemStats() {
       if (this.isStatsFetching) return;
       this.isStatsFetching = true;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
-      fetchJSON("/cgi-bin/get_system_stats", { signal: controller.signal })
+      fetchWithTimeout(fetchJSON, "/cgi-bin/get_system_stats", 4000)
         .then((data) => {
           this.cpuLoad = data.load_avg;
           this.ramPercent = data.mem_percent;
@@ -674,7 +657,7 @@ function processAllInfos() {
           this.ramTotal = data.mem_total_mb;
         })
         .catch(() => {})
-        .finally(() => { clearTimeout(timer); this.isStatsFetching = false; });
+        .finally(() => { this.isStatsFetching = false; });
     },
 
     init() {

@@ -171,6 +171,7 @@ function logsPage() {
 
     init() {
       this.refresh();
+      this.refreshRestart();
       this.refreshTimer = setInterval(() => this.refresh(), 30000);
       if (this._visibilityHandler) {
         document.removeEventListener('visibilitychange', this._visibilityHandler);

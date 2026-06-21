@@ -86,20 +86,14 @@ for ip in $TRACK_IPS; do
 done
 
 check_sim() {
-    /usrdata/quecdeck/atcli 'AT+QSIMSTAT?' 2>/dev/null | grep -qE '^\+QSIMSTAT: [0-9]+,1'
+    /usrdata/quecdeck/atcli 'AT+QSIMSTAT?' 2>/dev/null | grep -qE '^\+QSIMSTAT: [0-9]+,1$'
 }
 
 # Calculate minimum wait before the next reboot based on reboot_count.
 # Doubles each time (2x, 4x, 8x ... cycle_time), capped at MAX_REBOOT_INTERVAL.
 calc_min_wait() {
     cycle_time=$((PING_INTERVAL * PING_FAILURE_COUNT))
-    multiplier=1
-    i=0
-    while [ "$i" -lt "$reboot_count" ]; do
-        multiplier=$((multiplier * 2))
-        i=$((i + 1))
-    done
-    min_wait=$((multiplier * cycle_time))
+    min_wait=$((cycle_time * (1 << reboot_count)))
     [ "$min_wait" -gt "$MAX_REBOOT_INTERVAL" ] && min_wait=$MAX_REBOOT_INTERVAL
     echo "$min_wait"
 }
@@ -116,16 +110,18 @@ write_stats() {
     done
     stats="$stats]"
 
-    backoff_remaining=0
+    # Report an absolute deadline rather than a remaining-seconds countdown:
+    # write_stats only runs once per ping cycle, so a relative "remaining"
+    # value goes stale between writes while the frontend polls far more
+    # often. An absolute timestamp lets the client compute remaining time
+    # against its own clock on every tick, independent of fetch timing.
+    backoff_until=0
     if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ]; then
         min_wait=$(calc_min_wait)
-        now=$(date +%s)
-        elapsed=$((now - last_reboot))
-        remaining=$((min_wait - elapsed))
-        [ "$remaining" -gt 0 ] && backoff_remaining=$remaining
+        backoff_until=$((last_reboot + min_wait))
     fi
 
-    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"backoff_remaining\":$backoff_remaining}" > "$STATS_PATH"
+    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"backoff_until\":$backoff_until}" > "$STATS_PATH"
 }
 
 while :; do
@@ -157,8 +153,6 @@ while :; do
         failures=$((failures + 1))
         successes=0
     fi
-
-    write_stats
 
     if [ "$failures" -ge "$PING_FAILURE_COUNT" ]; then
         if [ "$DISABLE_ON_NO_SIM" = "1" ] && ! check_sim; then
@@ -192,6 +186,8 @@ while :; do
             fi
         fi
     fi
+
+    write_stats
 
     sleep "$PING_INTERVAL" & wait $!
 done

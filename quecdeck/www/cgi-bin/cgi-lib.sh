@@ -61,16 +61,26 @@ get_post_param() {
 # Emit a text/plain Content-Type header. Call once before any output.
 cgi_output_text() {
     printf 'Content-type: text/plain\r\n\r\n'
+    _cgi_headers_sent=1
 }
 
 # Emit an application/json Content-Type header. Call once before any output.
 cgi_output_json() {
     printf 'Content-type: application/json\r\n\r\n'
+    _cgi_headers_sent=1
 }
 
-# Print an error message and exit 1. cgi_output_text/json must be called first.
+# Print an error message and exit 1.
+# If called before cgi_output_text/json, sends a real 400 status so the
+# client can detect failure via the response status rather than having to
+# parse the body text. If called after (the older, still-supported pattern
+# many scripts use), headers are already committed to 200, so the message
+# is just the body text as before.
 # Usage: cgi_error "message"
 cgi_error() {
+    if [ -z "$_cgi_headers_sent" ]; then
+        printf 'Status: 400 Bad Request\r\nContent-type: text/plain\r\n\r\n'
+    fi
     echo "$*"
     exit 1
 }

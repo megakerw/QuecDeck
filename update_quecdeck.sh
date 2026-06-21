@@ -26,6 +26,16 @@ remount_ro() {
     mount -o remount,ro /
 }
 
+UPDATE_LOCK_FILE=/tmp/quecdeck_update.lock
+if ! command -v flock >/dev/null 2>&1; then
+    echo "FATAL: flock command not found. Cannot safely check for a running update."
+    exit 1
+fi
+if ! ( umask 0; exec 9>"$UPDATE_LOCK_FILE"; flock -n 9 ); then
+    echo "An update is already in progress."
+    exit 1
+fi
+
 # Installation prep
 remount_rw
 trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
@@ -75,25 +85,31 @@ remount_ro() {
     mount -o remount,ro /
 }
 
+UPDATE_LOCK_FILE=/tmp/quecdeck_update.lock
+if ! command -v flock >/dev/null 2>&1; then
+    echo "FATAL: flock command not found. Cannot safely check for a running update."
+    exit 1
+fi
+_orig_umask=\$(umask)
+umask 0
+exec 9>"\$UPDATE_LOCK_FILE"
+umask "\$_orig_umask"
+if ! flock -n 9; then
+    echo "Another update is already running. Aborting."
+    exit 1
+fi
+
+echo "running" > "\${STATUS_FILE}.tmp" && mv "\${STATUS_FILE}.tmp" "\$STATUS_FILE"
+
 remount_rw
 
 _update_status="failed"
 
 _update_cleanup() {
-    if echo "\$_update_status" > "\${STATUS_FILE}.tmp" && mv "\${STATUS_FILE}.tmp" "\$STATUS_FILE"; then
-        rm -f /tmp/quecdeck_update.pid
-    else
-        rm -f "\${STATUS_FILE}.tmp"
-    fi
+    echo "\$_update_status" > "\${STATUS_FILE}.tmp" && mv "\${STATUS_FILE}.tmp" "\$STATUS_FILE" || rm -f "\${STATUS_FILE}.tmp"
     remount_ro
 }
 trap '_update_cleanup' EXIT
-
-# Overwrite the PID file with this script's own PID. run_update.sh wrote the
-# outer update_quecdeck.sh PID, but that process can exit (when systemctl start
-# returns) before our EXIT trap fires. Tracking our own PID ensures the
-# dead-PID check in get_update_log only fires when this script is truly dead.
-echo \$\$ > /tmp/quecdeck_update.pid.tmp && mv /tmp/quecdeck_update.pid.tmp /tmp/quecdeck_update.pid
 
 # Preserve lean mode, watchcat, and scheduled restart state across updates
 lean_mode_was_installed=0
@@ -557,7 +573,14 @@ swap_in_release() {
     cp -f "\$QUECDECK_DIR/console/.profile" /usrdata/root/.profile
     chmod +x /usrdata/root/.profile
 
-    echo "www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /bin/systemctl is-active watchcat, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/run_update.sh" > /opt/etc/sudoers.d/www-data
+    _sudoers_rule="www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /bin/systemctl is-active watchcat, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/run_update.sh"
+    _sudoers_mode=\$(stat -c '%a' /opt/etc/sudoers.d/www-data 2>/dev/null)
+    if [ "\$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)" != "\$_sudoers_rule" ] || [ "\$_sudoers_mode" != "440" ]; then
+        _sudoers_tmp=\$(mktemp /opt/etc/sudoers.d/.www-data.XXXXXX) || { echo -e "\e[1;31mFATAL: Could not create temp sudoers file.\e[0m"; return 1; }
+        printf '%s\n' "\$_sudoers_rule" > "\$_sudoers_tmp"
+        chmod 440 "\$_sudoers_tmp"
+        mv "\$_sudoers_tmp" /opt/etc/sudoers.d/www-data
+    fi
 
     rm -f /lib/systemd/system/lighttpd.service /lib/systemd/system/multi-user.target.wants/lighttpd.service
     rm -f /lib/systemd/system/atcmd-daemon.service /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service
@@ -811,7 +834,20 @@ chmod +x "$TMP_SCRIPT"
 # Run the rest of the installation via the systemd service
 systemctl daemon-reload
 rm -f "$LOG_FILE"
-systemctl start $SERVICE_NAME || { echo -e "\e[1;31mFailed to start install service. Check 'systemctl status $SERVICE_NAME' for details.\e[0m"; exit 1; }
+touch "$LOG_FILE"
+
+# If stdout is an actual terminal (ADB/SSH/console), stream the log live while
+# we wait, since the unit's own output goes straight to $LOG_FILE, not to us.
+# The web path redirects our stdout to a file already, so this stays off there.
+_tail_pid=""
+if [ -t 1 ]; then
+    tail -n +1 -f "$LOG_FILE" &
+    _tail_pid=$!
+fi
+systemctl start $SERVICE_NAME
+_start_rc=$?
+[ -n "$_tail_pid" ] && { kill "$_tail_pid" 2>/dev/null; wait "$_tail_pid" 2>/dev/null; }
+[ "$_start_rc" -ne 0 ] && { echo -e "\e[1;31mFailed to start install service. Check 'systemctl status $SERVICE_NAME' for details.\e[0m"; exit 1; }
 if [ -f "$LOG_FILE" ]; then
     if grep -q "Install Summary" "$LOG_FILE"; then
         echo -e "\e[1;32mQuecDeck installed.\e[0m"

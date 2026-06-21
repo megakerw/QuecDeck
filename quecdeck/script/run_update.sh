@@ -5,17 +5,17 @@
 
 TAG="${1:-}"
 LOG=/tmp/install_quecdeck.log
-PID_FILE=/tmp/quecdeck_update.pid
 STATUS_FILE=/tmp/quecdeck_update.status
-CHECKSUMS=/tmp/quecdeck_update_checksums.sha256
-UPDATE_SCRIPT=/tmp/quecdeck_update.sh
+UPDATE_TMP=/tmp/.quecdeck-update
+CHECKSUMS="$UPDATE_TMP/quecdeck_update_checksums.sha256"
+UPDATE_SCRIPT="$UPDATE_TMP/quecdeck_update.sh"
 GITROOT="https://raw.githubusercontent.com/megakerw/QuecDeck/$TAG"
 
 # Writes a message to the log, records failure in the status file,
 # then exits the calling (sub)shell.
 abort() {
     echo "$1" | tee -a "$LOG"
-    echo "failed" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" && rm -f "$PID_FILE"
+    echo "failed" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
     exit 1
 }
 
@@ -29,8 +29,9 @@ if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
     exit 1
 fi
 
-[ -L "$CHECKSUMS" ] && { echo "Security: $CHECKSUMS is a symlink."; exit 1; }
-[ -L "$UPDATE_SCRIPT" ] && { echo "Security: $UPDATE_SCRIPT is a symlink."; exit 1; }
+rm -rf "$UPDATE_TMP"
+mkdir -m 700 "$UPDATE_TMP" || { echo "Security: failed to create $UPDATE_TMP."; exit 1; }
+chown root:root "$UPDATE_TMP"
 
 mkdir -p /tmp/quecdeck
 echo "running" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
@@ -39,9 +40,6 @@ chmod 644 "$LOG"
 
 # Run all downloads and the installer itself in a background subshell so this
 # script returns immediately, keeping the trigger_update CGI response fast.
-# The subshell's PID is written to the PID file so get_update_log sees a live
-# process while downloads are in progress, then the file is overwritten with
-# the installer's PID once it's launched.
 (
     if ! /opt/bin/opkg list-installed 2>/dev/null | grep -q '^wget-ssl '; then
         /opt/bin/opkg update >> "$LOG" 2>&1
@@ -66,11 +64,8 @@ chmod 644 "$LOG"
     chmod +x "$UPDATE_SCRIPT"
 
     nohup "$UPDATE_SCRIPT" "$TAG" >> "$LOG" 2>&1 &
-    _update_pid=$!
-    echo "$_update_pid" > "${PID_FILE}.tmp" && mv "${PID_FILE}.tmp" "$PID_FILE"
-    disown "$_update_pid"
+    disown "$!"
     echo "Update started (tag: $TAG)." | tee -a "$LOG"
 ) &
-_bg_pid=$!
-echo "$_bg_pid" > "${PID_FILE}.tmp" && mv "${PID_FILE}.tmp" "$PID_FILE"
+disown "$!"
 echo "Downloading installer..." | tee -a "$LOG"

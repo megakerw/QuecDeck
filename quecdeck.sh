@@ -230,12 +230,61 @@ set_root_passwd() {
     /opt/bin/passwd
 }
 
+# Downloads, verifies, and runs update_quecdeck.sh from the given release root.
+# $1: tag_root, e.g. https://raw.githubusercontent.com/$GITUSER/$REPONAME/main
+# $2: tag to pass through to update_quecdeck.sh (may be empty, meaning "main")
+fetch_and_run_installer() {
+    _tag_root="$1"
+    _tag="$2"
+    _fetch_dir=/tmp/.quecdeck-update-cli
+
+    rm -rf "$_fetch_dir"
+    mkdir -m 700 "$_fetch_dir" || { echo -e "\e[1;31mFailed to create $_fetch_dir.\e[0m"; return 1; }
+    chown root:root "$_fetch_dir"
+
+    _checksums="$_fetch_dir/checksums.sha256"
+    _installer="$_fetch_dir/update_quecdeck.sh"
+
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "$_checksums" "$_tag_root/quecdeck/checksums.sha256" || {
+        echo -e "\e[1;31mFailed to download checksums.\e[0m"
+        return 1
+    }
+    _expected=$(grep -E '^[a-f0-9]{64} \*update_quecdeck\.sh$' "$_checksums" | awk '{print $1}')
+    rm -f "$_checksums"
+    if [ -z "$_expected" ]; then
+        echo -e "\e[1;31mCould not find hash for update_quecdeck.sh in checksums.\e[0m"
+        return 1
+    fi
+
+    /opt/bin/wget --timeout=30 --tries=2 -q -O "$_installer" "$_tag_root/update_quecdeck.sh" || {
+        echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"
+        return 1
+    }
+    _actual=$(sha256sum "$_installer" | awk '{print $1}')
+    if [ "$_actual" != "$_expected" ]; then
+        echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"
+        rm -rf "$_fetch_dir"
+        return 1
+    fi
+    echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
+    chmod +x "$_installer"
+    if [ -n "$_tag" ]; then
+        "$_installer" "$_tag"
+    else
+        "$_installer"
+    fi || {
+        echo -e "\e[1;31mQuecDeck update failed.\e[0m"
+        rm -rf "$_fetch_dir"
+        return 1
+    }
+    rm -rf "$_fetch_dir"
+}
+
 # Function to install/update QuecDeck from latest GitHub release
 install_quecdeck_release() {
     echo -e "\e[1;32mInstalling latest QuecDeck release...\e[0m"
     ensure_entware_installed
     set_quecdeck_passwd || return 1
-    mkdir -p /tmp/quecdeck
 
     echo "Fetching latest release info..."
     _api=$(/opt/bin/wget --timeout=10 --tries=1 -q -O - \
@@ -255,37 +304,8 @@ install_quecdeck_release() {
     fi
     echo -e "\e[1;32mLatest release: $_tag\e[0m"
 
-    _tag_root="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$_tag"
-    _checksums=/tmp/quecdeck/release_checksums.sha256
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "$_checksums" "$_tag_root/quecdeck/checksums.sha256" || {
-        echo -e "\e[1;31mFailed to download release checksums.\e[0m"
-        return 1
-    }
-    _expected=$(grep -E '^[a-f0-9]{64} \*update_quecdeck\.sh$' "$_checksums" | awk '{print $1}')
-    rm -f "$_checksums"
-    if [ -z "$_expected" ]; then
-        echo -e "\e[1;31mCould not find hash for update_quecdeck.sh in release checksums.\e[0m"
-        return 1
-    fi
+    fetch_and_run_installer "https://raw.githubusercontent.com/$GITUSER/$REPONAME/$_tag" "$_tag" || return 1
 
-    /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_quecdeck.sh "$_tag_root/update_quecdeck.sh" || {
-        echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"
-        return 1
-    }
-    _actual=$(sha256sum /tmp/quecdeck/update_quecdeck.sh | awk '{print $1}')
-    if [ "$_actual" != "$_expected" ]; then
-        echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"
-        rm -f /tmp/quecdeck/update_quecdeck.sh
-        return 1
-    fi
-    echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
-    chmod +x /tmp/quecdeck/update_quecdeck.sh
-    /tmp/quecdeck/update_quecdeck.sh "$_tag" || {
-        echo -e "\e[1;31mQuecDeck update failed.\e[0m"
-        rm -f /tmp/quecdeck/update_quecdeck.sh
-        return 1
-    }
-    rm -f /tmp/quecdeck/update_quecdeck.sh
     if [ ! -f /opt/etc/.htpasswd ]; then
         lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
         [ -z "$lan_ip" ] && lan_ip="192.168.225.1"
@@ -299,19 +319,9 @@ install_quecdeck() {
     echo -e "\e[1;32mInstalling/updating QuecDeck...\e[0m"
     ensure_entware_installed
     set_quecdeck_passwd || return 1
-    mkdir -p /tmp/quecdeck
-    _checksums=/tmp/quecdeck/main_checksums.sha256
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "$_checksums" "$GITROOT/quecdeck/checksums.sha256" || { echo -e "\e[1;31mFailed to download checksums.\e[0m"; return 1; }
-    _expected=$(grep -E '^[a-f0-9]{64} \*update_quecdeck\.sh$' "$_checksums" | awk '{print $1}')
-    rm -f "$_checksums"
-    if [ -z "$_expected" ]; then echo -e "\e[1;31mCould not find hash for update_quecdeck.sh in checksums.\e[0m"; return 1; fi
-    /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_quecdeck.sh $GITROOT/update_quecdeck.sh || { echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"; return 1; }
-    _actual=$(sha256sum /tmp/quecdeck/update_quecdeck.sh | awk '{print $1}')
-    if [ "$_actual" != "$_expected" ]; then echo -e "\e[1;31mIntegrity check failed for update_quecdeck.sh.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; fi
-    echo -e "\e[1;32mIntegrity verified: update_quecdeck.sh\e[0m"
-    chmod +x /tmp/quecdeck/update_quecdeck.sh
-    /tmp/quecdeck/update_quecdeck.sh || { echo -e "\e[1;31mQuecDeck update failed.\e[0m"; rm -f /tmp/quecdeck/update_quecdeck.sh; return 1; }
-    rm -f /tmp/quecdeck/update_quecdeck.sh
+
+    fetch_and_run_installer "$GITROOT" "" || return 1
+
     if [ ! -f /opt/etc/.htpasswd ]; then
         lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
         [ -z "$lan_ip" ] && lan_ip="192.168.225.1"

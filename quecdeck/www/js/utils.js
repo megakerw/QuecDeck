@@ -52,23 +52,23 @@ document.addEventListener('alpine:init', () => {
     title: 'Are you sure?',
     message: '',
     detail: '',
-    _onConfirm: null,
+    onConfirm: null,
     open(message, onConfirm, title = 'Are you sure?', detail = '') {
       this.title = title;
       this.message = message;
       this.detail = detail;
-      this._onConfirm = onConfirm;
+      this.onConfirm = onConfirm;
       this.show = true;
     },
     confirm() {
       this.show = false;
-      if (this._onConfirm) this._onConfirm();
-      this._onConfirm = null;
+      if (this.onConfirm) this.onConfirm();
+      this.onConfirm = null;
       this.detail = '';
     },
     cancel() {
       this.show = false;
-      this._onConfirm = null;
+      this.onConfirm = null;
       this.detail = '';
     }
   });
@@ -78,26 +78,26 @@ document.addEventListener('alpine:init', () => {
     title: '',
     subtitle: '',
     countdown: 0,
-    _interval: null,
+    interval: null,
     start(title, seconds, onDone, subtitle = '') {
       this.show = true;
       this.title = title;
       this.subtitle = subtitle;
       this.countdown = seconds;
-      this._interval = setInterval(() => {
+      this.interval = setInterval(() => {
         this.countdown--;
         if (this.countdown === 0) {
-          clearInterval(this._interval);
-          this._interval = null;
+          clearInterval(this.interval);
+          this.interval = null;
           this.show = false;
           if (onDone) onDone();
         }
       }, 1000);
     },
     stop() {
-      if (this._interval) {
-        clearInterval(this._interval);
-        this._interval = null;
+      if (this.interval) {
+        clearInterval(this.interval);
+        this.interval = null;
       }
       this.show = false;
     }
@@ -185,13 +185,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const main = document.querySelector('main');
   if (main) main.parentNode.insertBefore(banner, main);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
-  authFetch('/cgi-bin/get_scan_status', { signal: controller.signal })
-    .then(r => r.json())
+  fetchWithTimeout(fetchJSON, '/cgi-bin/get_scan_status', 4000)
     .then(data => { Alpine.store('scanBanner').active = !!data.scanning; })
-    .catch(() => {})
-    .finally(() => clearTimeout(timer));
+    .catch(() => {});
 });
 
 function fetchJSON(url, options) {
@@ -200,6 +196,15 @@ function fetchJSON(url, options) {
 
 function fetchText(url, options) {
   return authFetch(url, options).then(r => r.text());
+}
+
+// Wraps a fetch-style call (fetchJSON, fetchText, authFetch, ...) with an
+// AbortController that fires after timeoutMs, so callers don't each have to
+// create/wire/clear their own controller and timer.
+function fetchWithTimeout(fetchFn, url, timeoutMs, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetchFn(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 // Returns "-" for unassigned IP addresses (0.0.0.0 or all-zero IPv6 like ::)

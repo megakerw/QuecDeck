@@ -14,13 +14,13 @@ function quecdeckWatchCat() {
     stats: [],
     consecutiveFailures: 0,
     rebootCount: 0,
-    backoffRemainingAtFetch: 0,
-    backoffFetchedAt: 0,
+    backoffUntil: 0,
     statsUpdatedAt: '',
     statsTimer: null,
     statsFetching: false,
     now: Date.now(),
     nowTimer: null,
+    responseTimer: null,
 
     // Scheduled restart
     srEnabled: false,
@@ -32,19 +32,18 @@ function quecdeckWatchCat() {
     srResponse: '',
     srServiceActive: false,
     srDeviceTzOffsetMins: 0,
+    srResponseTimer: null,
 
     get capExceeded() {
       return this.pingInterval * this.pingFailureCount > 3600;
     },
 
     get backoffActive() {
-      const elapsed = (this.now - this.backoffFetchedAt) / 1000;
-      return this.rebootCount > 0 && this.backoffRemainingAtFetch - elapsed > 0;
+      return this.rebootCount > 0 && this.backoffUntil * 1000 > this.now;
     },
 
     get backoffRemainingText() {
-      const elapsed = (this.now - this.backoffFetchedAt) / 1000;
-      const remaining = Math.max(0, this.backoffRemainingAtFetch - elapsed);
+      const remaining = Math.max(0, this.backoffUntil - this.now / 1000);
       const m = Math.floor(remaining / 60);
       const s = Math.floor(remaining % 60);
       return m > 0 ? `${m}m ${s}s` : `${s}s`;
@@ -154,18 +153,23 @@ function quecdeckWatchCat() {
     saveSettings() {
       this.isLoading = true;
       this.response = '';
-      fetchText('/cgi-bin/watchcat_maker', { method: 'POST', body: new URLSearchParams(this.buildParams()) })
-        .then((data) => {
-          this.response = this.enabled ? 'Saved.' : 'Disabled.';
+      clearTimeout(this.responseTimer);
+      authFetch('/cgi-bin/watchcat_maker', { method: 'POST', body: new URLSearchParams(this.buildParams()) })
+        .then((response) => response.text().then((text) => {
           this.isLoading = false;
-          this.rebootCount = 0;
-          this.backoffRemainingAtFetch = 0;
-          this.backoffFetchedAt = 0;
-          this.fetchSettings();
-        })
+          if (response.ok) {
+            this.response = this.enabled ? 'Saved.' : 'Disabled.';
+            this.rebootCount = 0;
+            this.backoffUntil = 0;
+            this.fetchSettings();
+            this.responseTimer = setTimeout(() => { this.response = ''; }, 4000);
+          } else {
+            this.$store.errorModal.open(text.trim());
+          }
+        }))
         .catch((err) => {
-          this.response = 'Error: ' + err;
           this.isLoading = false;
+          this.$store.errorModal.open('Failed to save watchcat settings: ' + err);
         });
     },
 
@@ -189,22 +193,19 @@ function quecdeckWatchCat() {
     fetchStats() {
       if (this.statsFetching) return;
       this.statsFetching = true;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
-      fetchJSON('/cgi-bin/get_watchcat_stats', { signal: controller.signal })
+      fetchWithTimeout(fetchJSON, '/cgi-bin/get_watchcat_stats', 4000)
         .then((data) => {
           if (data && data.stats) {
             this.stats = data.stats;
             this.consecutiveFailures = data.consecutive_failures || 0;
             this.rebootCount = data.reboot_count || 0;
-            this.backoffRemainingAtFetch = data.backoff_remaining || 0;
-            this.backoffFetchedAt = Date.now();
+            this.backoffUntil = data.backoff_until || 0;
             const now = new Date();
             this.statsUpdatedAt = now.toLocaleString([], { hour12: false });
           }
         })
         .catch(() => {})
-        .finally(() => { clearTimeout(timer); this.statsFetching = false; });
+        .finally(() => { this.statsFetching = false; });
     },
 
     startStatsPolling() {
@@ -248,6 +249,7 @@ function quecdeckWatchCat() {
     saveScheduledRestart() {
       this.srLoading = true;
       this.srResponse = '';
+      clearTimeout(this.srResponseTimer);
       const device = this.localToDevice(this.srHour, this.srMinute, this.srDay);
       const params = {
         ENABLED: this.srEnabled ? 'enable' : 'disable',
@@ -256,12 +258,17 @@ function quecdeckWatchCat() {
         HOUR: device.hour,
         MINUTE: device.minute,
       };
-      fetchText('/cgi-bin/scheduled_restart_maker', { method: 'POST', body: new URLSearchParams(params) })
-        .then((data) => {
-          this.srResponse = this.srEnabled ? 'Saved.' : 'Disabled.';
+      authFetch('/cgi-bin/scheduled_restart_maker', { method: 'POST', body: new URLSearchParams(params) })
+        .then((response) => response.text().then((text) => {
           this.srLoading = false;
-          this.fetchScheduledRestart();
-        })
+          if (response.ok) {
+            this.srResponse = this.srEnabled ? 'Saved.' : 'Disabled.';
+            this.fetchScheduledRestart();
+            this.srResponseTimer = setTimeout(() => { this.srResponse = ''; }, 4000);
+          } else {
+            this.$store.errorModal.open(text.trim());
+          }
+        }))
         .catch(() => {
           this.srLoading = false;
           this.$store.errorModal.open('Failed to save scheduled restart settings. Please try again.');

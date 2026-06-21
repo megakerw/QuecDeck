@@ -6,6 +6,13 @@ cgi_output_json
 
 LOG=/tmp/install_quecdeck.log
 STATUS_FILE=/tmp/quecdeck_update.status
+UPDATE_LOCK_FILE=/tmp/quecdeck_update.lock
+
+# True (lock acquired) means nothing is holding it, i.e. no update is running.
+_update_is_idle() {
+    command -v flock >/dev/null 2>&1 || return 1
+    ( umask 0; exec 9>"$UPDATE_LOCK_FILE"; flock -n 9 )
+}
 
 offset=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^offset=' | cut -d= -f2)
 case "$offset" in
@@ -22,13 +29,10 @@ if [ "$ack" = "1" ]; then
     raw_status=$(cat "$STATUS_FILE" 2>/dev/null)
     case "$raw_status" in
         done|failed|failed:rollback_ok|failed:rollback_failed)
-            rm -f "$STATUS_FILE" /tmp/quecdeck_update.pid
+            rm -f "$STATUS_FILE"
             ;;
         *)
-            _pid=$(cat /tmp/quecdeck_update.pid 2>/dev/null)
-            if [ -n "$_pid" ] && ! [ -d "/proc/$_pid" ]; then
-                rm -f "$STATUS_FILE" /tmp/quecdeck_update.pid
-            fi
+            _update_is_idle && rm -f "$STATUS_FILE"
             ;;
     esac
     printf '{"ok":true}\n'
@@ -52,10 +56,7 @@ case "$raw_status" in
     failed)                 status="failed" ; rollback="none"   ;;
     *)
         status="running" ; rollback="none"
-        _pid=$(cat /tmp/quecdeck_update.pid 2>/dev/null)
-        if [ -n "$_pid" ] && ! [ -d "/proc/$_pid" ]; then
-            status="failed"
-        fi
+        _update_is_idle && status="failed"
         ;;
 esac
 
