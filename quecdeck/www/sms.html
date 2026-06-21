@@ -5,19 +5,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>QuecDeck</title>
-  <link rel="stylesheet" href="css/bootstrap.min.css?v=b8a909f2" />
-  <link rel="stylesheet" href="css/styles.css?v=b8a909f2" />
+  <link rel="stylesheet" href="css/bootstrap.min.css?v=21091ffa" />
+  <link rel="stylesheet" href="css/styles.css?v=21091ffa" />
   <link rel="icon" href="favicon.ico" />
-  <script src="js/bootstrap.bundle.min.js?v=b8a909f2"></script>
-  <script src="js/utils.js?v=b8a909f2"></script>
-  <script src="js/alpinejs.min.js?v=b8a909f2" defer></script>
+  <script src="js/bootstrap.bundle.min.js?v=21091ffa"></script>
+  <script src="js/utils.js?v=21091ffa"></script>
+  <script src="js/alpinejs.min.js?v=21091ffa" defer></script>
 </head>
 
 <body>
   <main>
     <div class="container my-4" x-data="fetchSMS()">
       <div id="nav-placeholder"></div>
-      <script src="js/nav.js?v=b8a909f2"></script>
+      <script src="js/nav.js?v=21091ffa"></script>
       <div class="row gy-3 mt-4 mb-4 align-items-stretch">
         <div class="col">
           <div class="panel-section">
@@ -50,10 +50,10 @@
                               x-model="selectedMessages" />
                             <div class="row column-gap-1 mb-2">
                               <div class="col-md-3">
-                                <p x-text="'Sender: ' + senders[index]"></p>
+                                <p x-text="'Sender: ' + message.sender"></p>
                               </div>
                               <div class="col">
-                                <p x-text="'Date and Time: ' + dates[index]"></p>
+                                <p x-text="'Date and Time: ' + message.displayDate"></p>
                               </div>
                             </div>
                             <div class="col-md-9">
@@ -74,7 +74,7 @@
       </div>
     </div>
   </main>
-  <script src="js/dark-mode.js?v=b8a909f2"></script>
-  <script src="js/sms.js?v=b8a909f2"></script>
+  <script src="js/dark-mode.js?v=21091ffa"></script>
+  <script src="js/sms.js?v=21091ffa"></script>
 </body>
 </html>

@@ -850,10 +850,15 @@ _start_rc=$?
 [ "$_start_rc" -ne 0 ] && { echo -e "\e[1;31mFailed to start install service. Check 'systemctl status $SERVICE_NAME' for details.\e[0m"; exit 1; }
 if [ -f "$LOG_FILE" ]; then
     if grep -q "Install Summary" "$LOG_FILE"; then
-        echo -e "\e[1;32mQuecDeck installed.\e[0m"
-        echo ""
-        sed -n '/Install Summary/,$p' "$LOG_FILE"
-        echo ""
+        if [ -t 1 ]; then
+            # Already streamed live via tail above; no need to reprint it.
+            echo -e "\e[1;32mQuecDeck installed.\e[0m"
+        else
+            echo -e "\e[1;32mQuecDeck installed.\e[0m"
+            echo ""
+            sed -n '/Install Summary/,$p' "$LOG_FILE"
+            echo ""
+        fi
     else
         echo -e "\e[1;31mInstall did not complete. Check $LOG_FILE for details.\e[0m"
         remount_ro

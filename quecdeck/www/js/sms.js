@@ -2,17 +2,11 @@ function fetchSMS() {
   return {
     isLoading: false,
     messages: [],
-    senders: [],
-    dates: [],
     selectedMessages: [],
-    messageIndices: [],
 
     clearData() {
       this.messages = [];
-      this.senders = [];
-      this.dates = [];
       this.selectedMessages = [];
-      this.messageIndices = [];
       const selectAllCheckbox = document.getElementById('selectAllCheckbox');
       if (selectAllCheckbox) {
         selectAllCheckbox.checked = false;
@@ -39,9 +33,6 @@ function fetchSMS() {
 
     parseSMSData(data) {
       const cmglRegex = /^\s*\+CMGL:\s*(\d+),"[^"]*","([^"]*)"[^"]*,"([^"]*)"/gm;
-      this.messageIndices = [];
-      this.dates = [];
-      this.senders = [];
       this.messages = [];
       let match;
       let lastIndex = null;
@@ -65,15 +56,18 @@ function fetchSMS() {
         if (lastIndex !== null && this.messages[lastIndex].sender === sender && (date - this.messages[lastIndex].date) / 1000 <= 1) {
           this.messages[lastIndex].text += message;
           this.messages[lastIndex].indices.push(index);
-          this.dates[lastIndex] = this.formatDate(date);
+          // displayDate tracks the latest part's timestamp for display, while
+          // .date (used in the merge-window check above) stays the first
+          // part's timestamp so later parts keep comparing against it.
+          this.messages[lastIndex].displayDate = this.formatDate(date);
         } else {
-          this.messageIndices.push([index]);
-          this.senders.push(sender);
-          this.dates.push(this.formatDate(date));
-          this.messages.push({ text: message, sender: sender, date: date, indices: [index] });
+          this.messages.push({ text: message, sender: sender, date: date, displayDate: this.formatDate(date), indices: [index] });
           lastIndex = this.messages.length - 1;
         }
       }
+      // The modem returns messages oldest-first by storage index; reverse so
+      // the newest message displays first.
+      this.messages.reverse();
     },
 
     convertHexToText(hex) {
@@ -94,7 +88,7 @@ function fetchSMS() {
 
     deleteSelectedSMS() {
       if (this.selectedMessages.length === 0) return;
-      if (!this.messageIndices || this.messageIndices.length === 0) return;
+      if (this.messages.length === 0) return;
 
       const isAllSelected = this.selectedMessages.length === this.messages.length;
 
