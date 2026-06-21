@@ -576,6 +576,10 @@ swap_in_release() {
     _sudoers_rule="www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /bin/systemctl is-active watchcat, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/run_update.sh"
     _sudoers_mode=\$(stat -c '%a' /opt/etc/sudoers.d/www-data 2>/dev/null)
     if [ "\$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)" != "\$_sudoers_rule" ] || [ "\$_sudoers_mode" != "440" ]; then
+        # On a from-scratch install, the sudo package (which would normally
+        # create this directory) isn't installed until later in this
+        # function, so it may not exist yet here.
+        mkdir -p /opt/etc/sudoers.d
         _sudoers_tmp=\$(mktemp /opt/etc/sudoers.d/.www-data.XXXXXX) || { echo -e "\e[1;31mFATAL: Could not create temp sudoers file.\e[0m"; return 1; }
         printf '%s\n' "\$_sudoers_rule" > "\$_sudoers_tmp"
         chmod 440 "\$_sudoers_tmp"
