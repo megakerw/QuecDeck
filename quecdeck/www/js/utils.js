@@ -180,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
   banner.setAttribute('x-show', '$store.scanBanner.active && !$store.scanBanner.ownScan');
   banner.style.display = 'none';
   banner.className = 'alert alert-warning rounded-0 border-start-0 border-end-0 border-top-0 mb-0 py-2 text-center small';
-  banner.textContent = 'Cell scan in progress — live data is paused, showing cached values.';
+  banner.textContent = 'Cell scan in progress. Live data is paused, showing cached values.';
 
   const main = document.querySelector('main');
   if (main) main.parentNode.insertBefore(banner, main);
@@ -205,6 +205,22 @@ function fetchWithTimeout(fetchFn, url, timeoutMs, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetchFn(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+// Splits a delimiter-framed snapshot response (get_dashboard / get_deviceinfo)
+// into named sections keyed by their ===name=== marker (alone on a line).
+// A section may be "" if its source produced no output (e.g. a failed fetch).
+function parseEnvelope(text) {
+  const sections = {};
+  let current = null, buf = [];
+  const flush = () => { if (current !== null) sections[current] = buf.join("\n"); };
+  for (const line of text.split("\n")) {
+    const m = line.match(/^===(\w+)===$/);
+    if (m) { flush(); current = m[1]; buf = []; }
+    else if (current !== null) { buf.push(line); }
+  }
+  flush();
+  return sections;
 }
 
 // Returns "-" for unassigned IP addresses (0.0.0.0 or all-zero IPv6 like ::)

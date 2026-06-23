@@ -14,7 +14,8 @@ function quecdeckWatchCat() {
     stats: [],
     consecutiveFailures: 0,
     rebootCount: 0,
-    backoffUntil: 0,
+    backoffRemaining: 0,
+    backoffFetchedAt: 0,
     statsUpdatedAt: '',
     statsTimer: null,
     statsFetching: false,
@@ -38,12 +39,19 @@ function quecdeckWatchCat() {
       return this.pingInterval * this.pingFailureCount > 3600;
     },
 
+    // Remaining seconds is reported by the device relative to its own (possibly
+    // unsynced) clock, so it's ticked down here using elapsed *browser* time
+    // since the fetch rather than comparing two absolute clocks.
+    get currentBackoffRemaining() {
+      return Math.max(0, this.backoffRemaining - (this.now - this.backoffFetchedAt) / 1000);
+    },
+
     get backoffActive() {
-      return this.rebootCount > 0 && this.backoffUntil * 1000 > this.now;
+      return this.rebootCount > 0 && this.currentBackoffRemaining > 0;
     },
 
     get backoffRemainingText() {
-      const remaining = Math.max(0, this.backoffUntil - this.now / 1000);
+      const remaining = this.currentBackoffRemaining;
       const m = Math.floor(remaining / 60);
       const s = Math.floor(remaining % 60);
       return m > 0 ? `${m}m ${s}s` : `${s}s`;
@@ -160,7 +168,8 @@ function quecdeckWatchCat() {
           if (response.ok) {
             this.response = this.enabled ? 'Saved.' : 'Disabled.';
             this.rebootCount = 0;
-            this.backoffUntil = 0;
+            this.backoffRemaining = 0;
+            this.backoffFetchedAt = Date.now();
             this.fetchSettings();
             this.responseTimer = setTimeout(() => { this.response = ''; }, 4000);
           } else {
@@ -199,8 +208,9 @@ function quecdeckWatchCat() {
             this.stats = data.stats;
             this.consecutiveFailures = data.consecutive_failures || 0;
             this.rebootCount = data.reboot_count || 0;
-            this.backoffUntil = data.backoff_until || 0;
+            this.backoffRemaining = data.backoff_remaining || 0;
             const now = new Date();
+            this.backoffFetchedAt = now.getTime();
             this.statsUpdatedAt = now.toLocaleString([], { hour12: false });
           }
         })

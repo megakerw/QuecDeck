@@ -1,6 +1,7 @@
 #!/bin/bash
 
-. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+. /usrdata/quecdeck/script/cgi-lib.sh
+. /usrdata/quecdeck/script/json-lib.sh
 cgi_check_cors
 cgi_output_json
 
@@ -10,4 +11,24 @@ LOG=/usrdata/quecdeck/var/restart_log.jsonl
 lines=$(cat "$LOG" 2>/dev/null)
 [ -z "$lines" ] && { printf '[]\n'; exit 0; }
 
-printf '%s' "$lines" | awk 'BEGIN{printf "["} NR>1{printf ","} {printf "%s",$0} END{printf "]\n"}'
+# Entries store uptime-at-event rather than a wall-clock timestamp (see
+# watchcat.sh log_restart()), since the device's clock may never have synced.
+# Estimate an absolute ts here using the live clock and uptime; this improves
+# retroactively for past entries once the clock does sync.
+now=$(date +%s)
+now_uptime=$(awk '{print int($1)}' /proc/uptime)
+boot_ts=$((now - now_uptime))
+
+first=1
+printf '['
+while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    event_uptime=$(json_get "$line" uptime)
+    [ -z "$event_uptime" ] && continue
+    reason=$(json_get "$line" reason)
+    detail=$(json_get "$line" detail)
+    ts=$((boot_ts + event_uptime))
+    [ "$first" = "1" ] && first=0 || printf ','
+    printf '{"ts":%d,"reason":"%s","detail":"%s"}' "$ts" "$reason" "$detail"
+done <<< "$lines"
+printf ']\n'

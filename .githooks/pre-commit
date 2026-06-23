@@ -12,6 +12,8 @@ CHECKSUMMED_FILES=(
   quecdeck/script/create_watchcat.sh
   quecdeck/script/remove_watchcat.sh
   quecdeck/script/watchcat.sh
+  quecdeck/script/json-lib.sh
+  quecdeck/script/cgi-lib.sh
   quecdeck/script/create_scheduled_restart.sh
   quecdeck/script/remove_scheduled_restart.sh
   quecdeck/script/scheduled_restart.sh
@@ -63,10 +65,7 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/auth_login
   quecdeck/www/cgi-bin/auth_logout
   quecdeck/www/cgi-bin/auth_dev
-  quecdeck/www/cgi-bin/get_modem_stats
-  quecdeck/www/cgi-bin/get_device_info
-  quecdeck/www/cgi-bin/get_device_sim
-  quecdeck/www/cgi-bin/get_modem_conn
+  quecdeck/www/cgi-bin/get_deviceinfo
   quecdeck/www/cgi-bin/get_settings
   quecdeck/www/cgi-bin/set_setting
   quecdeck/www/cgi-bin/get_network_info
@@ -79,8 +78,7 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/delete_sms
   quecdeck/www/cgi-bin/user_atcommand
   quecdeck/www/cgi-bin/get_ping
-  quecdeck/www/cgi-bin/get_uptime
-  quecdeck/www/cgi-bin/get_system_stats
+  quecdeck/www/cgi-bin/get_dashboard
   quecdeck/www/cgi-bin/get_watchcat_status
   quecdeck/www/cgi-bin/get_watchcat_stats
   quecdeck/www/cgi-bin/watchcat_maker
@@ -91,7 +89,6 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/get_ippt_status
   quecdeck/www/cgi-bin/get_upnp_status
   quecdeck/www/cgi-bin/run_cell_scan
-  quecdeck/www/cgi-bin/cgi-lib.sh
   quecdeck/www/cgi-bin/get_service_status
   quecdeck/www/cgi-bin/get_scan_status
   quecdeck/www/cgi-bin/get_logs

@@ -18,6 +18,17 @@ _ATCLI=/usrdata/quecdeck/atcli
 _QUEUE_DIR=/tmp/quecdeck/queue
 _NOTIFY=/tmp/quecdeck/atcmd.notify
 
+# Backstop for a hung atcli. atcli has its own -t, but if it ever blocks past
+# that (e.g. stuck on device I/O), the daemon is serial so the whole queue
+# stalls. Wrap each call in `timeout` as an independent watchdog. Degrade to no
+# wrapper if timeout is unavailable rather than failing every command.
+_TIMEOUT=""
+if command -v timeout >/dev/null 2>&1; then
+    _TIMEOUT=timeout
+elif [ -x /opt/bin/timeout ]; then
+    _TIMEOUT=/opt/bin/timeout
+fi
+
 mkdir -p "$_QUEUE_DIR" && chmod 700 "$_QUEUE_DIR"
 rm -f "$_NOTIFY"
 rm -f "$_QUEUE_DIR"/*.resp.fifo 2>/dev/null
@@ -36,6 +47,15 @@ trap _cleanup EXIT INT TERM
 
 while IFS= read -r _line <&5; do
     [ -z "$_line" ] && continue
+
+    # Opportunistically reap response FIFOs orphaned by clients killed before
+    # their own cleanup ran (otherwise they count against the queue limit and
+    # can eventually wedge it). 10 min is safely past the longest possible
+    # client lifetime (queue-wait + read, each bounded by the 215s cell-scan
+    # timeout), so a live client is never reaped. ~2% of iterations.
+    [ $(( RANDOM % 50 )) -eq 0 ] && \
+        find "$_QUEUE_DIR" -maxdepth 1 -name '*.resp.fifo' -mmin +10 -delete 2>/dev/null
+
     # Require a tab separator. Malformed lines are silently dropped.
     case "$_line" in *$'\t'*) ;; *) continue ;; esac
     _id="${_line%%$'\t'*}"
@@ -55,7 +75,17 @@ while IFS= read -r _line <&5; do
 
     # Normal AT command: dispatch via atcli and deliver response.
     # Strip \r (atcli does not strip CR from modem's \r\n line endings).
-    _result=$("$_ATCLI" ${_timeout:+-t "$_timeout"} "$_cmd" 2>/dev/null | tr -d '\r')
+    # Wrap in `timeout` (kill ~5s past atcli's own -t) so a hung atcli can't
+    # stall the whole serial queue; fall back to a bare call if unavailable.
+    if [ -n "$_TIMEOUT" ]; then
+        if [ -n "$_timeout" ]; then
+            _result=$("$_TIMEOUT" "$(( _timeout / 1000 + 5 ))" "$_ATCLI" -t "$_timeout" "$_cmd" 2>/dev/null | tr -d '\r')
+        else
+            _result=$("$_TIMEOUT" 30 "$_ATCLI" "$_cmd" 2>/dev/null | tr -d '\r')
+        fi
+    else
+        _result=$("$_ATCLI" ${_timeout:+-t "$_timeout"} "$_cmd" 2>/dev/null | tr -d '\r')
+    fi
 
     if [ -p "$_resp_fifo" ]; then
         exec 6<>"$_resp_fifo"

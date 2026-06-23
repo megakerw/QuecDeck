@@ -4,11 +4,7 @@
 GITUSER="megakerw"
 REPONAME="QuecDeck"
 GITTREE="${1:-main}"
-GITMAINTREE="main"
-GITDEVTREE="main"
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
-GITROOTMAIN="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITMAINTREE"
-GITROOTDEV="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITDEVTREE"
 
 DIR_NAME="quecdeck"
 SERVICE_FILE="/lib/systemd/system/install_quecdeck.service"
@@ -64,11 +60,7 @@ cat <<EOF > "$TMP_SCRIPT"
 GITUSER="megakerw"
 REPONAME="QuecDeck"
 GITTREE="main"
-GITMAINTREE="main"
-GITDEVTREE="main"
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
-GITROOTMAIN="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITMAINTREE"
-GITROOTDEV="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITDEVTREE"
 
 QUECDECK_DIR="/usrdata/quecdeck"
 STAGE_DIR="\${QUECDECK_DIR}.new"
@@ -189,6 +181,8 @@ stage_release() {
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/connection_logger.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/watchcat.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/scheduled_restart.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/json-lib.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/cgi-lib.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/write_htpasswd.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/firewall.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/run_update.sh &
@@ -272,10 +266,7 @@ stage_release() {
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_login &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_logout &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_dev &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_modem_stats &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_device_info &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_device_sim &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_modem_conn &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_deviceinfo &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_settings &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_setting &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_network_info &
@@ -288,8 +279,7 @@ stage_release() {
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/delete_sms &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/user_atcommand &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_ping &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_uptime &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_system_stats &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_dashboard &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_watchcat_status &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_watchcat_stats &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/watchcat_maker &
@@ -300,7 +290,6 @@ stage_release() {
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_ippt_status &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_upnp_status &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/run_cell_scan &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/cgi-lib.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_service_status &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_scan_status &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_logs &
@@ -342,7 +331,10 @@ stage_release() {
 
     cd /
 
-    chmod +x \$STAGE_DIR/www/cgi-bin/*
+    # cgi.assign executes ANY file under cgi-bin, so keep it root-owned and not
+    # www-data-writable (755): a web-tier compromise can't drop/overwrite a CGI.
+    chown -R root:www-data \$STAGE_DIR/www/cgi-bin
+    chmod 755 \$STAGE_DIR/www/cgi-bin \$STAGE_DIR/www/cgi-bin/*
     chmod +x \$STAGE_DIR/script/*
     chmod +x \$STAGE_DIR/console/menu/*
     chmod +x \$STAGE_DIR/console/.profile

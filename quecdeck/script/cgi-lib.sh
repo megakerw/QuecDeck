@@ -1,6 +1,6 @@
 #!/bin/bash
 # Shared CGI helpers. Source this at the top of each CGI script:
-#   . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+#   . /usrdata/quecdeck/script/cgi-lib.sh
 
 # Reject cross-origin requests. Doubles as CSRF protection: browsers always send
 # the Origin header on cross-origin requests (including form POSTs), so a
@@ -144,10 +144,14 @@ _CACHE_MODEM_CONN="$_CACHE_DIR/modem_conn"
 
 # Returns 0 if cache file exists and is younger than ttl seconds.
 cache_is_fresh() {
-    local f="$1" ttl="$2" mtime age
+    local f="$1" ttl="$2" mtime age now
     [ -f "$f" ] || return 1
     mtime=$(stat -c %Y "$f" 2>/dev/null) || return 1
-    age=$(( $(date +%s) - mtime ))
+    # $EPOCHSECONDS (bash 5+) avoids a date(1) fork on the hot cache-hit path;
+    # falls back to date(1) on older bash where it's empty (else age goes
+    # negative and stale cache is served forever).
+    now=${EPOCHSECONDS:-$(date +%s)}
+    age=$(( now - mtime ))
     [ "$age" -lt "$ttl" ]
 }
 
@@ -232,6 +236,56 @@ cache_get_or_fetch() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# Snapshot resource definitions: one source of truth for each source's cache
+# key + AT command + TTL. Called by both the standalone read CGIs and the
+# bundled snapshots (get_dashboard, get_deviceinfo), so the two can't drift.
+# ---------------------------------------------------------------------------
+
+# Modem statistics: temperature, serving cell, CA info, signal, traffic
+# counters, SIM slot/status, operator. Cached 3 s under _CACHE_MODEM_ALL,
+# 2 s AT timeout.
+modem_stats_fetch() {
+    cache_get_or_fetch "$_CACHE_MODEM_ALL" 3 \
+        'AT+QTEMP;+QENG="servingcell";+QCAINFO;+CSQ;+QGDNRCNT?;+QGDCNT?;+QUIMSLOT?;+QSPN;+QSIMSTAT?' 2000
+}
+
+# Connection info: WWAN IP(s) and APN. Connection-dependent, so it may fail with
+# no active bearer; callers fall back gracefully. Cached 3 s, 2 s AT timeout.
+modem_conn_fetch() {
+    cache_get_or_fetch "$_CACHE_MODEM_CONN" 3 'AT+QMAP="WWANIP";+CGCONTRDP' 2000
+}
+
+# Device identity: manufacturer, model, firmware, IMEI, build time. Effectively
+# static, so cached 1 h under _CACHE_DEVICE_INFO.
+device_info_fetch() {
+    cache_get_or_fetch "$_CACHE_DEVICE_INFO" 3600 'AT+CGMI;+CGMM;+QGMR;+CGSN;+CVERSION'
+}
+
+# SIM identity: IMSI, ICCID, phone number. SIM-dependent, so it errors with no
+# SIM; callers handle absent fields gracefully. Cached 3 s (matching
+# modem_conn so the two short-lived batches refresh together), 2 s AT timeout.
+device_sim_fetch() {
+    cache_get_or_fetch "$_CACHE_DEVICE_SIM" 3 'AT+CIMI;+ICCID;+CNUM' 2000
+}
+
+# Host stats as JSON: load average, RAM, uptime. Reads /proc and `uptime`
+# directly (no AT). The uptime line has no " or \, so it's JSON-safe unescaped.
+# Emits the body only (no HTTP header), so callers control framing.
+system_stats_json() {
+    local load mem_total mem_available mem_used mem_total_mb mem_used_mb mem_percent up
+    load=$(cut -d' ' -f1 /proc/loadavg)
+    mem_total=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    mem_available=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+    mem_used=$((mem_total - mem_available))
+    mem_total_mb=$((mem_total / 1024))
+    mem_used_mb=$((mem_used / 1024))
+    mem_percent=$((mem_used * 100 / mem_total))
+    up=$(uptime)
+    printf '{"load_avg":%s,"mem_total_mb":%d,"mem_used_mb":%d,"mem_percent":%d,"uptime":"%s"}' \
+        "$load" "$mem_total_mb" "$mem_used_mb" "$mem_percent" "$up"
+}
+
 # Send an AT command to the modem via the queue daemon (if running) and return
 # the response on stdout with \r stripped. Falls back to atcli directly if the
 # daemon is not up. Blocks if the queue is full; returns empty on timeout.
@@ -245,7 +299,13 @@ _ATCMD_QUEUE_LIMIT=10
 atcmd_run() {
     local cmd="$1"
     local at_timeout="${2:-3000}"
-    local _id _resp _waited _queued _f _line _resp_data
+    local _id _resp _waited _queued _f _line _resp_data _to_secs
+
+    # Whole-second timeout for read/sleep loops, floored at 1: integer division
+    # of a sub-1000 ms timeout yields 0, and "read -t 0" returns immediately
+    # without reading instead of waiting.
+    _to_secs=$(( at_timeout / 1000 ))
+    [ "$_to_secs" -lt 1 ] && _to_secs=1
 
     if [ -p "$_ATCMD_NOTIFY" ]; then
         # Wait for a free slot in the queue.
@@ -258,7 +318,7 @@ atcmd_run() {
             [ "$_queued" -lt "$_ATCMD_QUEUE_LIMIT" ] && break
             sleep 1
             _waited=$((_waited + 1))
-            [ "$_waited" -ge "$(( at_timeout / 1000 ))" ] && return
+            [ "$_waited" -ge "$_to_secs" ] && return
         done
 
         _id="${$}_${SECONDS}_${RANDOM}"
@@ -282,7 +342,7 @@ atcmd_run() {
         # Block until the first line arrives (up to at_timeout converted to seconds).
         # All subsequent lines are already buffered at this point and drain
         # without delay.
-        if IFS= read -r -t "$(( at_timeout / 1000 ))" _line <&8; then
+        if IFS= read -r -t "$_to_secs" _line <&8; then
             _resp_data="$_line"
             case "$_line" in OK|ERROR|'+CME ERROR:'*|'+CMS ERROR:'*) : ;;
             *)

@@ -297,7 +297,7 @@ install_quecdeck_release() {
         echo -e "\e[1;31mGitHub API rate limit exceeded. Try again later.\e[0m"
         return 1
     fi
-    _tag=$(printf '%s' "$_api" | grep -o '"tag_name" *: *"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
+    _tag=$(printf '%s' "$_api" | grep -o '"tag_name" *: *"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
     if [ -z "$_tag" ]; then
         echo -e "\e[1;31mCould not determine latest release. Aborting.\e[0m"
         return 1

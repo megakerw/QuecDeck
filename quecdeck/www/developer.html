@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=21091ffa" />
-    <link rel="stylesheet" href="css/styles.css?v=21091ffa" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=33fa3a85" />
+    <link rel="stylesheet" href="css/styles.css?v=33fa3a85" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=21091ffa"></script>
-    <script src="js/utils.js?v=21091ffa"></script>
-    <script src="js/alpinejs.min.js?v=21091ffa" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=33fa3a85"></script>
+    <script src="js/utils.js?v=33fa3a85"></script>
+    <script src="js/alpinejs.min.js?v=33fa3a85" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="developerPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=21091ffa"></script>
+        <script src="js/nav.js?v=33fa3a85"></script>
 
         <!-- Developer unlock prompt, shown once status is known and dev is not yet unlocked -->
         <div class="row gy-3 mt-4 justify-content-center" x-show="devStatusLoaded && !devUnlocked">
@@ -181,7 +181,7 @@
                 <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <div>
                     <div class="fw-semibold">Status</div>
-                    <div class="text-muted small" x-text="ttydRunning ? 'Running — stop to free RAM when not in use.' : 'Stopped'"></div>
+                    <div class="text-muted small" x-text="ttydRunning ? 'Running. Stop to free RAM when not in use.' : 'Stopped'"></div>
                   </div>
                   <button
                     type="button"
@@ -217,7 +217,7 @@
 
       </div>
     </main>
-    <script src="js/dark-mode.js?v=21091ffa"></script>
-    <script src="js/developer.js?v=21091ffa"></script>
+    <script src="js/dark-mode.js?v=33fa3a85"></script>
+    <script src="js/developer.js?v=33fa3a85"></script>
   </body>
 </html>

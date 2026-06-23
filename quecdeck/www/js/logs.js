@@ -14,6 +14,15 @@ function logsPage() {
       return new Date(ts * 1000).toLocaleString([], { hour12: false });
     },
 
+    // Timestamps below come from the device's own clock, which may never
+    // have synced (e.g. no tower for NITZ/NTP). Flag anything implausibly
+    // old as a sign the clock isn't synced, so the UI can warn the user.
+    get clockUnsynced() {
+      const MIN_PLAUSIBLE_TS = 1700000000; // 2023-11-14, well before this feature existed
+      return [...this.connectionEvents, ...this.accessEvents, ...this.restartEvents]
+        .some((ev) => ev.ts && ev.ts < MIN_PLAUSIBLE_TS);
+    },
+
     connBadgeClass(type) {
       switch (type) {
         case 'connected':      return 'bg-success';
@@ -65,9 +74,9 @@ function logsPage() {
         case 'band_change':
           return (ev.mode || '') + ' | Cell: ' + ev.cell_id + ' | PCI: ' + ev.pci + ' | Band ' + ev.from + ' → ' + ev.to;
         case 'cell_scan_start':
-          return 'Cell scan started' + (ev.watchcat_paused ? ' — watchcat paused' : '');
+          return 'Cell scan started' + (ev.watchcat_paused ? ' (watchcat paused)' : '');
         case 'cell_scan_end':
-          return 'Cell scan complete' + (ev.watchcat_paused ? ' — watchcat resumed' : '');
+          return 'Cell scan complete' + (ev.watchcat_paused ? ' (watchcat resumed)' : '');
         default:
           return '';
       }

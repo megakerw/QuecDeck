@@ -39,18 +39,18 @@ function fetchDeviceInfo() {
     services: null,
     quecdeckVersion: '',
 
+    // Fetches the device-info snapshot and parses each section under its own
+    // try/catch; an empty section is passed through so its parser can handle
+    // absent fields (e.g. the no-SIM message).
     fetchATCommand() {
-      fetchText("/cgi-bin/get_device_info", { method: "POST" })
-        .then(data => this.parseDeviceData(data))
+      fetchText("/cgi-bin/get_deviceinfo", { method: "POST" })
+        .then(text => {
+          const s = parseEnvelope(text);
+          try { this.parseDeviceData(s.device_info || ""); } catch (e) { console.error("parseDeviceData:", e); }
+          try { this.parseSimData(s.device_sim || ""); } catch (e) { /* keep defaults */ }
+          try { this.parseConnData(s.modem_conn || ""); } catch (e) { /* keep defaults */ }
+        })
         .catch(() => this.$store.errorModal.open('Failed to load device information. Please refresh the page.'));
-
-      fetchText("/cgi-bin/get_device_sim", { method: "POST" })
-        .then(data => this.parseSimData(data))
-        .catch(() => {});
-
-      fetchText("/cgi-bin/get_modem_conn", { method: "POST" })
-        .then(data => this.parseConnData(data))
-        .catch(() => {});
     },
 
     parseDeviceData(atCommandResponse) {

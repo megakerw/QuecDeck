@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+. /usrdata/quecdeck/script/cgi-lib.sh
 cgi_check_cors
 cgi_require_post
 cgi_read_post
@@ -56,9 +56,9 @@ if [ "$ENABLED" = "enable" ]; then
     time_str=$(printf '%02d:%02d' "$HOUR" "$MINUTE")
 
     if [ "$TYPE" = "daily" ]; then
-        echo "Scheduled restart enabled — daily at ${time_str}."
+        echo "Scheduled restart enabled, daily at ${time_str}."
     else
-        echo "Scheduled restart enabled — every ${day_name} at ${time_str}."
+        echo "Scheduled restart enabled, every ${day_name} at ${time_str}."
     fi
 else
     /opt/bin/sudo /usrdata/quecdeck/script/remove_scheduled_restart.sh

@@ -75,11 +75,11 @@ Scan for nearby cells and display network, provider, band, frequency, PCI, and R
 - One-click utilities: reboot, onboard DNS IPv4/IPv6 proxy, IP Passthrough (IPPT), auto-connect (QMAPWAC), GNSS toggle, and SIM hot-swap detection
 
 ### Monitoring
-- **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics, consecutive failure tracking, and a persistent reboot history log
+- **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics, consecutive failure tracking, and a persistent reboot history log. If a reboot doesn't restore connectivity, Watchcat waits progressively longer before trying again instead of rebooting in a tight loop
 - **Scheduled Restart:** schedule daily or weekly reboots at a specified time
 
 ### SMS
-View, read, and delete SMS messages directly from the modem's inbox.
+View, read, and delete SMS messages directly from the modem's inbox, newest first.
 
 ### Device Information
 - **Device & SIM:** manufacturer, model, firmware version, build time, IMEI, phone number, IMSI, and ICCID

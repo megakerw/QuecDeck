@@ -1,7 +1,0 @@
-#!/bin/bash
-
-. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
-
-cgi_output_text
-
-uptime

@@ -2,6 +2,8 @@
 # Watchcat ping watchdog. Reads config from watchcat.json at startup.
 # Run as www-data by systemd; config is written by watchcat_maker CGI.
 
+. /usrdata/quecdeck/script/json-lib.sh
+
 CONFIG=/usrdata/quecdeck/var/watchcat.json
 REBOOT_STATE=/usrdata/quecdeck/var/watchcat_reboot_state.json
 MAX_REBOOT_INTERVAL=3600
@@ -12,13 +14,14 @@ if [ ! -s "$CONFIG" ]; then
 fi
 
 # Parse config
-_enabled=$(grep -o '"enabled"[^,}]*' "$CONFIG" | grep -o 'true\|false')
-TRACK_IPS=$(grep -o '"track_ips"[^]]*' "$CONFIG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | tr '\n' ' ')
-PING_INTERVAL=$(grep -o '"ping_interval"[^,}]*' "$CONFIG" | grep -o '[0-9]*$')
-PING_FAILURE_COUNT=$(grep -o '"ping_failure_count"[^,}]*' "$CONFIG" | grep -o '[0-9]*$')
-_sim=$(grep -o '"disable_on_no_sim"[^,}]*' "$CONFIG" | grep -o 'true\|false')
-_backoff=$(grep -o '"reboot_backoff"[^,}]*' "$CONFIG" | grep -o 'true\|false')
-_log=$(grep -o '"log_restarts"[^,}]*' "$CONFIG" | grep -o 'true\|false')
+_config_json=$(cat "$CONFIG")
+_enabled=$(json_get "$_config_json" enabled)
+TRACK_IPS=$(json_get "$_config_json" track_ips | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | tr '\n' ' ')
+PING_INTERVAL=$(json_get "$_config_json" ping_interval)
+PING_FAILURE_COUNT=$(json_get "$_config_json" ping_failure_count)
+_sim=$(json_get "$_config_json" disable_on_no_sim)
+_backoff=$(json_get "$_config_json" reboot_backoff)
+_log=$(json_get "$_config_json" log_restarts)
 [ "$_enabled" = "false" ] && { echo "watchcat: disabled in config, exiting." >&2; exit 0; }
 [ "$_sim" = "true" ] && DISABLE_ON_NO_SIM=1 || DISABLE_ON_NO_SIM=0
 [ "$_backoff" = "false" ] && REBOOT_BACKOFF=0 || REBOOT_BACKOFF=1
@@ -40,8 +43,18 @@ successes=0
 
 log_restart() {
     local reason="$1" detail="$2"
+    # json-lib.sh's parser can't handle embedded quotes/backslashes, and a raw
+    # newline would split this entry across lines in the JSONL file. Strip
+    # those here so every caller (current and future) gets safe JSON for free,
+    # rather than relying on each call site to escape its own free text.
+    reason=$(printf '%s' "$reason" | tr -d '"\\' | tr '\n\r' '  ')
+    detail=$(printf '%s' "$detail" | tr -d '"\\' | tr '\n\r' '  ')
     mkdir -p "$(dirname "$RESTART_LOG")"
-    printf '{"ts":%d,"reason":"%s","detail":"%s"}\n' "$(date +%s)" "$reason" "$detail" >> "$RESTART_LOG"
+    # Store uptime rather than a wall-clock timestamp: it's correct even if
+    # the device's clock has never synced (e.g. no tower for NITZ/NTP).
+    # get_restart_log converts this to an estimated wall-clock time at read
+    # time using the live clock, so display improves once the clock syncs.
+    printf '{"uptime":%d,"reason":"%s","detail":"%s"}\n' "$(get_uptime)" "$reason" "$detail" >> "$RESTART_LOG"
     local count
     count=$(wc -l < "$RESTART_LOG" 2>/dev/null || echo 0)
     if [ "$count" -gt 50 ]; then
@@ -49,24 +62,28 @@ log_restart() {
     fi
 }
 
+get_uptime() { awk '{print int($1)}' /proc/uptime; }
+
 # Read persistent reboot state
 reboot_count=0
-last_reboot=0
+last_reboot_uptime=0
 if [ "$REBOOT_BACKOFF" = "1" ] && [ -f "$REBOOT_STATE" ]; then
-    reboot_count=$(grep -o '"reboot_count":[0-9]*' "$REBOOT_STATE" | grep -o '[0-9]*$')
-    last_reboot=$(grep -o '"last_reboot":[0-9]*' "$REBOOT_STATE" | grep -o '[0-9]*$')
+    _reboot_state_json=$(cat "$REBOOT_STATE")
+    reboot_count=$(json_get "$_reboot_state_json" reboot_count)
+    last_reboot_uptime=$(json_get "$_reboot_state_json" last_reboot_uptime)
     [ -z "$reboot_count" ] && reboot_count=0
-    [ -z "$last_reboot" ]  && last_reboot=0
-    # If the clock has gone backwards (RTC not synced after reboot), anchor
-    # last_reboot to now so the backoff timer can still make forward progress.
-    # Don't write this correction back to flash; it self-corrects on each start.
-    now=$(date +%s)
-    [ "$last_reboot" -gt "$now" ] && last_reboot=$now
+    [ -z "$last_reboot_uptime" ] && last_reboot_uptime=0
+    # Uptime (unlike the wall clock) only resets to 0 on an actual reboot, so
+    # it can't be thrown off by NTP/NITZ never syncing (e.g. no tower signal).
+    # If the persisted value is ahead of current uptime, the state predates
+    # this boot; anchor it to now so the backoff timer counts from this boot.
+    now_uptime=$(get_uptime)
+    [ "$last_reboot_uptime" -gt "$now_uptime" ] && last_reboot_uptime=$now_uptime
 fi
 
 # Wait for the system to settle before starting to ping.
 # Skipped if the system has been up for more than 65 seconds (e.g. during install/update).
-uptime_secs=$(awk '{print int($1)}' /proc/uptime)
+uptime_secs=$(get_uptime)
 [ "$uptime_secs" -lt 65 ] && { sleep 65 & wait $!; }
 
 # Per-IP miss counters stored in temp files
@@ -110,18 +127,20 @@ write_stats() {
     done
     stats="$stats]"
 
-    # Report an absolute deadline rather than a remaining-seconds countdown:
-    # write_stats only runs once per ping cycle, so a relative "remaining"
-    # value goes stale between writes while the frontend polls far more
-    # often. An absolute timestamp lets the client compute remaining time
-    # against its own clock on every tick, independent of fetch timing.
-    backoff_until=0
+    # Report remaining seconds (derived from monotonic uptime) rather than an
+    # absolute deadline. An absolute wall-clock deadline would be wrong if the
+    # device's clock is unsynced (e.g. never registered on a tower for
+    # NITZ/NTP); the frontend ticks this value down locally using its own
+    # elapsed time, so neither clock's absolute correctness matters.
+    backoff_remaining=0
     if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ]; then
         min_wait=$(calc_min_wait)
-        backoff_until=$((last_reboot + min_wait))
+        elapsed=$(($(get_uptime) - last_reboot_uptime))
+        backoff_remaining=$((min_wait - elapsed))
+        [ "$backoff_remaining" -lt 0 ] && backoff_remaining=0
     fi
 
-    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"backoff_until\":$backoff_until}" > "$STATS_PATH"
+    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"backoff_remaining\":$backoff_remaining}" > "$STATS_PATH"
 }
 
 while :; do
@@ -146,8 +165,8 @@ while :; do
         successes=$((successes + 1))
         if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ] && [ "$successes" -ge "$PING_FAILURE_COUNT" ]; then
             reboot_count=0
-            last_reboot=0
-            printf '{"reboot_count":0,"last_reboot":0}\n' > "$REBOOT_STATE"
+            last_reboot_uptime=0
+            printf '{"reboot_count":0,"last_reboot_uptime":0}\n' > "$REBOOT_STATE"
         fi
     else
         failures=$((failures + 1))
@@ -161,8 +180,8 @@ while :; do
             should_reboot=1
             if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ]; then
                 min_wait=$(calc_min_wait)
-                now=$(date +%s)
-                elapsed=$((now - last_reboot))
+                now_uptime=$(get_uptime)
+                elapsed=$((now_uptime - last_reboot_uptime))
                 if [ "$elapsed" -lt "$min_wait" ]; then
                     should_reboot=0
                     failures=$PING_FAILURE_COUNT
@@ -172,7 +191,7 @@ while :; do
             if [ "$should_reboot" = "1" ]; then
                 if [ "$REBOOT_BACKOFF" = "1" ]; then
                     reboot_count=$((reboot_count + 1))
-                    printf '{"reboot_count":%d,"last_reboot":%d}\n' "$reboot_count" "$(date +%s)" > "$REBOOT_STATE"
+                    printf '{"reboot_count":%d,"last_reboot_uptime":%d}\n' "$reboot_count" "$(get_uptime)" > "$REBOOT_STATE"
                     _detail="$failures consecutive ping failures (reboot streak #$reboot_count)"
                 else
                     _detail="$failures consecutive ping failures"
@@ -180,7 +199,7 @@ while :; do
                 [ "$LOG_RESTARTS" = "1" ] && log_restart "watchcat" "$_detail"
                 sync
                 sleep 2
-                echo "$(date): $_detail"
+                echo "uptime $(get_uptime)s: $_detail"
                 /usrdata/quecdeck/atcli 'AT+CFUN=1,1' 2>/dev/null
                 exit 0
             fi

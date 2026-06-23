@@ -1,0 +1,23 @@
+#!/bin/bash
+# Device-info page snapshot: bundles the three AT batches the page loads at once
+# (device identity, SIM, connection) into ONE request, mirroring get_dashboard,
+# via the shared cgi-lib.sh helpers. Each batch stays a separate section/cache
+# so a SIM-absent or no-bearer failure can't poison the others.
+#
+# Delimiter-framed text envelope (a ===name=== marker per section) so raw AT
+# text needs no escaping. Helpers emit no trailing newline, so markers after
+# the first are prefixed with \n. Any section may be empty; parsers handle that.
+
+. /usrdata/quecdeck/script/cgi-lib.sh
+cgi_require_post
+
+cgi_output_text
+
+printf '===device_info===\n'
+device_info_fetch
+
+printf '\n===device_sim===\n'
+device_sim_fetch
+
+printf '\n===modem_conn===\n'
+modem_conn_fetch

@@ -10,9 +10,12 @@
 #        file and returns {"unlocked": true}.
 #
 # Brute-force protection: 5 failed attempts trigger a 15-minute lockout,
-# tracked via dev_fail_count and dev_lockout_until in the session file.
+# tracked per client IP under /tmp/quecdeck/dev_auth_failures (mirroring
+# auth_login). Per-session tracking would let an attacker who already holds
+# admin reset the counter by simply logging in again, since each login mints a
+# fresh session file.
 
-. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+. /usrdata/quecdeck/script/cgi-lib.sh
 
 # Extract session token from Cookie header.
 token=$(printf '%s' "${HTTP_COOKIE:-}" | tr ';' '\n' | sed 's/^ *//' | \
@@ -64,22 +67,34 @@ MAX_ATTEMPTS=5
 LOCKOUT_SECS=900
 now=$(date +%s)
 
-dev_lockout_until=$(grep '^dev_lockout_until=' "$SESSION_FILE" | cut -d= -f2)
-dev_fail_count=$(grep '^dev_fail_count=' "$SESSION_FILE" | cut -d= -f2)
-
-# Reject immediately if locked out.
-if [ -n "$dev_lockout_until" ] && [ "$dev_lockout_until" -gt "$now" ]; then
-    cgi_output_json
-    printf '{"unlocked":false,"error":"locked"}\n'
-    exit 0
-fi
-
 ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
 
 client_ip=$(printf '%s' "${REMOTE_ADDR:-unknown}" | tr -cd 'A-Fa-f0-9.:')
 [ -z "$client_ip" ] && client_ip="unknown"
 wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $1; exit}')
 [ -z "$wan_ip" ] && wan_ip=""
+
+# Brute-force protection: per client IP, mirroring auth_login. Tracking
+# failures in the session file would let an attacker who already holds admin
+# reset the counter by logging in again (each login mints a fresh session).
+FAILURE_DIR="/tmp/quecdeck/dev_auth_failures"
+mkdir -p "$FAILURE_DIR" && chmod 700 "$FAILURE_DIR"
+
+# Opportunistic cleanup: remove records older than 1 day (~1% of requests).
+# Lockouts last 15 minutes, so anything older than a day is guaranteed expired.
+[ $(( RANDOM % 100 )) -eq 0 ] && find "$FAILURE_DIR" -maxdepth 1 -type f -mtime +1 -delete 2>/dev/null
+failure_file="$FAILURE_DIR/${client_ip//:/_}"
+
+# Reject immediately if locked out.
+if [ -f "$failure_file" ]; then
+    lockout_until=$(grep '^lockout_until=' "$failure_file" | cut -d= -f2)
+    if [ -n "$lockout_until" ] && [ "$lockout_until" -gt "$now" ]; then
+        log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+        cgi_output_json
+        printf '{"unlocked":false,"error":"locked"}\n'
+        exit 0
+    fi
+fi
 
 _session_write() {
     local tmp="${SESSION_FILE}.tmp.$$"
@@ -95,21 +110,24 @@ _session_write() {
 }
 
 if validate_htpasswd "/opt/etc/.htpasswd_dev" "devadmin" "$password"; then
-    # Success: clear lockout state and mark session as dev-unlocked.
+    # Success: clear failure record and mark session as dev-unlocked.
+    rm -f "$failure_file"
     printf 'dev_unlocked=1\n' | _session_write
     log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_success\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
     cgi_output_json
     printf '{"unlocked":true}\n'
 else
     sleep 1
-    count=$(( ${dev_fail_count:-0} + 1 ))
+    count=0
+    [ -f "$failure_file" ] && count=$(grep '^count=' "$failure_file" | cut -d= -f2)
+    count=$(( ${count:-0} + 1 ))
     if [ "$count" -ge "$MAX_ATTEMPTS" ]; then
-        printf 'dev_fail_count=0\ndev_lockout_until=%s\n' "$(( now + LOCKOUT_SECS ))" | _session_write
+        printf 'count=0\nlockout_until=%s\n' "$(( now + LOCKOUT_SECS ))" > "$failure_file"
         log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
         cgi_output_json
         printf '{"unlocked":false,"error":"locked"}\n'
     else
-        printf 'dev_fail_count=%s\ndev_lockout_until=0\n' "$count" | _session_write
+        printf 'count=%s\nlockout_until=0\n' "$count" > "$failure_file"
         log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_failure\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
         cgi_output_json
         printf '{"unlocked":false,"error":"wrong"}\n'

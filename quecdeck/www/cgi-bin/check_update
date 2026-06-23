@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+. /usrdata/quecdeck/script/cgi-lib.sh
 cgi_check_cors
 cgi_output_json
 
@@ -21,7 +21,7 @@ if printf '%s' "$api_response" | grep -qi "rate limit"; then
     exit 0
 fi
 
-latest_tag=$(printf '%s' "$api_response" | grep -o '"tag_name" *: *"[^"]*"' | grep -o '"[^"]*"$' | tr -d '"')
+latest_tag=$(printf '%s' "$api_response" | grep -o '"tag_name" *: *"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
 if [ -z "$latest_tag" ]; then
     printf '{"error":"Could not parse release info","current":"%s"}\n' "$current"
     exit 0

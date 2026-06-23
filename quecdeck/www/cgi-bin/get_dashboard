@@ -1,0 +1,24 @@
+#!/bin/bash
+# Home-page snapshot: bundles the page's bounded-latency sources into ONE
+# response (one fork / round-trip) via the shared cgi-lib.sh helpers. Ping is
+# excluded - a slow external probe that would gate the snapshot; the frontend
+# polls it separately.
+#
+# Delimiter-framed text envelope (a ===name=== marker alone on a line per
+# section) so the raw AT sections need no JSON escaping. Helpers emit no
+# trailing newline, so markers after the first are prefixed with \n. Any
+# section may be empty (failed fetch); the client keeps prior values.
+
+. /usrdata/quecdeck/script/cgi-lib.sh
+cgi_require_post
+
+cgi_output_text
+
+printf '===modem_stats===\n'
+modem_stats_fetch
+
+printf '\n===modem_conn===\n'
+modem_conn_fetch
+
+printf '\n===system===\n'
+system_stats_json

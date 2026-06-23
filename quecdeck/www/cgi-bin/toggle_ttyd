@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+. /usrdata/quecdeck/script/cgi-lib.sh
 cgi_check_cors
 
 # GET (no body): return current ttyd running state.

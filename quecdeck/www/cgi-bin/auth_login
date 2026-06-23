@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+. /usrdata/quecdeck/script/cgi-lib.sh
 
 # Only accept POST. Redirect GET requests (e.g. iOS Safari BFCache restoring this URL) to home.
 # auth.lua will then forward valid sessions through or redirect to login if the session is expired.

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+. /usrdata/quecdeck/script/cgi-lib.sh
 cgi_check_cors
 cgi_require_post
 cgi_read_post
@@ -32,11 +32,11 @@ case "$action" in
         atcmd_run 'AT+QGPSEND' ;;
     ippt_enable)
         atcmd_run 'AT+QMAP="MPDN_rule",0,1,0,1,1,"FF:FF:FF:FF:FF:FF"' 15000
-        ( sleep 2; . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
+        ( sleep 2; . /usrdata/quecdeck/script/cgi-lib.sh; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
         disown $! ;;
     ippt_disable)
         atcmd_run 'AT+QMAP="MPDN_rule",0' 15000
-        ( sleep 2; . /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
+        ( sleep 2; . /usrdata/quecdeck/script/cgi-lib.sh; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
         disown $! ;;
     simdet_enable)
         atcmd_run 'AT+QSIMDET=0,1'

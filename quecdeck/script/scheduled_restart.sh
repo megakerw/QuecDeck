@@ -2,6 +2,8 @@
 # Scheduled restart. Reads config from scheduled_restart.json at startup.
 # Run as www-data by systemd; config is written by scheduled_restart_maker CGI.
 
+. /usrdata/quecdeck/script/json-lib.sh
+
 CONFIG=/usrdata/quecdeck/var/scheduled_restart.json
 
 if [ ! -s "$CONFIG" ]; then
@@ -10,11 +12,12 @@ if [ ! -s "$CONFIG" ]; then
 fi
 
 # Parse config
-_enabled=$(grep -o '"enabled"[^,}]*' "$CONFIG" | grep -o 'true\|false')
-RESTART_TYPE=$(grep -o '"type"[^,}]*' "$CONFIG" | grep -o 'daily\|weekly')
-RESTART_DAY=$(grep -o '"day"[^,}]*' "$CONFIG" | grep -o '[0-9]*$')
-RESTART_HOUR=$(grep -o '"hour"[^,}]*' "$CONFIG" | grep -o '[0-9]*$')
-RESTART_MINUTE=$(grep -o '"minute"[^,}]*' "$CONFIG" | grep -o '[0-9]*$')
+_config_json=$(cat "$CONFIG")
+_enabled=$(json_get "$_config_json" enabled)
+RESTART_TYPE=$(json_get "$_config_json" type)
+RESTART_DAY=$(json_get "$_config_json" day)
+RESTART_HOUR=$(json_get "$_config_json" hour)
+RESTART_MINUTE=$(json_get "$_config_json" minute)
 [ "$_enabled" = "false" ] && { echo "scheduled_restart: disabled in config, exiting." >&2; exit 0; }
 
 # Validate

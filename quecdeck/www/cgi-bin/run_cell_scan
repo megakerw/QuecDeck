@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. /usrdata/quecdeck/www/cgi-bin/cgi-lib.sh
+. /usrdata/quecdeck/script/cgi-lib.sh
 cgi_check_cors
 cgi_require_post
 cgi_read_post
@@ -11,6 +11,24 @@ case "$scan_mode" in
     1|2|3) ;;
     *) scan_mode=3 ;;
 esac
+
+# Serialize scans. A concurrent scan that stops/starts watchcat or clears the
+# qscan.active flag out from under this one can leave watchcat running mid-scan
+# (risking a reboot) or stopped indefinitely. Hold an exclusive lock for the
+# whole scan so a second invocation is rejected rather than interleaving. The
+# kernel releases an flock when the holding process dies (even on SIGKILL), so
+# a crashed scan can't wedge the lock. Degrade to no guard if flock is missing
+# rather than blocking scans entirely.
+mkdir -p /tmp/quecdeck
+if command -v flock >/dev/null 2>&1; then
+    exec 9>/tmp/quecdeck/qscan.lock
+    if ! flock -n 9; then
+        printf 'Status: 409 Conflict\r\n'
+        cgi_output_text
+        echo "ERROR: A cell scan is already in progress."
+        exit 0
+    fi
+fi
 
 cgi_output_text
 

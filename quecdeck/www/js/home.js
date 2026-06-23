@@ -37,8 +37,7 @@ function processAllInfos() {
   return {
     isFetching: false,
     isPinging: false,
-    isUpTimeFetching: false,
-    isStatsFetching: false,
+    _lastPing: 0,
     internetConnectionStatus: "Unknown",
     temperature: "0",
     simStatus: "No SIM",
@@ -101,13 +100,9 @@ function processAllInfos() {
     downloadStat: "0",
     uploadStat: "0",
 
-    fetchModemInfo() {
-      if (this.isFetching) return;
-      this.isFetching = true;
-
-      fetchWithTimeout(authFetch, "/cgi-bin/get_modem_stats", 5000, { method: "POST" }).then(r => r.text()).then((data) => {
-        const lines = data.split("\n");
-
+    // Pure parser: applies the modem_stats AT response (already split into
+    // lines) to component state. Called by fetchDashboard; never fetches.
+    applyModemStats(lines) {
             // Cache repeated line lookups
             const servingcell_line = lines.find((l) => l.includes('+QENG: "servingcell"'));
             const lte_line = lines.find((l) => l.includes('+QENG: "LTE"'));
@@ -160,20 +155,13 @@ function processAllInfos() {
                 ?.split(",")[1]
                 ?.replace(/"/g, "");
 
-              try {
-                // +QENG: "NR5G-NSA",515,03,843,-95,20,-11,528030,41,8,1
-                nr5g_nsa_line
-                  .split(",")[0]
-                  .replace("+QENG: ", "")
-                  .replace(/"/g, "");
-
+              // +QENG: "NR5G-NSA",515,03,843,-95,20,-11,528030,41,8,1
+              if (nr5g_nsa_line) {
                 this.networkMode = "5G NSA";
-              } catch (error) {
-                if (duplex_mode_lte === "FDD") {
-                  this.networkMode = "4G LTE FDD";
-                } else if (duplex_mode_lte === "TDD") {
-                  this.networkMode = "4G LTE TDD";
-                }
+              } else if (duplex_mode_lte === "FDD") {
+                this.networkMode = "4G LTE FDD";
+              } else if (duplex_mode_lte === "TDD") {
+                this.networkMode = "4G LTE TDD";
               }
             }
 
@@ -464,19 +452,14 @@ function processAllInfos() {
 
             // --- MCCMNC ---
             this.mccmnc = qspn_line?.split(",")[4]?.replace(/"/g, "") || "00000";
+    },
 
-            authFetch("/cgi-bin/get_modem_conn", { method: "POST" }).then(r => r.text()).then(connData => {
-              const connLines = connData.split("\n");
-              this.apn  = connLines.find(l => l.includes("+CGCONTRDP:"))?.split(",")[2]?.replace(/"/g, "") || "Unknown";
-              this.ipv4 = cleanIp(connLines.find(l => l.includes("IPV4"))?.split(",")[4]?.replace(/"/g, ""));
-              this.ipv6 = cleanIp(connLines.find(l => l.includes("IPV6"))?.split(",")[4]?.replace(/"/g, ""));
-            }).catch(() => {});
-
-      }).catch((error) => {
-        if (error.name !== 'AbortError') console.error("fetchModemInfo error:", error);
-      }).finally(() => {
-        this.isFetching = false;
-      });
+    // Pure parser: applies the modem_conn AT response (already split into
+    // lines) to APN/IP state. Called by fetchDashboard.
+    applyModemConn(connLines) {
+      this.apn  = connLines.find(l => l.includes("+CGCONTRDP:"))?.split(",")[2]?.replace(/"/g, "") || "Unknown";
+      this.ipv4 = cleanIp(connLines.find(l => l.includes("IPV4"))?.split(",")[4]?.replace(/"/g, ""));
+      this.ipv6 = cleanIp(connLines.find(l => l.includes("IPV6"))?.split(",")[4]?.replace(/"/g, ""));
     },
 
     bytesToSize(bytes) {
@@ -617,18 +600,6 @@ function processAllInfos() {
       return parts.length > 0 ? parts.join(", ") : "Unknown Time";
     },
 
-    fetchUpTime() {
-      if (this.isUpTimeFetching) return;
-      this.isUpTimeFetching = true;
-      fetchWithTimeout(fetchText, "/cgi-bin/get_uptime", 4000)
-        .then((data) => {
-          // Example: 01:17:02 up 3 days,  2:41,  load average: 0.65, 0.66, 0.60
-          this.uptime = this.formatUptime(data);
-        })
-        .catch(() => {})
-        .finally(() => { this.isUpTimeFetching = false; });
-    },
-
     updateRefreshRate() {
       if (this.newRefreshRate < 3) {
         this.newRefreshRate = 3;
@@ -646,65 +617,68 @@ function processAllInfos() {
       this.init();
     },
 
-    fetchSystemStats() {
-      if (this.isStatsFetching) return;
-      this.isStatsFetching = true;
-      fetchWithTimeout(fetchJSON, "/cgi-bin/get_system_stats", 4000)
-        .then((data) => {
-          this.cpuLoad = data.load_avg;
-          this.ramPercent = data.mem_percent;
-          this.ramUsed = data.mem_used_mb;
-          this.ramTotal = data.mem_total_mb;
-        })
-        .catch(() => {})
-        .finally(() => { this.isStatsFetching = false; });
+    // Pure parser: applies the parsed system-stats JSON object (load, RAM,
+    // uptime) to state. Called by fetchDashboard.
+    applySystem(data) {
+      this.cpuLoad = data.load_avg;
+      this.ramPercent = data.mem_percent;
+      this.ramUsed = data.mem_used_mb;
+      this.ramTotal = data.mem_total_mb;
+      // Example: 01:17:02 up 3 days,  2:41,  load average: 0.65, 0.66, 0.60
+      if (data.uptime) this.uptime = this.formatUptime(data.uptime);
     },
 
-    init() {
-      this.fetchUpTime();
-
-      const storedRefreshRate = localStorage.getItem("refreshRate");
-      this.refreshRate = Math.max(3, parseInt(storedRefreshRate) || 3);
-
-      this.fetchModemInfo();
-      this.fetchSystemStats();
-
-      this.requestPing()
-        .then((data) => {
-          if (data === null) return;
-          if (data.trim() === "OK") {
-            this.internetConnectionStatus = "Connected";
-          } else {
-            this.internetConnectionStatus = "Disconnected";
-          }
+    // Fetches the dashboard snapshot and applies each section under its own
+    // try/catch, so a bad or empty section leaves the others intact.
+    fetchDashboard() {
+      if (this.isFetching) return Promise.resolve();
+      this.isFetching = true;
+      return fetchWithTimeout(authFetch, "/cgi-bin/get_dashboard", 5000, { method: "POST" })
+        .then(r => r.text())
+        .then((text) => {
+          const s = parseEnvelope(text);
+          if (s.modem_stats) { try { this.applyModemStats(s.modem_stats.split("\n")); } catch (e) { console.error("applyModemStats:", e); } }
+          if (s.modem_conn)  { try { this.applyModemConn(s.modem_conn.split("\n")); } catch (e) { /* keep prior values */ } }
+          if (s.system)      { try { this.applySystem(JSON.parse(s.system)); } catch (e) { /* keep prior values */ } }
         })
         .catch((error) => {
-          console.error("Error:", error);
-          this.internetConnectionStatus = "Unknown";
-        });
+          if (error.name !== 'AbortError') console.error("fetchDashboard error:", error);
+        })
+        .finally(() => { this.isFetching = false; });
+    },
 
-      this.lastUpdate = new Date().toLocaleString([], { hour12: false });
+    // One full refresh cycle: the bundled snapshot plus a time-gated ping.
+    // Called once on init and then on every refresh interval.
+    pollOnce() {
+      this.fetchDashboard();
 
-      this.intervalId = setInterval(() => {
-        this.fetchUpTime();
-        this.fetchModemInfo();
-        this.fetchSystemStats();
-
+      // Ping is a slow external probe and connectivity changes slowly, so it
+      // runs on its own ~15s cadence rather than on every (possibly 3s) tick.
+      if (Date.now() - this._lastPing >= 15000) {
+        this._lastPing = Date.now();
         this.requestPing()
           .then((data) => {
             if (data === null) return;
-            if (data.trim() === "OK") {
-              this.internetConnectionStatus = "Connected";
-            } else {
-              this.internetConnectionStatus = "Disconnected";
-            }
+            this.internetConnectionStatus =
+              data.trim() === "OK" ? "Connected" : "Disconnected";
           })
           .catch((error) => {
             console.error("Error:", error);
             this.internetConnectionStatus = "Unknown";
           });
+      }
 
-        this.lastUpdate = new Date().toLocaleString([], { hour12: false });
+      this.lastUpdate = new Date().toLocaleString([], { hour12: false });
+    },
+
+    init() {
+      const storedRefreshRate = localStorage.getItem("refreshRate");
+      this.refreshRate = Math.max(3, parseInt(storedRefreshRate) || 3);
+
+      this.pollOnce();
+
+      this.intervalId = setInterval(() => {
+        this.pollOnce();
       }, this.refreshRate * 1000);
 
       // Re-registering on every init() call caused duplicate/lost listeners
@@ -723,8 +697,6 @@ function processAllInfos() {
             this.intervalId = null;
             this.isFetching = false;
             this.isPinging = false;
-            this.isUpTimeFetching = false;
-            this.isStatsFetching = false;
             this.init();
           }
         });
