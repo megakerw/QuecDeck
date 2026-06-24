@@ -116,9 +116,10 @@ if requires_dev_unlocked and sess.dev_unlocked ~= "1" then
     return 403
 end
 
--- Refresh last_access timestamp.
--- Write to a temp file and chmod before renaming so the session file is never
--- transiently world-readable between open() and a post-hoc chmod call.
+-- Refresh last_access via an atomic temp-file + rename. No per-file chmod is
+-- needed: the sessions dir is 0700 (auth_login creates it with umask 077), so
+-- no other user can traverse into it and the temp file's mode is irrelevant.
+-- This drops a shell-fork (os.execute) from every authenticated request.
 local tmp = sf .. ".new"
 local wf = io.open(tmp, "w")
 if wf then
@@ -130,7 +131,6 @@ if wf then
     if sess.dev_fail_count    then wf:write("dev_fail_count="    .. sess.dev_fail_count    .. "\n") end
     if sess.dev_lockout_until then wf:write("dev_lockout_until=" .. sess.dev_lockout_until .. "\n") end
     wf:close()
-    os.execute("chmod 600 " .. tmp)
     os.rename(tmp, sf)
 end
 
