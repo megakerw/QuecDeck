@@ -22,36 +22,6 @@ display_red() {
 
 # Menus
 
-toolkit_menu() {
-    while true; do
-        display_random_color "Run the Toolkit"
-        display_green "Select an option:"
-        echo "------------------"
-        display_green "1. Get and run the Toolkit"
-        display_random_color "2. Exit (Enter Root Shell)"
-        echo
-        read -p "Select an option (1-2): " option
-
-        case "$option" in
-            1)
-                echo ""
-                display_red "WARNING: Running the installer from the web console (ttyd) is risky."
-                display_red "The update stops and restarts lighttpd, which will kill this session."
-                display_red "If the download fails mid-install, QuecDeck may be left broken."
-                display_red "Use ADB or SSH instead whenever possible."
-                echo ""
-                read -p "Continue anyway? (y/n): " confirm
-                case "$confirm" in
-                    y|Y) cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDeck/main/quecdeck.sh && chmod +x quecdeck.sh && ./quecdeck.sh && cd / ;;
-                    *) display_green "Cancelled." ;;
-                esac
-                ;;
-            2) break ;;
-            *) echo "Invalid option. Please try again." ;;
-        esac
-    done
-}
-
 apps_menu() {
     while true; do
         display_random_color "Run a modem App"
@@ -104,16 +74,14 @@ main_menu() {
         echo "------------------"
         display_random_color "1. Apps"
         display_random_color "2. Password Management"
-        display_random_color "3. Toolkit"
-        display_random_color "4. Exit (Enter Root Shell)"
+        display_random_color "3. Exit (Enter Root Shell)"
         echo
-        read -p "Select an option (1-4): " option
+        read -p "Select an option (1-3): " option
 
         case "$option" in
             1) apps_menu ;;
             2) settings_menu ;;
-            3) toolkit_menu ;;
-            4) break ;;
+            3) break ;;
             *) echo "Invalid option. Please try again." ;;
         esac
     done

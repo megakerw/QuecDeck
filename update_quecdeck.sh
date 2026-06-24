@@ -837,17 +837,22 @@ touch "$LOG_FILE"
 # The web path redirects our stdout to a file already, so this stays off there.
 _tail_pid=""
 if [ -t 1 ]; then
-    tail -n +1 -f "$LOG_FILE" &
+    tail -n +1 -f "$LOG_FILE" 2>/dev/null &
     _tail_pid=$!
 fi
 systemctl start $SERVICE_NAME
 _start_rc=$?
+# The install writes its summary as the final step. Give the background tail a
+# moment to flush those last lines before we stop it, otherwise the summary gets
+# cut off (tail polls ~1s; a short settle is a safe margin). The summary is thus
+# shown live, so the terminal path below does not reprint it.
+[ -n "$_tail_pid" ] && sleep 2
 [ -n "$_tail_pid" ] && { kill "$_tail_pid" 2>/dev/null; wait "$_tail_pid" 2>/dev/null; }
 [ "$_start_rc" -ne 0 ] && { echo -e "\e[1;31mFailed to start install service. Check 'systemctl status $SERVICE_NAME' for details.\e[0m"; exit 1; }
 if [ -f "$LOG_FILE" ]; then
     if grep -q "Install Summary" "$LOG_FILE"; then
         if [ -t 1 ]; then
-            # Already streamed live via tail above; no need to reprint it.
+            # Summary already streamed live above; don't reprint (avoids a double).
             echo -e "\e[1;32mQuecDeck installed.\e[0m"
         else
             echo -e "\e[1;32mQuecDeck installed.\e[0m"
