@@ -17,10 +17,13 @@
         <div id="nav-placeholder"></div>
         <script src="js/nav.js?v=95826c42"></script>
 
-        <div class="row gy-3 mt-4 mb-4 align-items-stretch">
-          <div class="col-12 col-md-6">
+        <div class="row gy-3 mt-4 mb-4 justify-content-center">
+          <div class="col-12 col-md-8 col-lg-6">
             <div class="panel-section" style="position:relative">
-              <div class="panel-title">Software Update</div>
+              <div class="panel-title d-flex align-items-center gap-2">
+                Software Update
+                <span x-show="checking" class="spinner-border spinner-border-sm text-secondary" role="status" aria-label="Loading" x-cloak></span>
+              </div>
 
               <!-- Idle / checked states -->
               <div x-show="!updating && !done && !failed">
@@ -30,16 +33,18 @@
 
                 <div class="mb-4">
                   <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
-                  <div class="text-muted small" x-text="currentVersion"></div>
+                  <div class="text-muted small" x-text="currentVersion || '…'"></div>
                 </div>
 
-                <div class="mb-4" x-show="checked">
+                <!-- Rendered unconditionally so the panel height is stable; only
+                     the text swaps once the check completes (avoids layout shift). -->
+                <div class="mb-4">
                   <div class="fw-semibold mb-1" style="font-size:0.875rem">Latest version</div>
-                  <div class="text-muted small" x-text="latestVersion"></div>
+                  <div class="text-muted small" x-text="checked ? latestVersion : (checkError ? '-' : 'Checking…')"></div>
                   <a x-show="updateAvailable && latestTag" :href="'https://github.com/megakerw/QuecDeck/releases/tag/' + latestTag" target="_blank" rel="noopener" class="small text-muted">Release notes</a>
                 </div>
 
-                <div class="text-muted small mb-4" x-show="checkedAt" x-text="'Last checked: ' + checkedAt"></div>
+                <div class="text-muted small mb-4" x-text="checkedAt ? 'Last checked: ' + checkedAt : 'Last checked: …'"></div>
 
                 <div class="d-flex gap-2">
                   <button class="btn btn-primary btn-sm" :disabled="checking" @click="checkForUpdates()"
@@ -62,7 +67,7 @@
                 </div>
                 <div class="mb-4">
                   <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
-                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logbox"
+                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);min-height:240px;max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logbox"
                     x-text="log || 'Starting…'"></div>
                 </div>
                 <div class="d-flex align-items-center gap-2 text-muted small">
@@ -82,7 +87,7 @@
                 </div>
                 <div class="mb-4">
                   <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
-                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logboxDone"
+                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);min-height:240px;max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logboxDone"
                     x-text="log"></div>
                 </div>
                 <div class="text-success small mt-1 mb-3">Update complete.</div>
@@ -101,7 +106,7 @@
                 </div>
                 <div class="mb-4">
                   <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
-                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logboxFailed"
+                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);min-height:240px;max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logboxFailed"
                     x-text="log"></div>
                 </div>
                 <div x-show="rollback === 'ok'" class="text-warning small mt-1 mb-3">Update failed. Previous version has been restored.</div>
