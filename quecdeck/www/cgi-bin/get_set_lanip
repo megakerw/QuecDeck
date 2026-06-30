@@ -7,16 +7,6 @@ cgi_output_json
 
 CONFIG_FILE="/etc/data/mobileap_cfg.xml"
 
-# Validate format and octet range (0-255)
-validate_ip() {
-    echo "$1" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
-    o1=$(echo "$1" | cut -d'.' -f1)
-    o2=$(echo "$1" | cut -d'.' -f2)
-    o3=$(echo "$1" | cut -d'.' -f3)
-    o4=$(echo "$1" | cut -d'.' -f4)
-    [ "$o1" -le 255 ] && [ "$o2" -le 255 ] && [ "$o3" -le 255 ] && [ "$o4" -le 255 ]
-}
-
 if [ "$REQUEST_METHOD" = "POST" ]; then
     cgi_read_post
     new_lan_ip=$(get_post_param lan_ip)
@@ -24,7 +14,7 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
     new_end=$(get_post_param dhcp_end)
 
     # Format and octet range
-    if ! validate_ip "$new_lan_ip" || ! validate_ip "$new_start" || ! validate_ip "$new_end"; then
+    if ! valid_ipv4 "$new_lan_ip" || ! valid_ipv4 "$new_start" || ! valid_ipv4 "$new_end"; then
         echo '{"ok": false, "error": "Invalid IP address format"}'
         exit 0
     fi

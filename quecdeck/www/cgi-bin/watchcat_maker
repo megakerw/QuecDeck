@@ -17,8 +17,7 @@ TRACK_IPS_COLON=""
 for i in 1 2 3 4 5; do
     ip=$(get_post_param "TRACK_IP_${i}")
     if [ -n "$ip" ]; then
-        if [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && \
-           { IFS='.' read -r o1 o2 o3 o4 <<< "$ip"; [ "$o1" -le 255 ] && [ "$o2" -le 255 ] && [ "$o3" -le 255 ] && [ "$o4" -le 255 ]; }; then
+        if valid_ipv4 "$ip"; then
             [ -n "$TRACK_IPS_COLON" ] && TRACK_IPS_COLON="${TRACK_IPS_COLON}:${ip}" || TRACK_IPS_COLON="$ip"
         else
             cgi_error "Invalid IP address: $ip"
@@ -77,17 +76,14 @@ for ip in $ips_space; do
 done
 ips_json="$ips_json]"
 
-sim_val=$([ "$DISABLE_ON_NO_SIM" = "1" ] && echo "true" || echo "false")
-backoff_val=$([ "$REBOOT_BACKOFF" = "1" ] && echo "true" || echo "false")
-log_val=$([ "$LOG_RESTARTS" = "1" ] && echo "true" || echo "false")
-enabled_val=$([ "$WATCHCAT_ENABLED" = "enable" ] && echo "true" || echo "false")
+sim_val=$(json_bool "$DISABLE_ON_NO_SIM" 1)
+backoff_val=$(json_bool "$REBOOT_BACKOFF" 1)
+log_val=$(json_bool "$LOG_RESTARTS" 1)
+enabled_val=$(json_bool "$WATCHCAT_ENABLED" enable)
 
 # Write config JSON atomically. The static watchcat.sh in script/ reads this at startup
-tmp=$(mktemp /usrdata/quecdeck/var/watchcat.json.XXXXXX)
-echo "{\"enabled\": $enabled_val, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}" > "$tmp" \
-    && mv "$tmp" /usrdata/quecdeck/var/watchcat.json \
-    || { rm -f "$tmp"; cgi_error "Failed to write watchcat config."; }
-chmod 640 /usrdata/quecdeck/var/watchcat.json
+write_json_config /usrdata/quecdeck/var/watchcat.json \
+    "{\"enabled\": $enabled_val, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}"
 
 if [ "$WATCHCAT_ENABLED" = "enable" ]; then
     # Enable and restart watchcat service (systemd ops need root)

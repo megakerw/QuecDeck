@@ -85,6 +85,33 @@ cgi_error() {
     exit 1
 }
 
+# Returns 0 if <ip> is a syntactically valid IPv4 address (four 0-255 octets).
+# Usage: valid_ipv4 "$ip" || cgi_error "Invalid IP"
+valid_ipv4() {
+    echo "$1" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+    local o1 o2 o3 o4
+    o1=$(echo "$1" | cut -d. -f1); o2=$(echo "$1" | cut -d. -f2)
+    o3=$(echo "$1" | cut -d. -f3); o4=$(echo "$1" | cut -d. -f4)
+    [ "$o1" -le 255 ] && [ "$o2" -le 255 ] && [ "$o3" -le 255 ] && [ "$o4" -le 255 ]
+}
+
+# Echo "true" if <value> equals <match>, else "false", for building JSON from
+# form fields. Usage: enabled=$(json_bool "$ENABLED" enable)
+json_bool() {
+    [ "$1" = "$2" ] && echo "true" || echo "false"
+}
+
+# Atomically write <json> to <path> (temp file + rename) and chmod 640.
+# On failure, calls cgi_error (which exits). Used by the config-maker CGIs.
+# Usage: write_json_config /usrdata/quecdeck/var/foo.json "$json"
+write_json_config() {
+    local path="$1" json="$2" tmp
+    tmp=$(mktemp "${path}.XXXXXX") || cgi_error "Failed to write config."
+    printf '%s\n' "$json" > "$tmp" && mv "$tmp" "$path" \
+        || { rm -f "$tmp"; cgi_error "Failed to write config."; }
+    chmod 640 "$path"
+}
+
 # Verify a password against an htpasswd file (SHA-512 crypt format).
 # Usage: validate_htpasswd <htpasswd_file> <username> <password>
 validate_htpasswd() {

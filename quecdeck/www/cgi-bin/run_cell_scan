@@ -52,7 +52,7 @@ if /opt/bin/sudo /bin/systemctl is-active watchcat > /dev/null 2>&1; then
     /opt/bin/sudo /bin/systemctl stop watchcat 2>/dev/null
 fi
 
-log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_start\",\"watchcat_paused\":$([ "$watchcat_was_running" = "1" ] && echo true || echo false)}"
+log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_start\",\"watchcat_paused\":$(json_bool "$watchcat_was_running" 1)}"
 
 # Signal to cache_get_or_fetch that the modem is busy. CGIs will serve
 # existing cached data rather than attempting live AT commands.
@@ -62,7 +62,7 @@ touch /tmp/quecdeck/qscan.active
 # restart watchcat if it was running before the scan.
 scan_tmp=$(mktemp)
 _scan_exit() {
-    log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_end\",\"watchcat_paused\":$([ "$watchcat_was_running" = "1" ] && echo true || echo false)}"
+    log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_end\",\"watchcat_paused\":$(json_bool "$watchcat_was_running" 1)}"
     rm -f "$scan_tmp" /tmp/quecdeck/qscan.active
     # Invalidate all caches. AT+QSCAN drops the cellular connection, causing the
     # modem to emit registration URCs on reconnect that can mix into subsequent AT
