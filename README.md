@@ -136,7 +136,7 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 - All CGI endpoints validate the `Origin` header against the current host, blocking cross-origin requests and functioning as CSRF protection
 - All state-changing endpoints are POST-only
 - Login attempts are rate-limited with a 1-second delay per attempt and a 15-minute lockout after 5 failures; all login events are written to the access log
-- Session tokens are 64-character random strings stored in a `chmod 700` directory; cookies are flagged `HttpOnly`, `Secure`, and `SameSite=Strict`; session file writes use `flock` to prevent race conditions
+- Session tokens are 64-character random strings stored in a `chmod 700` directory; cookies are flagged `HttpOnly`, `Secure`, and `SameSite=Strict`; session file writes are atomic (temp file plus rename), and the developer-unlock flag is kept in a separate per-session file to avoid write races
 - Passwords must be at least 8 characters and are validated before any credential check is performed
 
 **Data at rest:** the AT response cache, session directory, and log directory are all `chmod 700`. Pre-start scripts and anything running with elevated access are `chmod 700 root:root`.
