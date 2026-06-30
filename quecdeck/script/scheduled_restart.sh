@@ -12,13 +12,13 @@ if [ ! -s "$CONFIG" ]; then
 fi
 
 # Parse config
-_config_json=$(cat "$CONFIG")
-_enabled=$(json_get "$_config_json" enabled)
-RESTART_TYPE=$(json_get "$_config_json" type)
-RESTART_DAY=$(json_get "$_config_json" day)
-RESTART_HOUR=$(json_get "$_config_json" hour)
-RESTART_MINUTE=$(json_get "$_config_json" minute)
-[ "$_enabled" = "false" ] && { echo "scheduled_restart: disabled in config, exiting." >&2; exit 0; }
+config_json=$(cat "$CONFIG")
+enabled=$(json_get "$config_json" enabled)
+RESTART_TYPE=$(json_get "$config_json" type)
+RESTART_DAY=$(json_get "$config_json" day)
+RESTART_HOUR=$(json_get "$config_json" hour)
+RESTART_MINUTE=$(json_get "$config_json" minute)
+[ "$enabled" = "false" ] && { echo "scheduled_restart: disabled in config, exiting." >&2; exit 0; }
 
 # Validate
 case "$RESTART_TYPE" in

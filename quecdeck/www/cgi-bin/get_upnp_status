@@ -1,7 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 
-echo "Content-type: application/json"
-echo ""
+. /usrdata/quecdeck/script/cgi-lib.sh
+cgi_check_cors
+cgi_output_json
 
 CONFIG_FILE="/etc/data/mobileap_cfg.xml"
 

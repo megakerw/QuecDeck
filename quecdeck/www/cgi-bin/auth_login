@@ -18,22 +18,10 @@ password=$(get_post_param "password")
 ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
 json_error() { printf 'Status: 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n\r\n{"ok":false,"error":"%s"}' "$1"; }
 
-# Brute-force protection: 5 attempts, then 15-minute lockout per IP
+# Brute-force protection (5 attempts, 15-min lockout per IP) lives in cgi-lib.
 FAILURE_DIR="/tmp/quecdeck/auth_failures"
-mkdir -p "$FAILURE_DIR" && chmod 700 "$FAILURE_DIR"
-
-# Opportunistic cleanup: remove failure records older than 1 day (~1% of requests).
-# Lockouts last 15 minutes, so any record older than a day is guaranteed expired.
-[ $(( RANDOM % 100 )) -eq 0 ] && find "$FAILURE_DIR" -maxdepth 1 -type f -mtime +1 -delete 2>/dev/null
-MAX_ATTEMPTS=5
-LOCKOUT_SECS=900
-
-client_ip=$(printf '%s' "${REMOTE_ADDR:-unknown}" | tr -cd 'A-Fa-f0-9.:')
-[ -z "$client_ip" ] && client_ip="unknown"
-failure_file="$FAILURE_DIR/${client_ip//:/_}"
-wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $1; exit}')
-[ -z "$wan_ip" ] && wan_ip=""
-
+client_ip=$(cgi_client_ip)
+wan_ip=$(cgi_wan_ip)
 now=$(date +%s)
 
 # Validate username and password before any lockout check or logging.
@@ -47,12 +35,9 @@ if [ -z "$password" ] || [ "${#password}" -gt 256 ]; then
 fi
 
 # Reject immediately if locked out
-if [ -f "$failure_file" ]; then
-    lockout_until=$(grep '^lockout_until=' "$failure_file" | cut -d= -f2)
-    if [ -n "$lockout_until" ] && [ "$lockout_until" -gt "$now" ]; then
-        log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
-        json_error "locked"; exit 0
-    fi
+if bf_locked "$FAILURE_DIR" "$client_ip"; then
+    log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+    json_error "locked"; exit 0
 fi
 
 # Check credentials against admin htpasswd
@@ -62,22 +47,10 @@ if validate_htpasswd "/opt/etc/.htpasswd" "$username" "$password"; then
 fi
 
 if [ -z "$role" ]; then
-    sleep 1    # per-attempt delay
-
-    # Increment failure count
-    count=0
-    if [ -f "$failure_file" ]; then
-        count=$(grep '^count=' "$failure_file" | cut -d= -f2)
-    fi
-    count=$(( ${count:-0} + 1 ))
-
-    if [ "$count" -ge "$MAX_ATTEMPTS" ]; then
-        lockout_until=$(( now + LOCKOUT_SECS ))
-        printf 'count=0\nlockout_until=%s\n' "$lockout_until" > "$failure_file"
+    if [ "$(bf_fail "$FAILURE_DIR" "$client_ip")" = "locked" ]; then
         log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
         json_error "locked"
     else
-        printf 'count=%s\nlockout_until=0\n' "$count" > "$failure_file"
         log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"login_failure\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
         json_error "invalid"
     fi
@@ -85,7 +58,7 @@ if [ -z "$role" ]; then
 fi
 
 # Successful login: clear failure record
-rm -f "$failure_file"
+bf_clear "$FAILURE_DIR" "$client_ip"
 
 # Create session. Directory must be 700 so other local users cannot list tokens.
 # Use umask to set permissions atomically on creation rather than a separate chmod.

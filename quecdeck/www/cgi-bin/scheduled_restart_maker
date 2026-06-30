@@ -39,10 +39,10 @@ cgi_output_text
 
 # Write config JSON atomically. The static scheduled_restart.sh in script/ reads this at startup
 enabled_val=$([ "$ENABLED" = "enable" ] && echo "true" || echo "false")
-_tmp=$(mktemp /usrdata/quecdeck/var/scheduled_restart.json.XXXXXX)
-echo "{\"enabled\": $enabled_val, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" > "$_tmp" \
-    && mv "$_tmp" /usrdata/quecdeck/var/scheduled_restart.json \
-    || { rm -f "$_tmp"; cgi_error "Failed to write scheduled restart config."; }
+tmp=$(mktemp /usrdata/quecdeck/var/scheduled_restart.json.XXXXXX)
+echo "{\"enabled\": $enabled_val, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}" > "$tmp" \
+    && mv "$tmp" /usrdata/quecdeck/var/scheduled_restart.json \
+    || { rm -f "$tmp"; cgi_error "Failed to write scheduled restart config."; }
 chmod 640 /usrdata/quecdeck/var/scheduled_restart.json
 
 if [ "$ENABLED" = "enable" ]; then

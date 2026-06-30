@@ -114,6 +114,73 @@ log_access_event() {
 }
 
 # ---------------------------------------------------------------------------
+# Client identity + per-IP brute-force lockout. Shared by auth_login and
+# auth_dev so the lockout policy lives in one place. Each failure record is one
+# file per IP under a caller-supplied dir: "count=<n>\nlockout_until=<epoch>".
+# After BF_MAX_ATTEMPTS failures a BF_LOCKOUT_SECS lockout is applied.
+# ---------------------------------------------------------------------------
+BF_MAX_ATTEMPTS=5
+BF_LOCKOUT_SECS=900
+
+# Sanitized client IP, safe to embed in a filename or JSON. Never empty.
+cgi_client_ip() {
+    local ip
+    ip=$(printf '%s' "${REMOTE_ADDR:-unknown}" | tr -cd 'A-Fa-f0-9.:')
+    printf '%s' "${ip:-unknown}"
+}
+
+# WAN IP from the bridge0 link route. May be empty (no bearer).
+cgi_wan_ip() {
+    /sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $1; exit}'
+}
+
+# Map a client IP to its failure-record path under <dir>, ensuring <dir> exists
+# 0700. Opportunistically prunes records older than a day (~1% of calls);
+# lockouts last 15 min, so a day-old record is always expired.
+_bf_file() {
+    local dir="$1" ip="$2"
+    mkdir -p "$dir" && chmod 700 "$dir"
+    [ $(( RANDOM % 100 )) -eq 0 ] && find "$dir" -maxdepth 1 -type f -mtime +1 -delete 2>/dev/null
+    printf '%s/%s' "$dir" "${ip//:/_}"
+}
+
+# Returns 0 if <ip> is currently locked out under <dir>.
+# Usage: bf_locked <dir> <ip>
+bf_locked() {
+    local f lockout_until
+    f=$(_bf_file "$1" "$2")
+    [ -f "$f" ] || return 1
+    lockout_until=$(grep '^lockout_until=' "$f" | cut -d= -f2)
+    [ -n "$lockout_until" ] && [ "$lockout_until" -gt "$(date +%s)" ]
+}
+
+# Records a failed attempt for <ip> under <dir>, after a 1s delay. Echoes
+# "locked" if this attempt triggered the lockout, else "failed".
+# Usage: result=$(bf_fail <dir> <ip>)
+bf_fail() {
+    local f count now
+    f=$(_bf_file "$1" "$2")
+    sleep 1
+    count=0
+    [ -f "$f" ] && count=$(grep '^count=' "$f" | cut -d= -f2)
+    count=$(( ${count:-0} + 1 ))
+    now=$(date +%s)
+    if [ "$count" -ge "$BF_MAX_ATTEMPTS" ]; then
+        printf 'count=0\nlockout_until=%s\n' "$(( now + BF_LOCKOUT_SECS ))" > "$f"
+        echo "locked"
+    else
+        printf 'count=%s\nlockout_until=0\n' "$count" > "$f"
+        echo "failed"
+    fi
+}
+
+# Clears the failure record for <ip> under <dir>. Call on a successful auth.
+# Usage: bf_clear <dir> <ip>
+bf_clear() {
+    rm -f "$(_bf_file "$1" "$2")"
+}
+
+# ---------------------------------------------------------------------------
 # On-demand AT response cache.
 #
 # Read CGIs call cache_get_or_fetch: response is served from a file if fresh,

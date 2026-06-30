@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
   confirmModal.setAttribute('x-data', '');
   confirmModal.setAttribute('x-show', '$store.confirmModal.show');
   confirmModal.className = 'modal-overlay';
-  confirmModal.style.display = 'none';
+  confirmModal.setAttribute('x-cloak', '');
   confirmModal.innerHTML = `
     <div class="loading-modal text-start">
       <div class="mb-3">
@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
   errorModal.setAttribute('x-data', '');
   errorModal.setAttribute('x-show', '$store.errorModal.show');
   errorModal.className = 'modal-overlay';
-  errorModal.style.display = 'none';
+  errorModal.setAttribute('x-cloak', '');
   errorModal.innerHTML = `
     <div class="loading-modal text-start">
       <div class="d-flex justify-content-between align-items-center mb-3">
@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
   modal.setAttribute('x-data', '');
   modal.setAttribute('x-show', '$store.waitModal.show');
   modal.className = 'modal-overlay';
-  modal.style.display = 'none';
+  modal.setAttribute('x-cloak', '');
   modal.innerHTML = `
     <div class="loading-modal">
       <div class="loader"></div>
@@ -178,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const banner = document.createElement('div');
   banner.setAttribute('x-data', '');
   banner.setAttribute('x-show', '$store.scanBanner.active && !$store.scanBanner.ownScan');
-  banner.style.display = 'none';
+  banner.setAttribute('x-cloak', '');
   banner.className = 'alert alert-warning rounded-0 border-start-0 border-end-0 border-top-0 mb-0 py-2 text-center small';
   banner.textContent = 'Cell scan in progress. Live data is paused, showing cached values.';
 

@@ -9,12 +9,16 @@ local LOGIN    = "/login.html"
 local uri  = lighty.env["request.uri"]
 local path = uri:match("^([^?#]*)")
 
--- Reject any path containing traversal sequences before any exemption check
-if path:find("%.%.", 1, true) then
-    lighty.header["Location"] = LOGIN
+local function redirect(dest)
+    lighty.header["Location"] = dest
     lighty.header["Cache-Control"] = "no-store"
     lighty.status = 302
     return 302
+end
+
+-- Reject any path containing traversal sequences before any exemption check
+if path:find("%.%.", 1, true) then
+    return redirect(LOGIN)
 end
 
 -- Redirect to setup wizard if no admin password has been configured yet.
@@ -29,20 +33,14 @@ if setup_needed then
         and not path:match("^/fonts/")
         and path ~= "/favicon.ico"
     then
-        lighty.header["Location"] = "/setup.html"
-        lighty.header["Cache-Control"] = "no-store"
-        lighty.status = 302
-        return 302
+        return redirect("/setup.html")
     end
     return 0
 end
 
 -- Setup page is only valid before setup; redirect away once it's done
 if path == "/setup.html" then
-    lighty.header["Location"] = "/"
-    lighty.header["Cache-Control"] = "no-store"
-    lighty.status = 302
-    return 302
+    return redirect("/")
 end
 
 -- Paths that do not require an active session
@@ -64,17 +62,23 @@ end
 local cookie = lighty.request["Cookie"] or ""
 local token  = cookie:match("^session=([A-Za-z0-9]+)") or cookie:match("; *session=([A-Za-z0-9]+)")
 
-local function redirect(dest)
-    lighty.header["Location"] = dest
-    lighty.header["Cache-Control"] = "no-store"
-    lighty.status = 302
-    return 302
-end
-
 local function url_encode(s)
     return s:gsub("[^A-Za-z0-9%%-._~!$&'()*+,;=:@/]", function(c)
         return string.format("%%%02X", c:byte())
     end)
+end
+
+-- Parse a "key=value" session file into a table, or nil if it can't be opened.
+local function read_session(p)
+    local fh = io.open(p, "r")
+    if not fh then return nil end
+    local t = {}
+    for line in fh:lines() do
+        local k, v = line:match("^([%w_]+)=(.-)$")
+        if k then t[k] = v end
+    end
+    fh:close()
+    return t
 end
 
 local safe_path = url_encode(path)
@@ -84,18 +88,11 @@ if not token or not token:match("^[A-Za-z0-9]+$") or #token > 128 then
 end
 
 -- Read session file
-local sf = SESSIONS .. token
-local f  = io.open(sf, "r")
-if not f then
+local sf   = SESSIONS .. token
+local sess = read_session(sf)
+if not sess then
     return redirect(LOGIN .. "?next=" .. safe_path)
 end
-
-local sess = {}
-for line in f:lines() do
-    local k, v = line:match("^([%w_]+)=(.-)$")
-    if k then sess[k] = v end
-end
-f:close()
 
 -- Check inactivity timeout and absolute session lifetime
 local now         = os.time()
@@ -104,16 +101,28 @@ local created     = tonumber(sess.created)     or 0
 
 if (now - last_access) > TIMEOUT or (now - created) > MAX_AGE then
     os.remove(sf)
+    os.remove(sf .. ".dev")
     return redirect(LOGIN .. "?expired=1&next=" .. safe_path)
 end
 
--- Developer CGIs additionally require the session to be unlocked via auth_dev
+-- Developer CGIs additionally require the session to be unlocked via auth_dev.
+-- The dev-unlock flag lives in a separate "<token>.dev" file (written only by
+-- auth_dev) so the per-request last_access refresh below can't clobber it.
+-- Read it only on dev-gated paths, not on every request.
 local requires_dev_unlocked = path:match("^/console")
     or path == "/cgi-bin/user_atcommand"
     or path == "/cgi-bin/toggle_ttyd"   or path == "/cgi-bin/set_cell_lock"
-if requires_dev_unlocked and sess.dev_unlocked ~= "1" then
-    lighty.status = 403
-    return 403
+if requires_dev_unlocked then
+    local unlocked = false
+    local devf = io.open(sf .. ".dev", "r")
+    if devf then
+        unlocked = devf:read("*a"):match("dev_unlocked=1") ~= nil
+        devf:close()
+    end
+    if not unlocked then
+        lighty.status = 403
+        return 403
+    end
 end
 
 -- Refresh last_access via an atomic temp-file + rename. No per-file chmod is
@@ -127,9 +136,6 @@ if wf then
     wf:write("role="        .. (sess.role    or "") .. "\n")
     wf:write("created="     .. (sess.created or tostring(now)) .. "\n")
     wf:write("last_access=" .. tostring(now) .. "\n")
-    if sess.dev_unlocked      then wf:write("dev_unlocked="      .. sess.dev_unlocked      .. "\n") end
-    if sess.dev_fail_count    then wf:write("dev_fail_count="    .. sess.dev_fail_count    .. "\n") end
-    if sess.dev_lockout_until then wf:write("dev_lockout_until=" .. sess.dev_lockout_until .. "\n") end
     wf:close()
     os.rename(tmp, sf)
 end
@@ -141,15 +147,13 @@ if math.random(100) == 1 then
         for fpath in d:lines() do
             local name = fpath:match("([^/]+)$")
             if name and name:match("^[A-Za-z0-9]+$") then
-                local cf = io.open(SESSIONS .. name, "r")
-                if cf then
-                    local la = 0
-                    for line in cf:lines() do
-                        local k, v = line:match("^([%w_]+)=(.-)$")
-                        if k == "last_access" then la = tonumber(v) or 0 end
+                local s = read_session(SESSIONS .. name)
+                if s then
+                    local la = tonumber(s.last_access) or 0
+                    if (now - la) > TIMEOUT then
+                        os.remove(SESSIONS .. name)
+                        os.remove(SESSIONS .. name .. ".dev")
                     end
-                    cf:close()
-                    if (now - la) > TIMEOUT then os.remove(SESSIONS .. name) end
                 end
             end
         end

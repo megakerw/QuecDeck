@@ -409,7 +409,11 @@ uninstall_quecdeck_components() {
     # Check if Lighttpd service is installed and remove it if present
     if [ -f "/lib/systemd/system/lighttpd.service" ]; then
         systemctl stop lighttpd 2>/dev/null
-        opkg --force-remove --force-removal-of-dependent-packages remove lighttpd lighttpd-mod-cgi lighttpd-mod-magnet lighttpd-mod-openssl lighttpd-mod-proxy \
+        # Remove only lighttpd: --force-removal-of-dependent-packages cascades to
+        # the lighttpd-mod-* packages (they depend on it). Listing them explicitly
+        # is redundant and prints harmless "Package ... is not installed" errors,
+        # since the cascade has already removed them by the time opkg reaches them.
+        opkg --force-remove --force-removal-of-dependent-packages remove lighttpd \
             && result_lighttpd="REMOVED" || result_lighttpd="FAILED"
         rm -f /lib/systemd/system/lighttpd.service
         rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service

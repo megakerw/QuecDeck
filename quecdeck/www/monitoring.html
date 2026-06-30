@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=33fa3a85" />
-    <link rel="stylesheet" href="css/styles.css?v=33fa3a85" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=95826c42" />
+    <link rel="stylesheet" href="css/styles.css?v=95826c42" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=33fa3a85"></script>
-    <script src="js/utils.js?v=33fa3a85"></script>
-    <script src="js/alpinejs.min.js?v=33fa3a85" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=95826c42"></script>
+    <script src="js/utils.js?v=95826c42"></script>
+    <script src="js/alpinejs.min.js?v=95826c42" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="quecdeckWatchCat()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=33fa3a85"></script>
+        <script src="js/nav.js?v=95826c42"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
 
@@ -75,7 +75,7 @@
                         <input class="form-check-input" type="checkbox" role="switch" x-model="rebootBackoff" :disabled="capExceeded" />
                       </div>
                     </div>
-                    <div class="text-warning small mt-1" x-show="capExceeded" style="display:none">Your cycle time exceeds 1 hour, so this setting has no effect.</div>
+                    <div class="text-warning small mt-1" x-show="capExceeded" x-cloak>Your cycle time exceeds 1 hour, so this setting has no effect.</div>
                   </div>
 
                   <div class="mb-4">
@@ -137,7 +137,7 @@
                         placeholder="10 – 600"
                       />
                       <div class="text-muted small mt-1" x-show="pingInterval >= 10 && pingInterval <= 600">Between 10 and 600 seconds.</div>
-                      <div class="text-danger small mt-1" x-show="pingInterval < 10 || pingInterval > 600" style="display:none">Must be between 10 and 600 seconds.</div>
+                      <div class="text-danger small mt-1" x-show="pingInterval < 10 || pingInterval > 600" x-cloak>Must be between 10 and 600 seconds.</div>
                     </div>
                     <div class="col-sm-6 mb-3">
                       <label class="form-label fw-semibold">Failures Before Reboot</label>
@@ -151,7 +151,7 @@
                         placeholder="2 – 10"
                       />
                       <div class="text-muted small mt-1" x-show="pingFailureCount >= 2 && pingFailureCount <= 10">Between 2 and 10 consecutive failures.</div>
-                      <div class="text-danger small mt-1" x-show="pingFailureCount < 2 || pingFailureCount > 10" style="display:none">Must be between 2 and 10.</div>
+                      <div class="text-danger small mt-1" x-show="pingFailureCount < 2 || pingFailureCount > 10" x-cloak>Must be between 2 and 10.</div>
                     </div>
                   </div>
                   <hr x-show="canSave" />
@@ -230,7 +230,7 @@
                     <span>Reboots triggered</span>
                     <span x-text="rebootCount"></span>
                   </div>
-                  <div x-show="backoffActive" class="small text-warning mt-1" style="display:none">
+                  <div x-show="backoffActive" class="small text-warning mt-1" x-cloak>
                     Reboot rate limited. Next attempt in <span x-text="backoffRemainingText"></span>.
                   </div>
                 </div>
@@ -331,7 +331,7 @@
         </div>
       </div>
     </main>
-    <script src="js/dark-mode.js?v=33fa3a85"></script>
-    <script src="js/watchcat.js?v=33fa3a85"></script>
+    <script src="js/dark-mode.js?v=95826c42"></script>
+    <script src="js/watchcat.js?v=95826c42"></script>
   </body>
 </html>

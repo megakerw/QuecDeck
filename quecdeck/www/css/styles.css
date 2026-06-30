@@ -2,6 +2,9 @@
    QuecDeck Custom Styles
    ============================================================ */
 
+/* Hide Alpine components until initialized to prevent a flash of raw markup. */
+[x-cloak] { display: none !important; }
+
 /* import poppins */
 /* poppins-300 - latin */
 @font-face {

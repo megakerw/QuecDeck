@@ -1,7 +1,8 @@
 #!/bin/bash
 
-echo "Content-type: application/json"
-echo ""
+. /usrdata/quecdeck/script/cgi-lib.sh
+cgi_check_cors
+cgi_output_json
 
 if [ -f /tmp/quecdeck/watchcat_stats.json ]; then
     cat /tmp/quecdeck/watchcat_stats.json

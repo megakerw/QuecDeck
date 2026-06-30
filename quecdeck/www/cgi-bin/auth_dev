@@ -6,8 +6,8 @@
 # the fixed "devadmin" username.
 #
 # GET: returns {"unlocked": true/false} for the current session.
-# POST: validates password; on success sets dev_unlocked=1 in the session
-#        file and returns {"unlocked": true}.
+# POST: validates password; on success sets the dev-unlock flag and returns
+#        {"unlocked": true}.
 #
 # Brute-force protection: 5 failed attempts trigger a 15-minute lockout,
 # tracked per client IP under /tmp/quecdeck/dev_auth_failures (mirroring
@@ -17,6 +17,9 @@
 
 . /usrdata/quecdeck/script/cgi-lib.sh
 
+# Most responses here are a single small JSON line (with header).
+_json() { cgi_output_json; printf '%s\n' "$1"; }
+
 # Extract session token from Cookie header.
 token=$(printf '%s' "${HTTP_COOKIE:-}" | tr ';' '\n' | sed 's/^ *//' | \
     grep '^session=' | head -1 | cut -d= -f2)
@@ -24,31 +27,31 @@ token=$(printf '%s' "${HTTP_COOKIE:-}" | tr ';' '\n' | sed 's/^ *//' | \
 # Validate token format before using in a file path (defense in depth;
 # auth.lua enforces the same constraint before this script runs).
 if ! printf '%s' "$token" | grep -qE '^[A-Za-z0-9]{1,128}$'; then
-    cgi_output_json
-    printf '{"unlocked":false}\n'
+    _json '{"unlocked":false}'
     exit 0
 fi
 
 SESSION_FILE="/tmp/quecdeck/sessions/${token}"
+# The dev-unlock flag lives in a sibling "<token>.dev" file rather than inside
+# the session file. auth.lua rewrites the session file on every request (to
+# refresh last_access); keeping dev_unlocked in a separate file that only this
+# script writes prevents that frequent rewrite from clobbering the flag, with no
+# shared lock needed (auth.lua would have to fork to take one).
+DEV_FILE="${SESSION_FILE}.dev"
 
 if [ ! -f "$SESSION_FILE" ]; then
-    cgi_output_json
-    printf '{"unlocked":false}\n'
+    _json '{"unlocked":false}'
     exit 0
 fi
 
-dev_unlocked=$(grep '^dev_unlocked=' "$SESSION_FILE" | cut -d= -f2)
+dev_unlocked=$(grep '^dev_unlocked=' "$DEV_FILE" 2>/dev/null | cut -d= -f2)
 
 # GET: return current unlock status and whether a dev password has been configured.
 if [ "$REQUEST_METHOD" = "GET" ]; then
-    cgi_output_json
     configured="false"
     [ -s /opt/etc/.htpasswd_dev ] && configured="true"
-    if [ "$dev_unlocked" = "1" ]; then
-        printf '{"unlocked":true,"configured":%s}\n' "$configured"
-    else
-        printf '{"unlocked":false,"configured":%s}\n' "$configured"
-    fi
+    [ "$dev_unlocked" = "1" ] && unlocked="true" || unlocked="false"
+    _json "$(printf '{"unlocked":%s,"configured":%s}' "$unlocked" "$configured")"
     exit 0
 fi
 
@@ -58,78 +61,37 @@ cgi_read_post
 password=$(get_post_param "password")
 
 if [ -z "$password" ] || [ "${#password}" -gt 256 ]; then
-    cgi_output_json
-    printf '{"unlocked":false,"error":"invalid"}\n'
+    _json '{"unlocked":false,"error":"invalid"}'
     exit 0
 fi
 
-MAX_ATTEMPTS=5
-LOCKOUT_SECS=900
 now=$(date +%s)
-
 ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
+client_ip=$(cgi_client_ip)
+wan_ip=$(cgi_wan_ip)
 
-client_ip=$(printf '%s' "${REMOTE_ADDR:-unknown}" | tr -cd 'A-Fa-f0-9.:')
-[ -z "$client_ip" ] && client_ip="unknown"
-wan_ip=$(/sbin/ip route show dev bridge0 2>/dev/null | awk '/scope link/{print $1; exit}')
-[ -z "$wan_ip" ] && wan_ip=""
-
-# Brute-force protection: per client IP, mirroring auth_login. Tracking
-# failures in the session file would let an attacker who already holds admin
-# reset the counter by logging in again (each login mints a fresh session).
+# Brute-force protection per client IP (rationale in the header comment).
 FAILURE_DIR="/tmp/quecdeck/dev_auth_failures"
-mkdir -p "$FAILURE_DIR" && chmod 700 "$FAILURE_DIR"
-
-# Opportunistic cleanup: remove records older than 1 day (~1% of requests).
-# Lockouts last 15 minutes, so anything older than a day is guaranteed expired.
-[ $(( RANDOM % 100 )) -eq 0 ] && find "$FAILURE_DIR" -maxdepth 1 -type f -mtime +1 -delete 2>/dev/null
-failure_file="$FAILURE_DIR/${client_ip//:/_}"
 
 # Reject immediately if locked out.
-if [ -f "$failure_file" ]; then
-    lockout_until=$(grep '^lockout_until=' "$failure_file" | cut -d= -f2)
-    if [ -n "$lockout_until" ] && [ "$lockout_until" -gt "$now" ]; then
-        log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
-        cgi_output_json
-        printf '{"unlocked":false,"error":"locked"}\n'
-        exit 0
-    fi
+if bf_locked "$FAILURE_DIR" "$client_ip"; then
+    log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+    _json '{"unlocked":false,"error":"locked"}'
+    exit 0
 fi
 
-_session_write() {
-    local tmp="${SESSION_FILE}.tmp.$$"
-    local lock="${SESSION_FILE}.lock"
-    local new_fields
-    new_fields=$(cat)
-    (
-        flock -x 9
-        (umask 077; grep -vE '^(dev_unlocked|dev_fail_count|dev_lockout_until)=' "$SESSION_FILE" > "$tmp")
-        printf '%s\n' "$new_fields" >> "$tmp"
-        mv "$tmp" "$SESSION_FILE"
-    ) 9>"$lock"
-}
-
 if validate_htpasswd "/opt/etc/.htpasswd_dev" "devadmin" "$password"; then
-    # Success: clear failure record and mark session as dev-unlocked.
-    rm -f "$failure_file"
-    printf 'dev_unlocked=1\n' | _session_write
+    # Success: clear failures, mark dev-unlocked (own file, temp+rename, no lock).
+    bf_clear "$FAILURE_DIR" "$client_ip"
+    (umask 077; printf 'dev_unlocked=1\n' > "${DEV_FILE}.tmp.$$") && mv "${DEV_FILE}.tmp.$$" "$DEV_FILE"
     log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_success\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
-    cgi_output_json
-    printf '{"unlocked":true}\n'
+    _json '{"unlocked":true}'
 else
-    sleep 1
-    count=0
-    [ -f "$failure_file" ] && count=$(grep '^count=' "$failure_file" | cut -d= -f2)
-    count=$(( ${count:-0} + 1 ))
-    if [ "$count" -ge "$MAX_ATTEMPTS" ]; then
-        printf 'count=0\nlockout_until=%s\n' "$(( now + LOCKOUT_SECS ))" > "$failure_file"
+    if [ "$(bf_fail "$FAILURE_DIR" "$client_ip")" = "locked" ]; then
         log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
-        cgi_output_json
-        printf '{"unlocked":false,"error":"locked"}\n'
+        _json '{"unlocked":false,"error":"locked"}'
     else
-        printf 'count=%s\nlockout_until=0\n' "$count" > "$failure_file"
         log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_failure\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
-        cgi_output_json
-        printf '{"unlocked":false,"error":"wrong"}\n'
+        _json '{"unlocked":false,"error":"wrong"}'
     fi
 fi

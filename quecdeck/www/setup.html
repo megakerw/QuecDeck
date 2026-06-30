@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=33fa3a85" />
-    <link rel="stylesheet" href="css/styles.css?v=33fa3a85" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=95826c42" />
+    <link rel="stylesheet" href="css/styles.css?v=95826c42" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=33fa3a85"></script>
-    <script src="js/dark-mode.js?v=33fa3a85" defer></script>
-    <script src="js/alpinejs.min.js?v=33fa3a85" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=95826c42"></script>
+    <script src="js/dark-mode.js?v=95826c42" defer></script>
+    <script src="js/alpinejs.min.js?v=95826c42" defer></script>
   </head>
   <body>
     <main>
@@ -70,7 +70,7 @@
                       <button type="button" class="btn btn-secondary flex-fill" @click="skipDev()" :disabled="submitting">Skip</button>
                       <button type="submit" class="btn btn-primary flex-fill" :disabled="submitting || !devPass || !devPassConfirm">
                         <span x-show="!submitting">Finish</span>
-                        <span x-show="submitting" style="display:none">Setting up...</span>
+                        <span x-show="submitting" x-cloak>Setting up...</span>
                       </button>
                     </div>
                   </form>
@@ -82,6 +82,6 @@
         </div>
       </div>
     </main>
-    <script src="js/setup.js?v=33fa3a85"></script>
+    <script src="js/setup.js?v=95826c42"></script>
   </body>
 </html>

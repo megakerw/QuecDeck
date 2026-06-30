@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=33fa3a85" />
-    <link rel="stylesheet" href="css/styles.css?v=33fa3a85" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=95826c42" />
+    <link rel="stylesheet" href="css/styles.css?v=95826c42" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=33fa3a85"></script>
-    <script src="js/dark-mode.js?v=33fa3a85" defer></script>
-    <script src="js/alpinejs.min.js?v=33fa3a85" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=95826c42"></script>
+    <script src="js/dark-mode.js?v=95826c42" defer></script>
+    <script src="js/alpinejs.min.js?v=95826c42" defer></script>
   </head>
   <body>
     <main>
@@ -59,7 +59,7 @@
                   </div>
                   <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;" :disabled="submitting">
                     <span x-show="!submitting">Sign In</span>
-                    <span x-show="submitting" style="display:none">Signing in...</span>
+                    <span x-show="submitting" x-cloak>Signing in...</span>
                   </button>
                 </form>
             </div>
@@ -68,6 +68,6 @@
       </div>
     </main>
 
-    <script src="js/login.js?v=33fa3a85"></script>
+    <script src="js/login.js?v=95826c42"></script>
   </body>
 </html>

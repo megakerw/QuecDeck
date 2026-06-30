@@ -4,20 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=33fa3a85" />
-    <link rel="stylesheet" href="css/styles.css?v=33fa3a85" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=95826c42" />
+    <link rel="stylesheet" href="css/styles.css?v=95826c42" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=33fa3a85"></script>
-    <script src="js/utils.js?v=33fa3a85"></script>
-    <script src="js/alpinejs.min.js?v=33fa3a85" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=95826c42"></script>
+    <script src="js/utils.js?v=95826c42"></script>
+    <script src="js/alpinejs.min.js?v=95826c42" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="logsPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=33fa3a85"></script>
+        <script src="js/nav.js?v=95826c42"></script>
 
-        <div class="alert alert-warning small mb-3" x-show="clockUnsynced" style="display:none">
+        <div class="alert alert-warning small mb-3" x-show="clockUnsynced" x-cloak>
           Device clock appears unsynced. Timestamps below may be inaccurate until it syncs (e.g. once connected to a cell tower).
         </div>
 
@@ -27,7 +27,7 @@
             <div class="panel-section" style="height:100%">
               <div class="panel-title d-flex align-items-center gap-2 mb-3">
                 Connection Events
-                <span x-show="loadingConn" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" style="display:none"></span>
+                <span x-show="loadingConn" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshConnection()">Refresh</button>
               </div>
               <div x-show="connectionEvents.length === 0 && !loadingConn" class="text-muted small">No connection events recorded yet.</div>
@@ -59,7 +59,7 @@
             <div class="panel-section" style="height:100%">
               <div class="panel-title d-flex align-items-center gap-2 mb-3">
                 Access Events
-                <span x-show="loadingAccess" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" style="display:none"></span>
+                <span x-show="loadingAccess" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshAccess()">Refresh</button>
               </div>
               <div x-show="accessEvents.length === 0 && !loadingAccess" class="text-muted small">No access events recorded yet.</div>
@@ -121,7 +121,7 @@
       </div>
     </main>
 
-    <script src="js/logs.js?v=33fa3a85"></script>
-    <script src="js/dark-mode.js?v=33fa3a85"></script>
+    <script src="js/logs.js?v=95826c42"></script>
+    <script src="js/dark-mode.js?v=95826c42"></script>
   </body>
 </html>

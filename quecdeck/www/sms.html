@@ -5,30 +5,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>QuecDeck</title>
-  <link rel="stylesheet" href="css/bootstrap.min.css?v=33fa3a85" />
-  <link rel="stylesheet" href="css/styles.css?v=33fa3a85" />
+  <link rel="stylesheet" href="css/bootstrap.min.css?v=95826c42" />
+  <link rel="stylesheet" href="css/styles.css?v=95826c42" />
   <link rel="icon" href="favicon.ico" />
-  <script src="js/bootstrap.bundle.min.js?v=33fa3a85"></script>
-  <script src="js/utils.js?v=33fa3a85"></script>
-  <script src="js/alpinejs.min.js?v=33fa3a85" defer></script>
+  <script src="js/bootstrap.bundle.min.js?v=95826c42"></script>
+  <script src="js/utils.js?v=95826c42"></script>
+  <script src="js/alpinejs.min.js?v=95826c42" defer></script>
 </head>
 
 <body>
   <main>
     <div class="container my-4" x-data="fetchSMS()">
       <div id="nav-placeholder"></div>
-      <script src="js/nav.js?v=33fa3a85"></script>
+      <script src="js/nav.js?v=95826c42"></script>
       <div class="row gy-3 mt-4 mb-4 align-items-stretch">
         <div class="col">
           <div class="panel-section">
             <div class="panel-title d-flex align-items-center gap-2">
               SMS Inbox
-              <span x-show="isLoading" class="spinner-border spinner-border-sm text-secondary" role="status" aria-label="Loading" style="display:none"></span>
+              <span x-show="isLoading" class="spinner-border spinner-border-sm text-secondary" role="status" aria-label="Loading" x-cloak></span>
               <button class="btn btn-sm btn-primary ms-auto" type="button" @click="init()" :disabled="isLoading">Refresh</button>
             </div>
             <div class="sms-inbox-scroll">
                 <table class="table table-hover">
-                  <thead x-show="messages.length > 0" style="display:none">
+                  <thead x-show="messages.length > 0" x-cloak>
                     <tr>
                       <th>
                         <div class="form-check mb-0">
@@ -74,7 +74,7 @@
       </div>
     </div>
   </main>
-  <script src="js/dark-mode.js?v=33fa3a85"></script>
-  <script src="js/sms.js?v=33fa3a85"></script>
+  <script src="js/dark-mode.js?v=95826c42"></script>
+  <script src="js/sms.js?v=95826c42"></script>
 </body>
 </html>

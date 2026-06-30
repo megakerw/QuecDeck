@@ -14,18 +14,18 @@ if [ ! -s "$CONFIG" ]; then
 fi
 
 # Parse config
-_config_json=$(cat "$CONFIG")
-_enabled=$(json_get "$_config_json" enabled)
-TRACK_IPS=$(json_get "$_config_json" track_ips | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | tr '\n' ' ')
-PING_INTERVAL=$(json_get "$_config_json" ping_interval)
-PING_FAILURE_COUNT=$(json_get "$_config_json" ping_failure_count)
-_sim=$(json_get "$_config_json" disable_on_no_sim)
-_backoff=$(json_get "$_config_json" reboot_backoff)
-_log=$(json_get "$_config_json" log_restarts)
-[ "$_enabled" = "false" ] && { echo "watchcat: disabled in config, exiting." >&2; exit 0; }
-[ "$_sim" = "true" ] && DISABLE_ON_NO_SIM=1 || DISABLE_ON_NO_SIM=0
-[ "$_backoff" = "false" ] && REBOOT_BACKOFF=0 || REBOOT_BACKOFF=1
-[ "$_log" = "false" ] && LOG_RESTARTS=0 || LOG_RESTARTS=1
+config_json=$(cat "$CONFIG")
+enabled=$(json_get "$config_json" enabled)
+TRACK_IPS=$(json_get "$config_json" track_ips | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | tr '\n' ' ')
+PING_INTERVAL=$(json_get "$config_json" ping_interval)
+PING_FAILURE_COUNT=$(json_get "$config_json" ping_failure_count)
+sim=$(json_get "$config_json" disable_on_no_sim)
+backoff=$(json_get "$config_json" reboot_backoff)
+log=$(json_get "$config_json" log_restarts)
+[ "$enabled" = "false" ] && { echo "watchcat: disabled in config, exiting." >&2; exit 0; }
+[ "$sim" = "true" ] && DISABLE_ON_NO_SIM=1 || DISABLE_ON_NO_SIM=0
+[ "$backoff" = "false" ] && REBOOT_BACKOFF=0 || REBOOT_BACKOFF=1
+[ "$log" = "false" ] && LOG_RESTARTS=0 || LOG_RESTARTS=1
 
 # Validate
 case "$PING_INTERVAL" in
@@ -68,9 +68,9 @@ get_uptime() { awk '{print int($1)}' /proc/uptime; }
 reboot_count=0
 last_reboot_uptime=0
 if [ "$REBOOT_BACKOFF" = "1" ] && [ -f "$REBOOT_STATE" ]; then
-    _reboot_state_json=$(cat "$REBOOT_STATE")
-    reboot_count=$(json_get "$_reboot_state_json" reboot_count)
-    last_reboot_uptime=$(json_get "$_reboot_state_json" last_reboot_uptime)
+    reboot_state_json=$(cat "$REBOOT_STATE")
+    reboot_count=$(json_get "$reboot_state_json" reboot_count)
+    last_reboot_uptime=$(json_get "$reboot_state_json" last_reboot_uptime)
     [ -z "$reboot_count" ] && reboot_count=0
     [ -z "$last_reboot_uptime" ] && last_reboot_uptime=0
     # Uptime (unlike the wall clock) only resets to 0 on an actual reboot, so
@@ -192,14 +192,14 @@ while :; do
                 if [ "$REBOOT_BACKOFF" = "1" ]; then
                     reboot_count=$((reboot_count + 1))
                     printf '{"reboot_count":%d,"last_reboot_uptime":%d}\n' "$reboot_count" "$(get_uptime)" > "$REBOOT_STATE"
-                    _detail="$failures consecutive ping failures (reboot streak #$reboot_count)"
+                    detail="$failures consecutive ping failures (reboot streak #$reboot_count)"
                 else
-                    _detail="$failures consecutive ping failures"
+                    detail="$failures consecutive ping failures"
                 fi
-                [ "$LOG_RESTARTS" = "1" ] && log_restart "watchcat" "$_detail"
+                [ "$LOG_RESTARTS" = "1" ] && log_restart "watchcat" "$detail"
                 sync
                 sleep 2
-                echo "uptime $(get_uptime)s: $_detail"
+                echo "uptime $(get_uptime)s: $detail"
                 /usrdata/quecdeck/atcli 'AT+CFUN=1,1' 2>/dev/null
                 exit 0
             fi
