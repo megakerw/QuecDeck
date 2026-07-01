@@ -6,12 +6,26 @@ cgi_output_json
 
 LOG=/tmp/install_quecdeck.log
 STATUS_FILE=/tmp/quecdeck_update.status
-UPDATE_LOCK_FILE=/tmp/quecdeck_update.lock
+UPDATE_PID_FILE=/tmp/quecdeck_update.pid
 
-# True (lock acquired) means nothing is holding it, i.e. no update is running.
+# True (idle) means no live update process. The update runs as root and the lock
+# it holds cannot be opened from this www-data CGI under SELinux (SEAndroid), so
+# liveness uses the updater's published PID, with a short grace on the status
+# file for the brief window before that PID exists (e.g. during download) so a
+# running update is never misread as dead.
 _update_is_idle() {
-    command -v flock >/dev/null 2>&1 || return 1
-    ( umask 0; exec 9>"$UPDATE_LOCK_FILE"; flock -n 9 )
+    local pid
+    pid=$(cat "$UPDATE_PID_FILE" 2>/dev/null)
+    case "$pid" in
+        ''|*[!0-9]*)
+            # No PID yet: treat a freshly-written status as alive (covers the
+            # download window before the inner publishes its PID).
+            [ -n "$(find "$STATUS_FILE" -mmin -5 2>/dev/null)" ] && return 1
+            return 0
+            ;;
+    esac
+    # PID published: authoritative, prompt liveness via /proc.
+    [ -d "/proc/$pid" ] && return 1 || return 0
 }
 
 offset=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^offset=' | cut -d= -f2)

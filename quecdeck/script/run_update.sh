@@ -29,6 +29,20 @@ if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
     exit 1
 fi
 
+# Update lock, handled only in the root domain. A lock left by another SELinux
+# (SEAndroid) domain, e.g. an older www-data CGI, can't be opened by root but can
+# be unlinked, and can only be stale, so clear it first. Then fail fast (exit 2,
+# which the CGI maps to "already in progress") if an update is genuinely running.
+# flock auto-releases when the holder dies, so a killed update never wedges this.
+UPDATE_LOCK_FILE=/tmp/quecdeck_update.lock
+if [ -e "$UPDATE_LOCK_FILE" ] && ! ( : >>"$UPDATE_LOCK_FILE" ) 2>/dev/null; then
+    rm -f "$UPDATE_LOCK_FILE"
+fi
+if command -v flock >/dev/null 2>&1 && ! ( exec 9>"$UPDATE_LOCK_FILE"; flock -n 9 ); then
+    echo "An update is already in progress; not starting another." >> "$LOG" 2>/dev/null
+    exit 2
+fi
+
 rm -rf "$UPDATE_TMP"
 mkdir -m 700 "$UPDATE_TMP" || { echo "Security: failed to create $UPDATE_TMP."; exit 1; }
 chown root:root "$UPDATE_TMP"

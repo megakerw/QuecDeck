@@ -12,18 +12,17 @@ if ! echo "$tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
     exit 0
 fi
 
-UPDATE_LOCK_FILE=/tmp/quecdeck_update.lock
-if ! command -v flock >/dev/null 2>&1; then
-    printf '{"ok":false,"error":"Internal error: flock unavailable"}\n'
-    exit 0
-fi
-if ! ( umask 0; exec 9>"$UPDATE_LOCK_FILE"; flock -n 9 ); then
+# The update lock is handled entirely by the root-run scripts. This CGI must not
+# create or open it: under SELinux (SEAndroid) a lock created by this www-data
+# process gets a type the root updater cannot write, wedging every future update.
+# run_update.sh does the authoritative flock check (which auto-releases if a
+# previous update died) and reports "already in progress" via exit code 2.
+/opt/bin/sudo /usrdata/quecdeck/script/run_update.sh "$tag" >/dev/null
+rc=$?
+if [ "$rc" -eq 2 ]; then
     printf '{"ok":false,"error":"An update is already in progress"}\n'
     exit 0
-fi
-
-/opt/bin/sudo /usrdata/quecdeck/script/run_update.sh "$tag" >/dev/null
-if [ $? -ne 0 ]; then
+elif [ "$rc" -ne 0 ]; then
     printf '{"ok":false,"error":"Failed to start update process"}\n'
     exit 0
 fi

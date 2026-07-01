@@ -99,7 +99,7 @@ Requires a separate developer password to unlock. Provides access to:
 - **AT Terminal:** send AT commands directly to the modem, with support for multiple commands separated by a semicolon
 - **Cell Locking:** lock the primary cell for LTE or NR5G-SA by EARFCN and PCI (not persistent across reboots)
 - **Web Console (ttyd):** start/stop the browser-based terminal and open it directly from the UI
-- **Console Menu:** an interactive shell menu (`menu` command) available over ADB, SSH, or ttyd. Provides access to modem apps (file browser, disk usage, task manager), password management (admin, developer, and root passwords), and a shortcut to re-run the installer.
+- **Console Menu:** an interactive shell menu (`menu` command) available over ADB, SSH, or ttyd. Provides access to modem apps (file browser, disk usage, task manager) and password management (admin, developer, and root passwords).
 
 ## Implementation
 

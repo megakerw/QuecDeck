@@ -27,6 +27,12 @@ if ! command -v flock >/dev/null 2>&1; then
     echo "FATAL: flock command not found. Cannot safely check for a running update."
     exit 1
 fi
+# A lock this root script cannot open was created by another SELinux (SEAndroid)
+# domain, e.g. an older www-data CGI, so it can only be stale (root never fails
+# to open its own lock). Remove it so a fresh root-owned lock can be created.
+if [ -e "$UPDATE_LOCK_FILE" ] && ! ( : >>"$UPDATE_LOCK_FILE" ) 2>/dev/null; then
+    rm -f "$UPDATE_LOCK_FILE"
+fi
 if ! ( umask 0; exec 9>"$UPDATE_LOCK_FILE"; flock -n 9 ); then
     echo "An update is already in progress."
     exit 1
@@ -82,6 +88,8 @@ if ! command -v flock >/dev/null 2>&1; then
     echo "FATAL: flock command not found. Cannot safely check for a running update."
     exit 1
 fi
+# No self-heal needed here: the outer script already cleared any foreign-context
+# lock and created a root-owned one before starting this service.
 _orig_umask=\$(umask)
 umask 0
 exec 9>"\$UPDATE_LOCK_FILE"
@@ -91,6 +99,12 @@ if ! flock -n 9; then
     exit 1
 fi
 
+# Publish our PID so the www-data get_update_log CGI can detect a dead update
+# across SELinux domains: it cannot open this root-owned lock, but it can read
+# this file and check /proc. Cleared on clean exit by the trap below.
+UPDATE_PID_FILE=/tmp/quecdeck_update.pid
+echo "\$\$" > "\$UPDATE_PID_FILE"
+
 echo "running" > "\${STATUS_FILE}.tmp" && mv "\${STATUS_FILE}.tmp" "\$STATUS_FILE"
 
 remount_rw
@@ -99,6 +113,7 @@ _update_status="failed"
 
 _update_cleanup() {
     echo "\$_update_status" > "\${STATUS_FILE}.tmp" && mv "\${STATUS_FILE}.tmp" "\$STATUS_FILE" || rm -f "\${STATUS_FILE}.tmp"
+    rm -f "\$UPDATE_PID_FILE"
     remount_ro
 }
 trap '_update_cleanup' EXIT
