@@ -22,21 +22,17 @@ remount_ro() {
     mount -o remount,ro /
 }
 
-UPDATE_LOCK_FILE=/tmp/quecdeck_update.lock
-if ! command -v flock >/dev/null 2>&1; then
-    echo "FATAL: flock command not found. Cannot safely check for a running update."
-    exit 1
-fi
-# A lock this root script cannot open was created by another SELinux (SEAndroid)
-# domain, e.g. an older www-data CGI, so it can only be stale (root never fails
-# to open its own lock). Remove it so a fresh root-owned lock can be created.
-if [ -e "$UPDATE_LOCK_FILE" ] && ! ( : >>"$UPDATE_LOCK_FILE" ) 2>/dev/null; then
-    rm -f "$UPDATE_LOCK_FILE"
-fi
-if ! ( umask 0; exec 9>"$UPDATE_LOCK_FILE"; flock -n 9 ); then
+# Mutual exclusion via systemd: this generates and starts the stable-named
+# install_quecdeck oneshot. If one is already running, don't regenerate/clobber
+# it (the web path also fast-fails earlier in run_update.sh).
+_state=$(systemctl is-active "$SERVICE_NAME" 2>/dev/null)
+if [ "$_state" = "activating" ] || [ "$_state" = "active" ]; then
     echo "An update is already in progress."
     exit 1
 fi
+# Clear any leftover "failed" state from a prior crashed run so this run reads
+# cleanly (the web path does this in run_update.sh; this covers the CLI path).
+systemctl reset-failed "$SERVICE_NAME" 2>/dev/null
 
 # Installation prep
 remount_rw
@@ -54,9 +50,6 @@ TimeoutStartSec=0
 ExecStart=/bin/bash $TMP_SCRIPT
 StandardOutput=append:$LOG_FILE
 StandardError=append:$LOG_FILE
-
-[Install]
-WantedBy=multi-user.target
 EOF
 
 # Create and populate the temporary shell script for installation
@@ -83,28 +76,9 @@ remount_ro() {
     mount -o remount,ro /
 }
 
-UPDATE_LOCK_FILE=/tmp/quecdeck_update.lock
-if ! command -v flock >/dev/null 2>&1; then
-    echo "FATAL: flock command not found. Cannot safely check for a running update."
-    exit 1
-fi
-# No self-heal needed here: the outer script already cleared any foreign-context
-# lock and created a root-owned one before starting this service.
-_orig_umask=\$(umask)
-umask 0
-exec 9>"\$UPDATE_LOCK_FILE"
-umask "\$_orig_umask"
-if ! flock -n 9; then
-    echo "Another update is already running. Aborting."
-    exit 1
-fi
-
-# Publish our PID so the www-data get_update_log CGI can detect a dead update
-# across SELinux domains: it cannot open this root-owned lock, but it can read
-# this file and check /proc. Cleared on clean exit by the trap below.
-UPDATE_PID_FILE=/tmp/quecdeck_update.pid
-echo "\$\$" > "\$UPDATE_PID_FILE"
-
+# Mutual exclusion and liveness are owned by systemd: this runs as the
+# install_quecdeck oneshot, so a concurrent start coalesces and get_update_log
+# reads state via 'systemctl is-active'. No lock or PID file needed.
 echo "running" > "\${STATUS_FILE}.tmp" && mv "\${STATUS_FILE}.tmp" "\$STATUS_FILE"
 
 remount_rw
@@ -113,7 +87,6 @@ _update_status="failed"
 
 _update_cleanup() {
     echo "\$_update_status" > "\${STATUS_FILE}.tmp" && mv "\${STATUS_FILE}.tmp" "\$STATUS_FILE" || rm -f "\${STATUS_FILE}.tmp"
-    rm -f "\$UPDATE_PID_FILE"
     remount_ro
 }
 trap '_update_cleanup' EXIT
@@ -833,7 +806,6 @@ fi
 
 rm -f /tmp/install_quecdeck.sh
 rm -f /lib/systemd/system/install_quecdeck.service
-rm -f /lib/systemd/system/multi-user.target.wants/install_quecdeck.service
 systemctl daemon-reload
 remount_ro
 exit 0

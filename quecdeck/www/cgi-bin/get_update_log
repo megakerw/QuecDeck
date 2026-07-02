@@ -6,27 +6,6 @@ cgi_output_json
 
 LOG=/tmp/install_quecdeck.log
 STATUS_FILE=/tmp/quecdeck_update.status
-UPDATE_PID_FILE=/tmp/quecdeck_update.pid
-
-# True (idle) means no live update process. The update runs as root and the lock
-# it holds cannot be opened from this www-data CGI under SELinux (SEAndroid), so
-# liveness uses the updater's published PID, with a short grace on the status
-# file for the brief window before that PID exists (e.g. during download) so a
-# running update is never misread as dead.
-_update_is_idle() {
-    local pid
-    pid=$(cat "$UPDATE_PID_FILE" 2>/dev/null)
-    case "$pid" in
-        ''|*[!0-9]*)
-            # No PID yet: treat a freshly-written status as alive (covers the
-            # download window before the inner publishes its PID).
-            [ -n "$(find "$STATUS_FILE" -mmin -5 2>/dev/null)" ] && return 1
-            return 0
-            ;;
-    esac
-    # PID published: authoritative, prompt liveness via /proc.
-    [ -d "/proc/$pid" ] && return 1 || return 0
-}
 
 offset=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^offset=' | cut -d= -f2)
 case "$offset" in
@@ -44,9 +23,6 @@ if [ "$ack" = "1" ]; then
     case "$raw_status" in
         done|failed|failed:rollback_ok|failed:rollback_failed)
             rm -f "$STATUS_FILE"
-            ;;
-        *)
-            _update_is_idle && rm -f "$STATUS_FILE"
             ;;
     esac
     printf '{"ok":true}\n'
@@ -69,8 +45,17 @@ case "$raw_status" in
     failed:rollback_failed) status="failed" ; rollback="failed" ;;
     failed)                 status="failed" ; rollback="none"   ;;
     *)
-        status="running" ; rollback="none"
-        _update_is_idle && status="failed"
+        # Non-terminal status ("running" or empty). Distinguish a live install
+        # from a crash via systemd: the install runs as the install_quecdeck
+        # oneshot. "failed" = it crashed before writing an outcome (a SIGKILL
+        # bypasses the cleanup trap); anything else (activating, or the brief
+        # installer-download window before the service starts) is still running.
+        # An empty/failed query defaults to running, never a false "failed".
+        if [ "$(systemctl is-active install_quecdeck 2>/dev/null)" = "failed" ]; then
+            status="failed" ; rollback="none"
+        else
+            status="running" ; rollback="none"
+        fi
         ;;
 esac
 
