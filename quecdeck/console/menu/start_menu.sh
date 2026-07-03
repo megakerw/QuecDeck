@@ -22,28 +22,6 @@ display_red() {
 
 # Menus
 
-apps_menu() {
-    while true; do
-        display_random_color "Run a modem App"
-        display_green "Select an option:"
-        echo "------------------"
-        display_random_color "1. Open File Browser/Editor (mc)"
-        display_random_color "2. View Used/Available space"
-        display_random_color "3. Open Task Manager/View CPU Load"
-        display_green "4. Go Back"
-        echo
-        read -p "Select an option (1-4): " option
-
-        case "$option" in
-            1) mc ;;
-            2) dfc ;;
-            3) htop ;;
-            4) break ;;
-            *) echo "Invalid option. Please try again." ;;
-        esac
-    done
-}
-
 settings_menu() {
     while true; do
         display_random_color "Password Management"
@@ -72,16 +50,14 @@ main_menu() {
         display_green "To get back to this from the root shell, just type 'menu'"
         display_green "Select an option:"
         echo "------------------"
-        display_random_color "1. Apps"
-        display_random_color "2. Password Management"
-        display_random_color "3. Exit (Enter Root Shell)"
+        display_random_color "1. Password Management"
+        display_random_color "2. Exit (Enter Root Shell)"
         echo
-        read -p "Select an option (1-3): " option
+        read -p "Select an option (1-2): " option
 
         case "$option" in
-            1) apps_menu ;;
-            2) settings_menu ;;
-            3) break ;;
+            1) settings_menu ;;
+            2) break ;;
             *) echo "Invalid option. Please try again." ;;
         esac
     done

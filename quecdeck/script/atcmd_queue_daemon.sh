@@ -30,6 +30,8 @@ elif [ -x /opt/bin/timeout ]; then
 fi
 
 mkdir -p "$_QUEUE_DIR" && chmod 700 "$_QUEUE_DIR"
+# Lock the base dir if this daemon created it before lighttpd's ExecStartPre did.
+chmod 700 /tmp/quecdeck 2>/dev/null
 rm -f "$_NOTIFY"
 rm -f "$_QUEUE_DIR"/*.resp.fifo 2>/dev/null
 mkfifo -m 600 "$_NOTIFY"

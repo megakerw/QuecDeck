@@ -12,6 +12,8 @@ MAX_EVENTS=500
 INTERVAL=30
 
 mkdir -p "$(dirname "$LOG_FILE")" && chmod 700 "$(dirname "$LOG_FILE")"
+# Lock the base dir if this daemon created it before lighttpd's ExecStartPre did.
+chmod 700 /tmp/quecdeck 2>/dev/null
 
 # ---------------------------------------------------------------------------
 
@@ -22,6 +24,14 @@ log_event() {
     if [ "$count" -gt "$MAX_EVENTS" ]; then
         tail -"$MAX_EVENTS" "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
     fi
+}
+
+# Extracts sc_cell_id/pci/earfcn/band from a +QENG: "LTE" sub-line.
+parse_lte_fields() {
+    sc_cell_id=$(printf '%s' "$1" | awk -F',' '{gsub(/[^0-9A-Fa-f]/,"",$5); print $5}')
+    sc_pci=$(    printf '%s' "$1" | awk -F',' '{gsub(/[^0-9]/,"",$6); print $6+0}')
+    sc_earfcn=$( printf '%s' "$1" | awk -F',' '{gsub(/[^0-9]/,"",$7); print $7+0}')
+    sc_band=$(   printf '%s' "$1" | awk -F',' '{gsub(/[^0-9]/,"",$8); print $8+0}')
 }
 
 # Parses response from AT+QENG="servingcell" and sets:
@@ -57,10 +67,7 @@ parse_qeng() {
                 else
                     sc_mode="LTE"
                 fi
-                sc_cell_id=$(printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9A-Fa-f]/,"",$5); print $5}')
-                sc_pci=$(    printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$6); print $6+0}')
-                sc_earfcn=$( printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$7); print $7+0}')
-                sc_band=$(   printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$8); print $8+0}')
+                parse_lte_fields "$lte_line"
             fi
         fi
     else
@@ -70,10 +77,7 @@ parse_qeng() {
         if [ -n "$lte_line" ]; then
             sc_state="CONNECT"
             sc_mode="LTE"
-            sc_cell_id=$(printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9A-Fa-f]/,"",$5); print $5}')
-            sc_pci=$(    printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$6); print $6+0}')
-            sc_earfcn=$( printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$7); print $7+0}')
-            sc_band=$(   printf '%s' "$lte_line" | awk -F',' '{gsub(/[^0-9]/,"",$8); print $8+0}')
+            parse_lte_fields "$lte_line"
         else
             sc_state="NOSERVICE"
             sc_mode=""

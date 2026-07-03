@@ -22,11 +22,27 @@ function quecdeckSettings() {
     },
 
     sendSetting(action) {
-      return fetchText('/cgi-bin/set_setting', { method: 'POST', body: new URLSearchParams({ action }) })
-        .then(text => {
-          if (text.includes('ERROR')) throw new Error(text.trim());
-          return text;
-        });
+      return postForm('/cgi-bin/set_setting', { action });
+    },
+
+    // Simple on/off settings: action name is "<key>_enable" / "<key>_disable",
+    // prop is the state flag to set on success, label appears in error text.
+    toggles: {
+      dns_v4: { prop: 'dnsV4ProxyStatus', label: 'DNS proxy' },
+      dns_v6: { prop: 'dnsV6ProxyStatus', label: 'IPv6 DNS proxy' },
+      autoconnect: { prop: 'autoConnectEnabled', label: 'auto-connect' },
+      gnss: { prop: 'gnssEnabled', label: 'GNSS' },
+      simdet: { prop: 'simDetEnabled', label: 'SIM hot swap' },
+    },
+
+    toggleSetting(key) {
+      const t = this.toggles[key];
+      const enable = !this[t.prop];
+      this.sendSetting(`${key}_${enable ? 'enable' : 'disable'}`)
+        .then(() => { this[t.prop] = enable; })
+        .catch(() => this.$store.errorModal.open(
+          `Failed to ${enable ? 'enable' : 'disable'} ${t.label}. Please try again.`
+        ));
     },
 
     rebootDevice() {
@@ -38,22 +54,6 @@ function quecdeckSettings() {
         },
         'Reboot'
       );
-    },
-
-    onBoardDNSV4ProxyEnable() {
-      this.sendSetting('dns_v4_enable').then(() => { this.dnsV4ProxyStatus = true; }).catch(() => this.$store.errorModal.open('Failed to enable DNS proxy. Please try again.'));
-    },
-
-    onBoardDNSV4ProxyDisable() {
-      this.sendSetting('dns_v4_disable').then(() => { this.dnsV4ProxyStatus = false; }).catch(() => this.$store.errorModal.open('Failed to disable DNS proxy. Please try again.'));
-    },
-
-    onBoardDNSV6ProxyEnable() {
-      this.sendSetting('dns_v6_enable').then(() => { this.dnsV6ProxyStatus = true; }).catch(() => this.$store.errorModal.open('Failed to enable IPv6 DNS proxy. Please try again.'));
-    },
-
-    onBoardDNSV6ProxyDisable() {
-      this.sendSetting('dns_v6_disable').then(() => { this.dnsV6ProxyStatus = false; }).catch(() => this.$store.errorModal.open('Failed to disable IPv6 DNS proxy. Please try again.'));
     },
 
     applyIpptChange(action) {
@@ -82,30 +82,6 @@ function quecdeckSettings() {
         () => this.applyIpptChange('ippt_disable'),
         'Disable IPPT?'
       );
-    },
-
-    autoConnectEnable() {
-      this.sendSetting('autoconnect_enable').then(() => { this.autoConnectEnabled = true; }).catch(() => this.$store.errorModal.open('Failed to enable auto-connect. Please try again.'));
-    },
-
-    autoConnectDisable() {
-      this.sendSetting('autoconnect_disable').then(() => { this.autoConnectEnabled = false; }).catch(() => this.$store.errorModal.open('Failed to disable auto-connect. Please try again.'));
-    },
-
-    gnssEnable() {
-      this.sendSetting('gnss_enable').then(() => { this.gnssEnabled = true; }).catch(() => this.$store.errorModal.open('Failed to enable GNSS. Please try again.'));
-    },
-
-    gnssDisable() {
-      this.sendSetting('gnss_disable').then(() => { this.gnssEnabled = false; }).catch(() => this.$store.errorModal.open('Failed to disable GNSS. Please try again.'));
-    },
-
-    simDetEnable() {
-      this.sendSetting('simdet_enable').then(() => { this.simDetEnabled = true; }).catch(() => this.$store.errorModal.open('Failed to enable SIM hot swap. Please try again.'));
-    },
-
-    simDetDisable() {
-      this.sendSetting('simdet_disable').then(() => { this.simDetEnabled = false; }).catch(() => this.$store.errorModal.open('Failed to disable SIM hot swap. Please try again.'));
     },
 
     fetchCurrentSettings() {

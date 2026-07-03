@@ -20,14 +20,6 @@ function developerPage() {
     cellLockStatus: "Unknown",
     cellLockLoading: false,
 
-    sendSetting(action) {
-      return fetchText("/cgi-bin/set_setting", { method: "POST", body: new URLSearchParams({ action }) })
-        .then(text => {
-          if (text.includes("ERROR")) throw new Error(text.trim());
-          return text;
-        });
-    },
-
     fetchCellLockStatus() {
       fetchText("/cgi-bin/user_atcommand", {
         method: "POST",
@@ -118,14 +110,7 @@ function developerPage() {
     },
 
     postCellLockAction(params) {
-      return fetchText("/cgi-bin/set_cell_lock", {
-        method: "POST",
-        body: new URLSearchParams(params),
-      })
-        .then(text => {
-          if (text.includes("ERROR")) throw new Error(text.trim());
-          return text;
-        });
+      return postForm("/cgi-bin/set_cell_lock", params);
     },
 
     checkDevStatus() {

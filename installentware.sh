@@ -82,6 +82,11 @@ do
 done
 
 echo -e '\033[32mInfo: Opkg package manager deployment...\033[0m'
+# KNOWN LIMITATION: opkg and opkg.conf are fetched over plain HTTP with no
+# integrity check (Entware ships no signed installer, and the modem's wget can't
+# validate TLS). One-time at first install; exposure is a WAN-path MITM during
+# bootstrap. To close: pin their sha256 here, or vendor opkg in the repo and pull
+# it over the GitHub channel with a hash check, like atcli.
 URL=http://bin.entware.net/${ARCH}/installer
 wget $URL/opkg -O /opt/bin/opkg || { echo -e "\e[1;31mFailed to download opkg binary.\e[0m"; exit 1; }
 chmod 755 /opt/bin/opkg
@@ -160,10 +165,3 @@ ln -sf /opt/bin/passwd /usr/bin/
 ln -sf /opt/bin/useradd /usr/bin/
 echo -e "\e[1;31mPlease set the root password.\e[0m"
 /opt/bin/passwd
-
-# Install basic and useful utilities
-opkg install mc htop dfc lsof
-ln -sf /opt/bin/mc /bin
-ln -sf /opt/bin/htop /bin
-ln -sf /opt/bin/dfc /bin
-ln -sf /opt/bin/lsof /bin

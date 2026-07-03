@@ -52,6 +52,7 @@ CHECKSUMMED_FILES=(
   quecdeck/www/js/home.js
   quecdeck/www/js/settings.js
   quecdeck/www/js/scanner.js
+  quecdeck/www/js/network-names.js
   quecdeck/www/js/deviceinfo.js
   quecdeck/www/js/developer.js
   quecdeck/www/js/sms.js

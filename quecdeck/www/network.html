@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=95826c42" />
-    <link rel="stylesheet" href="css/styles.css?v=95826c42" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=370295f0" />
+    <link rel="stylesheet" href="css/styles.css?v=370295f0" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=95826c42"></script>
-    <script src="js/utils.js?v=95826c42"></script>
-    <script src="js/alpinejs.min.js?v=95826c42" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=370295f0"></script>
+    <script src="js/utils.js?v=370295f0"></script>
+    <script src="js/alpinejs.min.js?v=370295f0" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="networkSettings()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=95826c42"></script>
+        <script src="js/nav.js?v=370295f0"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
           <div class="col-12 col-md-5">
@@ -165,8 +165,8 @@
                     <template x-for="(rat, index) in ratAcqModes" :key="rat.id">
                       <div class="d-flex align-items-center gap-2 mb-2">
                         <span class="flex-grow-1" x-text="rat.label"></span>
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2 py-0" @click="moveRatAcqUp(index)" :disabled="index === 0">↑</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary px-2 py-0" @click="moveRatAcqDown(index)" :disabled="index === ratAcqModes.length - 1">↓</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2 py-0" @click="moveRatAcq(index, -1)" :disabled="index === 0">↑</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary px-2 py-0" @click="moveRatAcq(index, 1)" :disabled="index === ratAcqModes.length - 1">↓</button>
                       </div>
                     </template>
                   </div>
@@ -196,9 +196,9 @@
       </div>
     </main>
 
-    <script src="js/populate-bands.js?v=95826c42"></script>
-    <script src="js/parse-settings.js?v=95826c42"></script>
-    <script src="js/network.js?v=95826c42"></script>
-    <script src="js/dark-mode.js?v=95826c42"></script>
+    <script src="js/populate-bands.js?v=370295f0"></script>
+    <script src="js/parse-settings.js?v=370295f0"></script>
+    <script src="js/network.js?v=370295f0"></script>
+    <script src="js/dark-mode.js?v=370295f0"></script>
   </body>
 </html>

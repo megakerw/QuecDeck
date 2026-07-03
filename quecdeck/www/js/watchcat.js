@@ -87,11 +87,9 @@ function quecdeckWatchCat() {
       return sign * (h * 60 + m);
     },
 
-    // Convert device-local (hour, minute, day) → browser-local
-    deviceToLocal(hour, minute, day) {
-      const userOffsetMins = -new Date().getTimezoneOffset();
-      const delta = userOffsetMins - this.srDeviceTzOffsetMins;
-      let total = hour * 60 + minute + delta;
+    // Shift (hour, minute, day) by deltaMins, wrapping across midnight.
+    shiftTime(hour, minute, day, deltaMins) {
+      let total = hour * 60 + minute + deltaMins;
       let dayShift = 0;
       if (total < 0)    { total += 1440; dayShift = -1; }
       if (total >= 1440) { total -= 1440; dayShift = 1; }
@@ -102,19 +100,16 @@ function quecdeckWatchCat() {
       };
     },
 
+    // Convert device-local (hour, minute, day) → browser-local
+    deviceToLocal(hour, minute, day) {
+      const userOffsetMins = -new Date().getTimezoneOffset();
+      return this.shiftTime(hour, minute, day, userOffsetMins - this.srDeviceTzOffsetMins);
+    },
+
     // Convert browser-local (hour, minute, day) → device-local
     localToDevice(hour, minute, day) {
       const userOffsetMins = -new Date().getTimezoneOffset();
-      const delta = this.srDeviceTzOffsetMins - userOffsetMins;
-      let total = hour * 60 + minute + delta;
-      let dayShift = 0;
-      if (total < 0)    { total += 1440; dayShift = -1; }
-      if (total >= 1440) { total -= 1440; dayShift = 1; }
-      return {
-        hour: Math.floor(total / 60),
-        minute: total % 60,
-        day: ((day - 1 + dayShift + 7) % 7) + 1,
-      };
+      return this.shiftTime(hour, minute, day, this.srDeviceTzOffsetMins - userOffsetMins);
     },
 
     get srCanSave() {

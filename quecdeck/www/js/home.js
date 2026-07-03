@@ -113,14 +113,9 @@ function processAllInfos() {
 
             // --- Temperature ---
             // +QTEMP:"cpuss-0-usr","50"
-            this.temperature = lines
-              .find((line) => line.includes('+QTEMP:"cpuss-0-usr"'))
-              ?.split(",")[1]
-              ?.replace(/"/g, "") ??
-              lines
-                .find((line) => line.includes('+QTEMP:"cpu0-a7-usr"'))
-                ?.split(",")[1]
-                ?.replace(/"/g, "") ??
+            this.temperature =
+              atField(lines.find((line) => line.includes('+QTEMP:"cpuss-0-usr"')), 1) ??
+              atField(lines.find((line) => line.includes('+QTEMP:"cpu0-a7-usr"')), 1) ??
               null;
 
             // --- Network Mode ---
@@ -151,9 +146,7 @@ function processAllInfos() {
               }
             } catch (error) {
               // +QENG: "LTE","FDD",515,03,22AE76D,...
-              const duplex_mode_lte = lte_line
-                ?.split(",")[1]
-                ?.replace(/"/g, "");
+              const duplex_mode_lte = atField(lte_line, 1);
 
               // +QENG: "NR5G-NSA",515,03,843,-95,20,-11,528030,41,8,1
               if (nr5g_nsa_line) {
@@ -169,7 +162,7 @@ function processAllInfos() {
             const bands = lines
               .filter((line) => line.includes("LTE BAND"))
               .map((line) => {
-                const num = line.split(",")[3]?.replace(/"/g, "")?.replace("LTE BAND", "")?.trim();
+                const num = atField(line, 3)?.replace("LTE BAND", "")?.trim();
                 return num ? "B" + num : null;
               })
               .filter(Boolean);
@@ -177,7 +170,7 @@ function processAllInfos() {
             const bands_5g = lines
               .filter((line) => line.includes("NR5G BAND"))
               .map((line) => {
-                const num = line.split(",")[3]?.replace(/"/g, "")?.replace("NR5G BAND", "")?.trim();
+                const num = atField(line, 3)?.replace("NR5G BAND", "")?.trim();
                 return num ? "N" + num : null;
               })
               .filter(Boolean);
@@ -298,9 +291,7 @@ function processAllInfos() {
               this.networkMode === "4G LTE FDD" ||
               this.networkMode === "4G LTE TDD"
             ) {
-              const longCID = servingcell_line
-                ?.split(",")[6]
-                ?.replace(/"/g, "");
+              const longCID = atField(servingcell_line, 6);
 
               if (!longCID) {
                 this.eNBID = "Unknown";
@@ -315,20 +306,20 @@ function processAllInfos() {
               this.eNBID = nodeID !== null ? nodeID : "Unknown";
 
               if (isNR) {
-                const localTac = servingcell_line?.split(",")[8]?.replace(/"/g, "");
+                const localTac = atField(servingcell_line, 8);
                 this.tac = localTac ? localTac + " (" + parseInt(localTac, 16) + ")" : "Unknown";
                 this.csq = "NR-SA Mode";
 
                 this.signalPercentage = this.computeSignalMetrics(
-                  servingcell_line?.split(",")[12]?.replace(/"/g, ""),
-                  servingcell_line?.split(",")[13]?.replace(/"/g, ""),
-                  servingcell_line?.split(",")[14]?.replace(/"/g, ""),
+                  atField(servingcell_line, 12),
+                  atField(servingcell_line, 13),
+                  atField(servingcell_line, 14),
                   "NR"
                 );
                 this.signalAssessment = this.signalQuality(this.signalPercentage);
               } else {
                 // LTE Only
-                const localTac = servingcell_line?.split(",")[12]?.replace(/"/g, "");
+                const localTac = atField(servingcell_line, 12);
                 this.tac = localTac ? localTac + " (" + parseInt(localTac, 16) + ")" : "Unknown";
                 this.csq = lines
                   .find((line) => line.includes("+CSQ:"))
@@ -336,9 +327,9 @@ function processAllInfos() {
                   ?.split(",")[0];
 
                 this.signalPercentage = this.computeSignalMetrics(
-                  servingcell_line?.split(",")[13]?.replace(/"/g, ""),
-                  servingcell_line?.split(",")[14]?.replace(/"/g, ""),
-                  servingcell_line?.split(",")[16]?.replace(/"/g, ""),
+                  atField(servingcell_line, 13),
+                  atField(servingcell_line, 14),
+                  atField(servingcell_line, 16),
                   "LTE"
                 );
                 this.signalAssessment = this.signalQuality(this.signalPercentage);
@@ -348,14 +339,14 @@ function processAllInfos() {
                 this.cellID = "Short " + sectorID + ", Long " + longCIDDec;
               }
             } else if (this.networkMode === "5G NSA") {
-              const longCID = lte_line?.split(",")[4]?.replace(/"/g, "");
+              const longCID = atField(lte_line, 4);
 
               const eNBIDStr = longCID && longCID.length > 2 ? longCID.substring(0, longCID.length - 2) : null;
               this.eNBID = eNBIDStr ? parseInt(eNBIDStr, 16) : "Unknown";
 
               const shortCID = longCID && longCID.length >= 2 ? longCID.substring(longCID.length - 2) : null;
 
-              const localTac = lte_line?.split(",")[10]?.replace(/"/g, "");
+              const localTac = atField(lte_line, 10);
               this.tac = localTac ? localTac + " (" + parseInt(localTac, 16) + ")" : "Unknown";
 
               if (longCID && shortCID) {
@@ -373,15 +364,15 @@ function processAllInfos() {
 
               // +QENG: "NR5G-NSA",MCC,MNC,PCI,RSRP,SINR,RSRQ,...
               const lte_sig = this.computeSignalMetrics(
-                lte_line?.split(",")[11]?.replace(/"/g, ""),
-                lte_line?.split(",")[12]?.replace(/"/g, ""),
-                lte_line?.split(",")[14]?.replace(/"/g, ""),
+                atField(lte_line, 11),
+                atField(lte_line, 12),
+                atField(lte_line, 14),
                 "LTE"
               );
               const nr_sig = this.computeSignalMetrics(
-                nr5g_nsa_line?.split(",")[4]?.replace(/"/g, ""),
-                nr5g_nsa_line?.split(",")[6]?.replace(/"/g, ""),
-                nr5g_nsa_line?.split(",")[5]?.replace(/"/g, ""),
+                atField(nr5g_nsa_line, 4),
+                atField(nr5g_nsa_line, 6),
+                atField(nr5g_nsa_line, 5),
                 "NR"
               );
               this.signalPercentage = (lte_sig + nr_sig) / 2;
@@ -438,28 +429,25 @@ function processAllInfos() {
 
             // --- Network Provider ---
             const qspn_line = lines.find((line) => line.includes("+QSPN:"));
-            const network_provider = qspn_line
-              ?.split(",")[0]
-              ?.replace("+QSPN: ", "")
-              ?.replace(/"/g, "")
-              ?.replace(/ /g, "") ?? "";
+            const network_provider =
+              atField(qspn_line, 0)?.replace("+QSPN: ", "")?.replace(/ /g, "") ?? "";
 
             if (network_provider.match(/^[0-9]+$/) !== null) {
-              this.networkProvider = qspn_line?.split(",")[2]?.replace(/"/g, "") || "N/A";
+              this.networkProvider = atField(qspn_line, 2) || "N/A";
             } else {
               this.networkProvider = network_provider || "N/A";
             }
 
             // --- MCCMNC ---
-            this.mccmnc = qspn_line?.split(",")[4]?.replace(/"/g, "") || "00000";
+            this.mccmnc = atField(qspn_line, 4) || "00000";
     },
 
     // Pure parser: applies the modem_conn AT response (already split into
     // lines) to APN/IP state. Called by fetchDashboard.
     applyModemConn(connLines) {
-      this.apn  = connLines.find(l => l.includes("+CGCONTRDP:"))?.split(",")[2]?.replace(/"/g, "") || "Unknown";
-      this.ipv4 = cleanIp(connLines.find(l => l.includes("IPV4"))?.split(",")[4]?.replace(/"/g, ""));
-      this.ipv6 = cleanIp(connLines.find(l => l.includes("IPV6"))?.split(",")[4]?.replace(/"/g, ""));
+      this.apn  = atField(connLines.find(l => l.includes("+CGCONTRDP:")), 2) || "Unknown";
+      this.ipv4 = cleanIp(atField(connLines.find(l => l.includes("IPV4")), 4));
+      this.ipv6 = cleanIp(atField(connLines.find(l => l.includes("IPV6")), 4));
     },
 
     bytesToSize(bytes) {
@@ -523,39 +511,24 @@ function processAllInfos() {
       return NR_BANDWIDTH_MAP[nr_bw];
     },
 
-    calculateRSRPPercentage(rsrp) {
-      if (isNaN(rsrp) || rsrp < -140) return 0;
-      let percentage = ((rsrp - (-135)) / ((-65) - (-135))) * 100;
+    // Linear percent of v within [lo, hi], clamped to 15-100; 0 if NaN or below floor.
+    scalePct(v, floor, lo, hi) {
+      if (isNaN(v) || v < floor) return 0;
+      const percentage = ((v - lo) / (hi - lo)) * 100;
       return Math.round(Math.min(Math.max(percentage, 15), 100));
-    },
-
-    calculateRSRQPercentage(rsrq) {
-      if (isNaN(rsrq) || rsrq < -20) return 0;
-      let percentage = ((rsrq - (-20)) / ((-8) - (-20))) * 100;
-      return Math.round(Math.min(Math.max(percentage, 15), 100));
-    },
-
-    calculateSINRPercentage(sinr) {
-      if (isNaN(sinr) || sinr < -10) return 0;
-      let percentage = ((sinr - (-10)) / (25 - (-10))) * 100;
-      return Math.round(Math.min(Math.max(percentage, 15), 100));
-    },
-
-    calculateSignalPercentage(rsrpPercentage, sinrPercentage) {
-      return Math.round((rsrpPercentage + sinrPercentage) / 2);
     },
 
     computeSignalMetrics(rsrp, rsrq, sinr, prefix) {
       this["rsrp" + prefix] = rsrp;
       this["rsrq" + prefix] = rsrq;
       this["sinr" + prefix] = sinr;
-      const rp  = this.calculateRSRPPercentage(parseInt(rsrp, 10));
-      const rqp = this.calculateRSRQPercentage(parseInt(rsrq, 10));
-      const sp  = this.calculateSINRPercentage(parseInt(sinr, 10));
+      const rp  = this.scalePct(parseInt(rsrp, 10), -140, -135, -65);
+      const rqp = this.scalePct(parseInt(rsrq, 10), -20, -20, -8);
+      const sp  = this.scalePct(parseInt(sinr, 10), -10, -10, 25);
       this["rsrp" + prefix + "Percentage"] = rp;
       this["rsrq" + prefix + "Percentage"] = rqp;
       this["sinr" + prefix + "Percentage"] = sp;
-      return this.calculateSignalPercentage(rp, sp);
+      return Math.round((rp + sp) / 2);
     },
 
     get tempColor() {

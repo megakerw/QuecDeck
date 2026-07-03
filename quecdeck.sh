@@ -24,7 +24,7 @@ ensure_entware_installed() {
     if [ ! -f "/opt/bin/opkg" ]; then
         echo -e "\e[1;32mInstalling Entware/OPKG...\e[0m"
         cd /tmp && wget --timeout=30 --tries=2 -O installentware.sh "$GITROOT/installentware.sh"
-        echo "7b4546ccf4d37b3e3b85f40e2dd204933070354a8d3f735f0ad158b484612c1a  installentware.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f /tmp/installentware.sh; exit 1; }
+        echo "6e6839411282774ede732046589ee4e083e485c42e27a2de157d7350f3651226  installentware.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f /tmp/installentware.sh; exit 1; }
         echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
         chmod +x installentware.sh && ./installentware.sh
         if [ "$?" -ne 0 ]; then
@@ -61,13 +61,6 @@ ensure_entware_installed() {
             ln -sf /opt/bin/useradd /usr/bin/
             echo -e "\e[1;31mPlease set the root password.\e[0m"
             /opt/bin/passwd
-
-            # Install basic and useful utilities
-            opkg install mc htop dfc lsof
-            ln -sf /opt/bin/mc /bin
-            ln -sf /opt/bin/htop /bin
-            ln -sf /opt/bin/dfc /bin
-            ln -sf /opt/bin/lsof /bin
         fi
 
         if [ ! -f "/usrdata/root/.profile" ]; then

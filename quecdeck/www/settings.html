@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=95826c42" />
-    <link rel="stylesheet" href="css/styles.css?v=95826c42" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=370295f0" />
+    <link rel="stylesheet" href="css/styles.css?v=370295f0" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=95826c42"></script>
-    <script src="js/utils.js?v=95826c42"></script>
-    <script src="js/alpinejs.min.js?v=95826c42" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=370295f0"></script>
+    <script src="js/utils.js?v=370295f0"></script>
+    <script src="js/alpinejs.min.js?v=370295f0" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="quecdeckSettings()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=95826c42"></script>
+        <script src="js/nav.js?v=370295f0"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
           <div class="col-md-6 form-narrow">
@@ -60,7 +60,7 @@
                       type="button"
                       class="btn"
                       :class="dnsV4ProxyStatus ? 'btn-danger' : 'btn-primary'"
-                      @click="dnsV4ProxyStatus ? onBoardDNSV4ProxyDisable() : onBoardDNSV4ProxyEnable()"
+                      @click="toggleSetting('dns_v4')"
                       :disabled="isLoading || $store.scanBanner.active || dnsV4ProxyStatus === null"
                       x-text="dnsV4ProxyStatus ? 'Disable' : 'Enable'"
                     ></button>
@@ -71,7 +71,7 @@
                       type="button"
                       class="btn"
                       :class="dnsV6ProxyStatus ? 'btn-danger' : 'btn-primary'"
-                      @click="dnsV6ProxyStatus ? onBoardDNSV6ProxyDisable() : onBoardDNSV6ProxyEnable()"
+                      @click="toggleSetting('dns_v6')"
                       :disabled="isLoading || $store.scanBanner.active || dnsV6ProxyStatus === null"
                       x-text="dnsV6ProxyStatus ? 'Disable' : 'Enable'"
                     ></button>
@@ -93,7 +93,7 @@
                       type="button"
                       class="btn"
                       :class="autoConnectEnabled ? 'btn-danger' : 'btn-primary'"
-                      @click="autoConnectEnabled ? autoConnectDisable() : autoConnectEnable()"
+                      @click="toggleSetting('autoconnect')"
                       :disabled="isLoading || $store.scanBanner.active || autoConnectEnabled === null"
                       x-text="autoConnectEnabled ? 'Disable' : 'Enable'"
                     ></button>
@@ -104,7 +104,7 @@
                       type="button"
                       class="btn"
                       :class="gnssEnabled ? 'btn-danger' : 'btn-primary'"
-                      @click="gnssEnabled ? gnssDisable() : gnssEnable()"
+                      @click="toggleSetting('gnss')"
                       :disabled="isLoading || $store.scanBanner.active || gnssEnabled === null"
                       x-text="gnssEnabled ? 'Disable' : 'Enable'"
                     ></button>
@@ -115,7 +115,7 @@
                       type="button"
                       class="btn"
                       :class="simDetEnabled ? 'btn-danger' : 'btn-primary'"
-                      @click="simDetEnabled ? simDetDisable() : simDetEnable()"
+                      @click="toggleSetting('simdet')"
                       :disabled="isLoading || $store.scanBanner.active || simDetEnabled === null"
                       x-text="simDetEnabled ? 'Disable' : 'Enable'"
                     ></button>
@@ -127,7 +127,7 @@
 
       </div>
     </main>
-    <script src="js/dark-mode.js?v=95826c42"></script>
-    <script src="js/settings.js?v=95826c42"></script>
+    <script src="js/dark-mode.js?v=370295f0"></script>
+    <script src="js/settings.js?v=370295f0"></script>
   </body>
 </html>

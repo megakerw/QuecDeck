@@ -1,7 +1,6 @@
 #!/bin/bash
 
 . /usrdata/quecdeck/script/cgi-lib.sh
-cgi_check_cors
 cgi_require_post
 cgi_read_post
 

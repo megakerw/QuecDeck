@@ -118,74 +118,48 @@ function networkSettings() {
       });
     },
 
-    moveRatAcqUp(index) {
-      if (index > 0) {
-        const tmp = this.ratAcqModes[index - 1];
-        this.ratAcqModes[index - 1] = this.ratAcqModes[index];
-        this.ratAcqModes[index] = tmp;
-        this.ratAcqModes = [...this.ratAcqModes];
-      }
+    // dir is -1 (up) or 1 (down); swaps the entry with its neighbour.
+    moveRatAcq(index, dir) {
+      const target = index + dir;
+      if (target < 0 || target >= this.ratAcqModes.length) return;
+      const tmp = this.ratAcqModes[target];
+      this.ratAcqModes[target] = this.ratAcqModes[index];
+      this.ratAcqModes[index] = tmp;
+      this.ratAcqModes = [...this.ratAcqModes];
     },
 
-    moveRatAcqDown(index) {
-      if (index < this.ratAcqModes.length - 1) {
-        const tmp = this.ratAcqModes[index + 1];
-        this.ratAcqModes[index + 1] = this.ratAcqModes[index];
-        this.ratAcqModes[index] = tmp;
-        this.ratAcqModes = [...this.ratAcqModes];
-      }
-    },
-
-
-    parseSupportedBands(rawdata) {
+    // Parses +QNWPREFCFG band lines into { lte, nsa, sa } colon-joined strings.
+    parseBandData(rawdata) {
       const regex = /"([^"]+)",([0-9:]+)/g;
-
-      // Object to store the results
       const bands = {};
-
       let match;
       while ((match = regex.exec(rawdata)) !== null) {
-        const bandType = match[1];
-        const numbers = match[2].split(":").map(Number);
-        bands[bandType] = numbers;
+        bands[match[1]] = match[2].split(":").map(Number);
       }
+      return {
+        lte: (bands.lte_band || []).join(":"),
+        nsa: (bands.nsa_nr5g_band || []).join(":"),
+        sa: (bands.nr5g_band || []).join(":"),
+      };
+    },
 
-      // Separate the bands for each network mode
-      this.lte_bands = (bands.lte_band || []).join(":");
-      this.nsa_bands = (bands.nsa_nr5g_band || []).join(":");
-      this.sa_bands = (bands.nr5g_band || []).join(":");
+    parseSupportedBands(rawdata) {
+      const b = this.parseBandData(rawdata);
+      this.lte_bands = b.lte;
+      this.nsa_bands = b.nsa;
+      this.sa_bands = b.sa;
 
       // Show checkboxes immediately with no locked state. parseLockedBands
       // will call populateBands again once locked bands are fetched.
-      populateBands(
-        this.lte_bands,
-        this.nsa_bands,
-        this.sa_bands,
-        "",
-        "",
-        ""
-      );
+      populateBands(this.lte_bands, this.nsa_bands, this.sa_bands, "", "", "");
       this.syncBandToggleState();
     },
 
-
     parseLockedBands(rawdata) {
-      const regex = /"([^"]+)",([0-9:]+)/g;
-
-      // Object to store the results
-      const bands = {};
-
-      let match;
-      while ((match = regex.exec(rawdata)) !== null) {
-        const bandType = match[1];
-        const numbers = match[2].split(":").map(Number);
-        bands[bandType] = numbers;
-      }
-
-      // Separate the bands for each network mode
-      this.locked_lte_bands = (bands.lte_band || []).join(":");
-      this.locked_nsa_bands = (bands.nsa_nr5g_band || []).join(":");
-      this.locked_sa_bands = (bands.nr5g_band || []).join(":");
+      const b = this.parseBandData(rawdata);
+      this.locked_lte_bands = b.lte;
+      this.locked_nsa_bands = b.nsa;
+      this.locked_sa_bands = b.sa;
 
       populateBands(
         this.lte_bands,

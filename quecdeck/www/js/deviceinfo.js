@@ -89,7 +89,7 @@ function fetchDeviceInfo() {
 
       if (cnumLine) {
         if (iccidLine) this.iccid = iccidLine.replace(/^\+ICCID:\s*/, "");
-        const phone = cnumLine.split(",")[1]?.replace(/"/g, "");
+        const phone = atField(cnumLine, 1);
         this.phoneNumber = (phone && phone !== "") ? phone : "Unknown";
         const imsiLine = lines.find(l => /^\d{10,16}$/.test(l));
         if (imsiLine) this.imsi = imsiLine;
@@ -104,8 +104,8 @@ function fetchDeviceInfo() {
       const lines = data.split("\n").map(l => l.trim()).filter(l => l !== "");
 
       const qmapLines = lines.filter(l => l.startsWith("+QMAP:"));
-      if (qmapLines[0]) this.wwanIpv4 = cleanIp(qmapLines[0].split(",")[4]?.replace(/"/g, ""));
-      if (qmapLines[1]) this.wwanIpv6 = cleanIp(qmapLines[1].split(",")[4]?.replace(/"/g, ""));
+      if (qmapLines[0]) this.wwanIpv4 = cleanIp(atField(qmapLines[0], 4));
+      if (qmapLines[1]) this.wwanIpv6 = cleanIp(atField(qmapLines[1], 4));
 
       const cgcontrdpLine = lines.find(l => l.startsWith("+CGCONTRDP:"));
       if (cgcontrdpLine) {

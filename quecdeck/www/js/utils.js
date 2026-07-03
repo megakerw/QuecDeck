@@ -104,14 +104,19 @@ document.addEventListener('alpine:init', () => {
   });
 });
 
-// Inject confirm modal HTML into every page that includes this script
+// Inject the shared modal overlays into every page that includes this script.
 document.addEventListener('DOMContentLoaded', () => {
-  const confirmModal = document.createElement('div');
-  confirmModal.setAttribute('x-data', '');
-  confirmModal.setAttribute('x-show', '$store.confirmModal.show');
-  confirmModal.className = 'modal-overlay';
-  confirmModal.setAttribute('x-cloak', '');
-  confirmModal.innerHTML = `
+  const injectOverlay = (showExpr, innerHTML) => {
+    const el = document.createElement('div');
+    el.setAttribute('x-data', '');
+    el.setAttribute('x-show', showExpr);
+    el.className = 'modal-overlay';
+    el.setAttribute('x-cloak', '');
+    el.innerHTML = innerHTML;
+    document.body.appendChild(el);
+  };
+
+  injectOverlay('$store.confirmModal.show', `
     <div class="loading-modal text-start">
       <div class="mb-3">
         <h5 class="mb-0 fw-semibold" x-text="$store.confirmModal.title"></h5>
@@ -123,18 +128,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <button type="button" class="btn btn-primary btn-sm" @click="$store.confirmModal.confirm()">Confirm</button>
       </div>
     </div>
-  `;
-  document.body.appendChild(confirmModal);
-});
+  `);
 
-// Inject error modal HTML into every page that includes this script
-document.addEventListener('DOMContentLoaded', () => {
-  const errorModal = document.createElement('div');
-  errorModal.setAttribute('x-data', '');
-  errorModal.setAttribute('x-show', '$store.errorModal.show');
-  errorModal.className = 'modal-overlay';
-  errorModal.setAttribute('x-cloak', '');
-  errorModal.innerHTML = `
+  injectOverlay('$store.errorModal.show', `
     <div class="loading-modal text-start">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="mb-0 fw-semibold" x-text="$store.errorModal.title"></h5>
@@ -145,18 +141,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <button type="button" class="btn btn-primary btn-sm" @click="$store.errorModal.close()">OK</button>
       </div>
     </div>
-  `;
-  document.body.appendChild(errorModal);
-});
+  `);
 
-// Inject wait modal HTML into every page that includes this script
-document.addEventListener('DOMContentLoaded', () => {
-  const modal = document.createElement('div');
-  modal.setAttribute('x-data', '');
-  modal.setAttribute('x-show', '$store.waitModal.show');
-  modal.className = 'modal-overlay';
-  modal.setAttribute('x-cloak', '');
-  modal.innerHTML = `
+  injectOverlay('$store.waitModal.show', `
     <div class="loading-modal">
       <div class="loader"></div>
       <div class="loading-text d-flex flex-column">
@@ -169,8 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </p>
       </div>
     </div>
-  `;
-  document.body.appendChild(modal);
+  `);
 });
 
 // Inject scan-in-progress banner
@@ -198,6 +184,16 @@ function fetchText(url, options) {
   return authFetch(url, options).then(r => r.text());
 }
 
+// POSTs form-encoded params and resolves with the response text.
+// Rejects if the body contains ERROR (the CGI convention for AT failures).
+function postForm(url, params) {
+  return fetchText(url, { method: "POST", body: new URLSearchParams(params) })
+    .then(text => {
+      if (text.includes("ERROR")) throw new Error(text.trim());
+      return text;
+    });
+}
+
 // Wraps a fetch-style call (fetchJSON, fetchText, authFetch, ...) with an
 // AbortController that fires after timeoutMs, so callers don't each have to
 // create/wire/clear their own controller and timer.
@@ -222,6 +218,9 @@ function parseEnvelope(text) {
   flush();
   return sections;
 }
+
+// Comma-separated AT response field with quotes stripped; undefined if absent.
+const atField = (line, i) => line?.split(",")[i]?.replace(/"/g, "");
 
 // Returns "-" for unassigned IP addresses (0.0.0.0 or all-zero IPv6 like ::)
 function cleanIp(ip) {

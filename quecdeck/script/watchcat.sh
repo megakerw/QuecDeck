@@ -90,6 +90,8 @@ uptime_secs=$(get_uptime)
 MISS_DIR=/tmp/quecdeck/watchcat_miss
 rm -rf "$MISS_DIR"
 mkdir -p "$MISS_DIR"
+# Lock the base dir if this daemon created it before lighttpd's ExecStartPre did.
+chmod 700 /tmp/quecdeck "$MISS_DIR" 2>/dev/null
 trap 'rm -rf $MISS_DIR' EXIT
 trap 'exit' INT TERM
 _miss_file() { echo "${MISS_DIR}/miss_${1}"; }

@@ -214,6 +214,7 @@ stage_release() {
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/home.js &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/settings.js &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/scanner.js &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/network-names.js &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/deviceinfo.js &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/developer.js &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/sms.js &
