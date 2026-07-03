@@ -5,7 +5,7 @@
 #
 # Events logged: connected, disconnected, cell_change, band_change, mode_change.
 
-. /usrdata/quecdeck/script/cgi-lib.sh
+. /usrdata/quecdeck/script/at-lib.sh
 
 LOG_FILE="/tmp/quecdeck/logs/connection_events.jsonl"
 MAX_EVENTS=500

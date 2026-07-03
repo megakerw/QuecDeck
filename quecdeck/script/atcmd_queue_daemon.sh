@@ -8,15 +8,16 @@
 # /dev/smd11 directly. The daemon itself runs as www-data with no special
 # privileges or group memberships required.
 #
-# Client protocol (implemented in atcmd_run in cgi-lib.sh):
+# Client protocol (implemented in atcmd_run in at-lib.sh):
 #   1. mkfifo /tmp/quecdeck/queue/<id>.resp.fifo          (response pipe)
 #   2. exec 8<> <id>.resp.fifo                               (hold open before notify)
 #   3. printf <id>\t<cmd>\t<timeout_ms>\n > atcmd.notify     (wake daemon)
 #   4. read loop on fd 8 until OK/ERROR                      (block for response)
 
+# FIFO paths come from at-lib.sh so both ends of the protocol cannot drift.
+. /usrdata/quecdeck/script/at-lib.sh
+
 _ATCLI=/usrdata/quecdeck/atcli
-_QUEUE_DIR=/tmp/quecdeck/queue
-_NOTIFY=/tmp/quecdeck/atcmd.notify
 
 # Backstop for a hung atcli. atcli has its own -t, but if it ever blocks past
 # that (e.g. stuck on device I/O), the daemon is serial so the whole queue
@@ -29,20 +30,20 @@ elif [ -x /opt/bin/timeout ]; then
     _TIMEOUT=/opt/bin/timeout
 fi
 
-mkdir -p "$_QUEUE_DIR" && chmod 700 "$_QUEUE_DIR"
+mkdir -p "$_ATCMD_QUEUE" && chmod 700 "$_ATCMD_QUEUE"
 # Lock the base dir if this daemon created it before lighttpd's ExecStartPre did.
 chmod 700 /tmp/quecdeck 2>/dev/null
-rm -f "$_NOTIFY"
-rm -f "$_QUEUE_DIR"/*.resp.fifo 2>/dev/null
-mkfifo -m 600 "$_NOTIFY"
+rm -f "$_ATCMD_NOTIFY"
+rm -f "$_ATCMD_QUEUE"/*.resp.fifo 2>/dev/null
+mkfifo -m 600 "$_ATCMD_NOTIFY"
 
 # Keep notify FIFO open O_RDWR so client O_WRONLY opens never block.
-exec 5<>"$_NOTIFY" || exit 1
+exec 5<>"$_ATCMD_NOTIFY" || exit 1
 
 _cleanup() {
     trap - EXIT INT TERM
-    rm -f "$_NOTIFY"
-    rm -f "$_QUEUE_DIR"/*.resp.fifo 2>/dev/null
+    rm -f "$_ATCMD_NOTIFY"
+    rm -f "$_ATCMD_QUEUE"/*.resp.fifo 2>/dev/null
     exit 0
 }
 trap _cleanup EXIT INT TERM
@@ -56,7 +57,7 @@ while IFS= read -r _line <&5; do
     # client lifetime (queue-wait + read, each bounded by the 215s cell-scan
     # timeout), so a live client is never reaped. ~2% of iterations.
     [ $(( RANDOM % 50 )) -eq 0 ] && \
-        find "$_QUEUE_DIR" -maxdepth 1 -name '*.resp.fifo' -mmin +10 -delete 2>/dev/null
+        find "$_ATCMD_QUEUE" -maxdepth 1 -name '*.resp.fifo' -mmin +10 -delete 2>/dev/null
 
     # Require a tab separator. Malformed lines are silently dropped.
     case "$_line" in *$'\t'*) ;; *) continue ;; esac
@@ -73,7 +74,7 @@ while IFS= read -r _line <&5; do
 
     [ -z "$_cmd" ] && continue
 
-    _resp_fifo="$_QUEUE_DIR/${_id}.resp.fifo"
+    _resp_fifo="$_ATCMD_QUEUE/${_id}.resp.fifo"
 
     # Normal AT command: dispatch via atcli and deliver response.
     # Strip \r (atcli does not strip CR from modem's \r\n line endings).

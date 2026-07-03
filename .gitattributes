@@ -11,6 +11,7 @@
 *.js        text eol=lf
 *.json      text eol=lf
 *.md        text eol=lf
+*.service   text eol=lf
 
 # CGI scripts and other text files without extensions (quecdeck/www/cgi-bin/*)
 quecdeck/www/cgi-bin/* text eol=lf

@@ -2,6 +2,9 @@
 # Shared CGI helpers. Source this at the top of each CGI script:
 #   . /usrdata/quecdeck/script/cgi-lib.sh
 
+# AT access layer (atcmd_run, atcli_direct); used by the cache helpers below.
+. /usrdata/quecdeck/script/at-lib.sh
+
 # Reject cross-origin requests. Doubles as CSRF protection: browsers always send
 # the Origin header on cross-origin requests (including form POSTs), so a
 # malicious page on another origin will be blocked here. Absent Origin (curl,
@@ -380,77 +383,3 @@ system_stats_json() {
         "$load" "$mem_total_mb" "$mem_used_mb" "$mem_percent" "$up"
 }
 
-# Send an AT command to the modem via the queue daemon (if running) and return
-# the response on stdout with \r stripped. Falls back to atcli directly if the
-# daemon is not up. Blocks if the queue is full; returns empty on timeout.
-#
-# Usage: atcmd_run <cmd> [at_timeout_ms]
-_ATCMD_NOTIFY=/tmp/quecdeck/atcmd.notify
-_ATCMD_QUEUE=/tmp/quecdeck/queue
-_ATCMD_QUEUE_LIMIT=10
-
-
-atcmd_run() {
-    local cmd="$1"
-    local at_timeout="${2:-3000}"
-    local _id _resp _waited _queued _f _line _resp_data _to_secs
-
-    # Whole-second timeout for read/sleep loops, floored at 1: integer division
-    # of a sub-1000 ms timeout yields 0, and "read -t 0" returns immediately
-    # without reading instead of waiting.
-    _to_secs=$(( at_timeout / 1000 ))
-    [ "$_to_secs" -lt 1 ] && _to_secs=1
-
-    if [ -p "$_ATCMD_NOTIFY" ]; then
-        # Wait for a free slot in the queue.
-        _waited=0
-        while true; do
-            _queued=0
-            for _f in "$_ATCMD_QUEUE"/*.resp.fifo; do
-                [ -p "$_f" ] && _queued=$((_queued + 1))
-            done
-            [ "$_queued" -lt "$_ATCMD_QUEUE_LIMIT" ] && break
-            sleep 1
-            _waited=$((_waited + 1))
-            [ "$_waited" -ge "$_to_secs" ] && return
-        done
-
-        _id="${$}_${SECONDS}_${RANDOM}"
-        _resp="$_ATCMD_QUEUE/${_id}.resp.fifo"
-
-        mkfifo "$_resp" 2>/dev/null || return
-
-        # Open before notifying; if the daemon responds before we're scheduled,
-        # holding fd 8 keeps the pipe buffer alive so the response is not lost.
-        exec 8<>"$_resp"
-
-        # Notify daemon: id\tcmd\ttimeout_ms in a single atomic write (under PIPE_BUF).
-        # On failure, clean up and return empty.
-        printf '%s\t%s\t%s\n' "$_id" "$cmd" "$at_timeout" > "$_ATCMD_NOTIFY" || {
-            exec 8>&-
-            rm -f "$_resp"
-            return
-        }
-        _resp_data=''
-
-        # Block until the first line arrives (up to at_timeout converted to seconds).
-        # All subsequent lines are already buffered at this point and drain
-        # without delay.
-        if IFS= read -r -t "$_to_secs" _line <&8; then
-            _resp_data="$_line"
-            case "$_line" in OK|ERROR|'+CME ERROR:'*|'+CMS ERROR:'*) : ;;
-            *)
-                while IFS= read -r -t 1 _line <&8; do
-                    _resp_data="${_resp_data}${_resp_data:+$'\n'}${_line}"
-                    case "$_line" in OK|ERROR|'+CME ERROR:'*|'+CMS ERROR:'*) break ;; esac
-                done
-            esac
-        fi
-
-        exec 8>&-
-        rm -f "$_resp"
-        printf '%s\n' "$_resp_data"
-    else
-        /usrdata/quecdeck/atcli -t "$at_timeout" "$cmd" 2>/dev/null | tr -d '\r'
-    fi
-}

@@ -1,8 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 # Watchcat ping watchdog. Reads config from watchcat.json at startup.
 # Run as www-data by systemd; config is written by watchcat_maker CGI.
 
 . /usrdata/quecdeck/script/json-lib.sh
+. /usrdata/quecdeck/script/at-lib.sh
 
 CONFIG=/usrdata/quecdeck/var/watchcat.json
 REBOOT_STATE=/usrdata/quecdeck/var/watchcat_reboot_state.json
@@ -105,7 +106,7 @@ for ip in $TRACK_IPS; do
 done
 
 check_sim() {
-    /usrdata/quecdeck/atcli 'AT+QSIMSTAT?' 2>/dev/null | grep -qE '^\+QSIMSTAT: [0-9]+,1$'
+    atcmd_run 'AT+QSIMSTAT?' | grep -qE '^\+QSIMSTAT: [0-9]+,1$'
 }
 
 # Calculate minimum wait before the next reboot based on reboot_count.
@@ -177,6 +178,7 @@ while :; do
 
     if [ "$failures" -ge "$PING_FAILURE_COUNT" ]; then
         if [ "$DISABLE_ON_NO_SIM" = "1" ] && ! check_sim; then
+            echo "uptime $(get_uptime)s: reboot suppressed, SIM check failed ($failures ping failures)"
             failures=0
         else
             should_reboot=1
@@ -202,7 +204,7 @@ while :; do
                 sync
                 sleep 2
                 echo "uptime $(get_uptime)s: $detail"
-                /usrdata/quecdeck/atcli 'AT+CFUN=1,1' 2>/dev/null
+                atcmd_run 'AT+CFUN=1,1' >/dev/null
                 exit 0
             fi
         fi

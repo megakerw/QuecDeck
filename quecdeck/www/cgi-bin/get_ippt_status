@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 . /usrdata/quecdeck/script/cgi-lib.sh
 cgi_check_cors

@@ -1,8 +1,11 @@
 #!/bin/bash
 
-if [ -f "/usrdata/quecdeck/atcli" ]; then
-    serial_number=$(/usrdata/quecdeck/atcli 'AT+EGMR=0,5' | grep '+EGMR:' | cut -d '"' -f2)
-    firmware_revision=$(/usrdata/quecdeck/atcli 'AT+QGMR' | grep -o 'RM[0-9A-Z].*')
+# atcli_direct rather than atcmd_run: this runs as root, and the queue FIFO
+# is www-data-owned (SELinux blocks the cross-domain write).
+if [ -f /usrdata/quecdeck/script/at-lib.sh ]; then
+    . /usrdata/quecdeck/script/at-lib.sh
+    serial_number=$(atcli_direct 'AT+EGMR=0,5' | grep '+EGMR:' | cut -d '"' -f2)
+    firmware_revision=$(atcli_direct 'AT+QGMR' | grep -o 'RM[0-9A-Z].*')
 else
     serial_number="UNKNOWN"
     firmware_revision="UNKNOWN"

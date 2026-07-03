@@ -171,6 +171,7 @@ stage_release() {
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/scheduled_restart.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/json-lib.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/cgi-lib.sh &
+    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/at-lib.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/write_htpasswd.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/firewall.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/run_update.sh &

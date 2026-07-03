@@ -14,6 +14,7 @@ CHECKSUMMED_FILES=(
   quecdeck/script/watchcat.sh
   quecdeck/script/json-lib.sh
   quecdeck/script/cgi-lib.sh
+  quecdeck/script/at-lib.sh
   quecdeck/script/create_scheduled_restart.sh
   quecdeck/script/remove_scheduled_restart.sh
   quecdeck/script/scheduled_restart.sh
@@ -136,6 +137,22 @@ if [ "$needs_update" = "0" ]; then
   exit 0
 fi
 
+# Every checksummed file must exist in the index. A listed-but-never-added
+# file ships a release without it that still passes verification (no
+# checksum line, and the updater's wget failure is silent).
+index_missing=0
+for f in "${CHECKSUMMED_FILES[@]}"; do
+  if ! git show ":$f" > /dev/null 2>&1; then
+    echo "ERROR: $f is in CHECKSUMMED_FILES but not in the git index."
+    index_missing=1
+  fi
+done
+if [ "$index_missing" = "1" ]; then
+  echo ""
+  echo "Commit blocked: git add the file(s) above, or remove them from CHECKSUMMED_FILES."
+  exit 1
+fi
+
 # Update ?v= cache-busting query string in HTML files.
 # Version is an 8-char hash of all staged JS+CSS content — changes whenever
 # any JS or CSS file changes, causing browsers to discard the 1-year cache.
@@ -230,5 +247,77 @@ done
 if [ "$hash_errors" = "1" ]; then
   echo ""
   echo "Commit blocked: update the hardcoded hashes in quecdeck.sh and re-stage it."
+  exit 1
+fi
+
+# Enforce the AT access layer: only at-lib.sh (and the queue daemon, the
+# dispatcher) may invoke atcli directly. at-lib strips atcli's \r\n line
+# endings and serializes port access.
+ATCLI_ALLOWED=(
+  quecdeck/script/at-lib.sh
+  quecdeck/script/atcmd_queue_daemon.sh
+)
+atcli_errors=0
+while IFS= read -r f; do
+  skip=0
+  for a in "${ATCLI_ALLOWED[@]}"; do
+    [ "$f" = "$a" ] && { skip=1; break; }
+  done
+  [ "$skip" = "1" ] && continue
+  if git show ":$f" 2>/dev/null | grep -qE '/usrdata/quecdeck/atcli[ "'"'"']'; then
+    echo ""
+    echo "ERROR: $f invokes atcli directly."
+    echo "  Source /usrdata/quecdeck/script/at-lib.sh and use atcmd_run (or"
+    echo "  atcli_direct for root-context callers) instead."
+    atcli_errors=1
+  fi
+done < <(git diff --cached --name-only)
+
+if [ "$atcli_errors" = "1" ]; then
+  echo ""
+  echo "Commit blocked: route AT commands through at-lib.sh."
+  exit 1
+fi
+
+# Dialect guard: bash-only code must never execute under sh. Two rules:
+# (1) any script sourcing cgi-lib.sh/at-lib.sh (bash-dialect) must declare
+#     #!/bin/bash;
+# (2) systemd Exec* lines override shebangs, so a unit's /bin/sh|/bin/bash
+#     must match the shebang of the script it launches.
+# Checked against the index so results reflect what is being committed.
+dialect_errors=0
+
+for f in $(git ls-files 'quecdeck/script/*.sh' 'quecdeck/www/cgi-bin/*' 'quecdeck/console/*'); do
+  content=$(git show ":$f" 2>/dev/null) || continue
+  echo "$content" | grep -qE '^[[:space:]]*\.[[:space:]]+/usrdata/quecdeck/script/(cgi-lib|at-lib)\.sh' || continue
+  first=$(echo "$content" | head -1)
+  if [ "$first" != "#!/bin/bash" ]; then
+    echo ""
+    echo "ERROR: $f sources cgi-lib/at-lib (bash-dialect) but starts with '$first'."
+    echo "  Change the shebang to #!/bin/bash."
+    dialect_errors=1
+  fi
+done
+
+for u in $(git ls-files 'quecdeck/systemd/*.service'); do
+  while IFS= read -r line; do
+    interp=$(echo "$line" | sed -nE 's,^Exec[A-Za-z]+=(/bin/(sh|bash)) /usrdata/quecdeck/.*,\1,p')
+    script=$(echo "$line" | sed -nE 's,^Exec[A-Za-z]+=/bin/(sh|bash) (/usrdata/quecdeck/[^ ]+).*,\2,p')
+    [ -z "$interp" ] || [ -z "$script" ] && continue
+    repo_path="quecdeck${script#/usrdata/quecdeck}"
+    shebang=$(git show ":$repo_path" 2>/dev/null | head -1)
+    [ -z "$shebang" ] && continue
+    if [ "$shebang" != "#!$interp" ]; then
+      echo ""
+      echo "ERROR: $u launches $script with $interp but its shebang is '$shebang'."
+      echo "  The Exec line overrides the shebang; make them match."
+      dialect_errors=1
+    fi
+  done < <(git show ":$u" 2>/dev/null | grep -E '^Exec[A-Za-z]+=')
+done
+
+if [ "$dialect_errors" = "1" ]; then
+  echo ""
+  echo "Commit blocked: shell dialect mismatch (see errors above)."
   exit 1
 fi

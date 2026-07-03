@@ -1,8 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 # Scheduled restart. Reads config from scheduled_restart.json at startup.
 # Run as www-data by systemd; config is written by scheduled_restart_maker CGI.
 
 . /usrdata/quecdeck/script/json-lib.sh
+. /usrdata/quecdeck/script/at-lib.sh
 
 CONFIG=/usrdata/quecdeck/var/scheduled_restart.json
 
@@ -58,7 +59,7 @@ while :; do
 
     if [ "$time_match" = "1" ] && [ "$day_match" = "1" ]; then
         echo "$(date): Scheduled restart triggered."
-        /usrdata/quecdeck/atcli 'AT+CFUN=1,1' 2>/dev/null
+        atcmd_run 'AT+CFUN=1,1' >/dev/null
         exit 0
     fi
 
