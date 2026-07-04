@@ -11,13 +11,36 @@
 # Client protocol (implemented in atcmd_run in at-lib.sh):
 #   1. mkfifo /tmp/quecdeck/queue/<id>.resp.fifo          (response pipe)
 #   2. exec 8<> <id>.resp.fifo                               (hold open before notify)
-#   3. printf <id>\t<cmd>\t<timeout_ms>\n > atcmd.notify     (wake daemon)
+#   3. printf <id>\t<cmd>\t<timeout_ms>\t<deadline>\n > atcmd.notify
 #   4. read loop on fd 8 until OK/ERROR                      (block for response)
+# deadline is uptime seconds; lines past it are skipped, not dispatched.
 
 # FIFO paths come from at-lib.sh so both ends of the protocol cannot drift.
 . /usrdata/quecdeck/script/at-lib.sh
 
 _ATCLI=/usrdata/quecdeck/atcli
+
+# Parse one notify line into _id/_cmd/_timeout/_deadline; returns 1 to drop
+# it. Tolerates older 3-field clients (deadline empty = never expires) and
+# clears non-numeric fields.
+_parse_notify() {
+    _id=""; _cmd=""; _timeout=""; _deadline=""
+    case "$1" in *$'\t'*) ;; *) return 1 ;; esac
+    _id="${1%%$'\t'*}"
+    # Reject IDs that could escape the queue directory.
+    case "$_id" in ''|*[!0-9_]*) return 1 ;; esac
+    local _rest="${1#*$'\t'}"
+    _cmd="${_rest%%$'\t'*}"
+    [ -z "$_cmd" ] && return 1
+    _rest="${_rest#*$'\t'}"
+    [ "$_rest" = "$_cmd" ] && _rest=""
+    _timeout="${_rest%%$'\t'*}"
+    _deadline="${_rest#*$'\t'}"
+    [ "$_deadline" = "$_rest" ] && _deadline=""
+    case "$_timeout" in ''|*[!0-9]*) _timeout="" ;; esac
+    case "$_deadline" in ''|*[!0-9]*) _deadline="" ;; esac
+    return 0
+}
 
 # Backstop for a hung atcli. atcli has its own -t, but if it ever blocks past
 # that (e.g. stuck on device I/O), the daemon is serial so the whole queue
@@ -59,20 +82,11 @@ while IFS= read -r _line <&5; do
     [ $(( RANDOM % 50 )) -eq 0 ] && \
         find "$_ATCMD_QUEUE" -maxdepth 1 -name '*.resp.fifo' -mmin +10 -delete 2>/dev/null
 
-    # Require a tab separator. Malformed lines are silently dropped.
-    case "$_line" in *$'\t'*) ;; *) continue ;; esac
-    _id="${_line%%$'\t'*}"
+    _parse_notify "$_line" || continue
 
-    # Reject IDs that could escape the queue directory.
-    case "$_id" in *[!0-9_]*) continue ;; esac
-
-    _rest="${_line#*$'\t'}"
-    _cmd="${_rest%%$'\t'*}"
-    _timeout="${_rest#*$'\t'}"
-    # Clear timeout if missing or non-numeric; atcli will use its built-in default.
-    case "$_timeout" in ''|"$_cmd"|*[!0-9]*) _timeout= ;; esac
-
-    [ -z "$_cmd" ] && continue
+    # Expired deadline: the sender has stopped waiting; dispatching now would
+    # be orphan work against the modem.
+    [ -n "$_deadline" ] && [ "$(_atq_uptime)" -gt "$_deadline" ] && continue
 
     _resp_fifo="$_ATCMD_QUEUE/${_id}.resp.fifo"
 

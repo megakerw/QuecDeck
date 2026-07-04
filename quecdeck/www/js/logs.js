@@ -141,42 +141,33 @@ function logsPage() {
       );
     },
 
-    refreshConnection() {
-      this.loadingConn = true;
+    // One fetch serves both panels; the flags pick which half to apply so a
+    // per-panel Refresh doesn't clobber the other panel's timestamp.
+    refreshLogs(conn, access) {
+      if (conn) this.loadingConn = true;
+      if (access) this.loadingAccess = true;
       fetchJSON('/cgi-bin/get_logs')
         .then((data) => {
-          this.connectionEvents = (data.connection_events || []).slice().reverse();
-          this.connUpdatedAt = new Date().toLocaleString([], { hour12: false });
-        })
-        .catch(() => this.$store.errorModal.open('Failed to load connection events.'))
-        .finally(() => { this.loadingConn = false; });
-    },
-
-    refreshAccess() {
-      this.loadingAccess = true;
-      fetchJSON('/cgi-bin/get_logs')
-        .then((data) => {
-          this.accessEvents = (data.access_events || []).slice().reverse();
-          this.accessUpdatedAt = new Date().toLocaleString([], { hour12: false });
-        })
-        .catch(() => this.$store.errorModal.open('Failed to load access events.'))
-        .finally(() => { this.loadingAccess = false; });
-    },
-
-    refresh() {
-      this.loadingConn = true;
-      this.loadingAccess = true;
-      fetchJSON('/cgi-bin/get_logs')
-        .then((data) => {
-          this.connectionEvents = (data.connection_events || []).slice().reverse();
-          this.accessEvents     = (data.access_events     || []).slice().reverse();
           const ts = new Date().toLocaleString([], { hour12: false });
-          this.connUpdatedAt   = ts;
-          this.accessUpdatedAt = ts;
+          if (conn) {
+            this.connectionEvents = (data.connection_events || []).slice().reverse();
+            this.connUpdatedAt = ts;
+          }
+          if (access) {
+            this.accessEvents = (data.access_events || []).slice().reverse();
+            this.accessUpdatedAt = ts;
+          }
         })
         .catch(() => this.$store.errorModal.open('Failed to load logs.'))
-        .finally(() => { this.loadingConn = false; this.loadingAccess = false; });
+        .finally(() => {
+          if (conn) this.loadingConn = false;
+          if (access) this.loadingAccess = false;
+        });
     },
+
+    refreshConnection() { this.refreshLogs(true, false); },
+    refreshAccess()     { this.refreshLogs(false, true); },
+    refresh()           { this.refreshLogs(true, true); },
 
     init() {
       this.refresh();

@@ -143,6 +143,30 @@ t "qeng no service pci"   "0"         "$sc_pci"
 parse_qeng '+QENG: "servingcell","CONNECT","EVIL\"injection","FDD",240,01,AA,1,2,3'
 t "qeng mode whitelist blocks injection" "" "$sc_mode"
 
+# ------------------------------------------ daemon notify line parsing -----
+eval "$(extract_fn quecdeck/script/atcmd_queue_daemon.sh _parse_notify)"
+
+_parse_notify $'123_4_5\tAT+CSQ\t3000\t8642'
+t_rc "notify 4-field parses" "0" "$?"
+t "notify 4-field id"       "123_4_5" "$_id"
+t "notify 4-field cmd"      "AT+CSQ"  "$_cmd"
+t "notify 4-field timeout"  "3000"    "$_timeout"
+t "notify 4-field deadline" "8642"    "$_deadline"
+
+_parse_notify $'77_1_2\tAT+QGMR\t5000'
+t_rc "notify 3-field (old client) parses" "0" "$?"
+t "notify 3-field deadline empty" "" "$_deadline"
+t "notify 3-field timeout kept"   "5000" "$_timeout"
+
+_parse_notify $'..\/evil\tAT+CSQ\t3000\t1'
+t_rc "notify bad id rejected" "1" "$?"
+_parse_notify 'no-tabs-at-all'
+t_rc "notify malformed rejected" "1" "$?"
+_parse_notify $'9_9_9\tAT+CSQ\tgarbage\talso-garbage'
+t_rc "notify garbage fields parse" "0" "$?"
+t "notify garbage timeout cleared"  "" "$_timeout"
+t "notify garbage deadline cleared" "" "$_deadline"
+
 # ------------------------------------------- restart log time source logic --
 # Mirrors get_restart_log's per-entry decision (kept in sync by this test:
 # if the CGI's rules change, update both).
