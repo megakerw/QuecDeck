@@ -11,23 +11,36 @@ LOG=/usrdata/quecdeck/var/restart_log.jsonl
 lines=$(cat "$LOG" 2>/dev/null)
 [ -z "$lines" ] && { printf '[]\n'; exit 0; }
 
-# Entries store uptime-at-event rather than a wall-clock timestamp (see
-# watchcat.sh log_restart()), since the device's clock may never have synced.
-# Estimate an absolute ts here using the live clock and uptime; this improves
-# retroactively for past entries once the clock does sync.
+# Per entry, pick the most trustworthy time source (see watchcat.sh
+# log_restart): the stored wall ts if the clock was synced at write time;
+# else reconstruct from uptime, which is only valid for entries from the
+# current boot (uptime restarts at 0 each boot); else ts=0 and the frontend
+# labels the entry "previous boot" rather than showing a wrong time. Row
+# order is append order, which is always true chronology.
+MIN_PLAUSIBLE_TS=1700000000
 now=$(date +%s)
 now_uptime=$(awk '{print int($1)}' /proc/uptime)
 boot_ts=$((now - now_uptime))
+current_boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
 
 first=1
 printf '['
 while IFS= read -r line; do
     [ -z "$line" ] && continue
-    event_uptime=$(json_get "$line" uptime)
-    [ -z "$event_uptime" ] && continue
     reason=$(json_get "$line" reason)
     detail=$(json_get "$line" detail)
-    ts=$((boot_ts + event_uptime))
+    ts=$(json_get "$line" ts)
+    case "$ts" in ''|*[!0-9]*) ts=0 ;; esac
+    if [ "$ts" -lt "$MIN_PLAUSIBLE_TS" ]; then
+        event_uptime=$(json_get "$line" uptime)
+        entry_boot=$(json_get "$line" boot_id)
+        case "$event_uptime" in ''|*[!0-9]*) event_uptime="" ;; esac
+        if [ -n "$event_uptime" ] && [ -n "$entry_boot" ] && [ "$entry_boot" = "$current_boot" ]; then
+            ts=$((boot_ts + event_uptime))
+        else
+            ts=0
+        fi
+    fi
     [ "$first" = "1" ] && first=0 || printf ','
     printf '{"ts":%d,"reason":"%s","detail":"%s"}' "$ts" "$reason" "$detail"
 done <<< "$lines"

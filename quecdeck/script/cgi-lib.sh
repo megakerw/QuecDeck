@@ -73,12 +73,9 @@ cgi_output_json() {
     _cgi_headers_sent=1
 }
 
-# Print an error message and exit 1.
-# If called before cgi_output_text/json, sends a real 400 status so the
-# client can detect failure via the response status rather than having to
-# parse the body text. If called after (the older, still-supported pattern
-# many scripts use), headers are already committed to 200, so the message
-# is just the body text as before.
+# Print an error message and exit 1. Before cgi_output_text/json: sends a
+# real 400 status. After: headers are already committed to 200, so the
+# message is body text only.
 # Usage: cgi_error "message"
 cgi_error() {
     if [ -z "$_cgi_headers_sent" ]; then
@@ -222,12 +219,7 @@ bf_clear() {
 #
 # Validation: responses are only cached if the last non-empty line is exactly
 # "OK". ERROR/CME/CMS responses and empty results are rejected; stale cache
-# is served instead.
-#
-# Retry: cache_get_or_fetch retries once if the response is non-empty but
-# didn't end with OK (transient modem error). Empty results (where the modem
-# is silent and the handler timed out) are not retried to avoid stacking up
-# timeout delays that would exceed the client request timeout.
+# is served instead. Retry policy is documented at cache_get_or_fetch.
 # ---------------------------------------------------------------------------
 _CACHE_DIR=/tmp/quecdeck/cache
 
@@ -288,8 +280,6 @@ cache_refresh() {
 
 # Serve from cache if fresh; otherwise run AT command, cache, and serve.
 # Serves existing cache (without refreshing) during an active cell scan.
-# Retries once on a non-empty invalid response before falling back to stale
-# cache; see block comment above for the retry/validation policy.
 #
 # No per-file locking: concurrent misses each submit an AT command; the daemon
 # serialises them. Duplicate cost is ~50-100 ms, cheaper than an empty result.

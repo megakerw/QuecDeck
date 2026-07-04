@@ -231,15 +231,8 @@
                     :style="'width: ' + Math.min(100, (consecutiveFailures / Math.max(failureThreshold, 1)) * 100) + '%'"
                   ></div>
                 </div>
-                <div x-show="rebootCount > 0" class="mt-3 pt-2 border-top">
-                  <div class="d-flex justify-content-between small text-muted">
-                    <span>Reboots triggered</span>
-                    <span x-text="rebootCount"></span>
-                  </div>
-                  <div x-show="failureThreshold > pingFailureCount" class="small text-warning mt-1" x-cloak>
-                    Reboots throttled: <span x-text="failureThreshold"></span> consecutive failures now required.
-                  </div>
-                </div>
+                <div x-show="rebootCount > 0" x-cloak class="mt-3 pt-2 border-top small text-warning"
+                  x-text="'Reboots triggered: ' + rebootCount + (failureThreshold > pingFailureCount ? '. Next reboot after ' + failureThreshold + ' consecutive failures.' : '')"></div>
               </div>
             </div>
 

@@ -41,23 +41,22 @@ esac
 
 STATS_PATH=/tmp/quecdeck/watchcat_stats.json
 RESTART_LOG=/usrdata/quecdeck/var/restart_log.jsonl
+BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
 failures=0
 successes=0
 
 log_restart() {
     local reason="$1" detail="$2"
     # json-lib.sh's parser can't handle embedded quotes/backslashes, and a raw
-    # newline would split this entry across lines in the JSONL file. Strip
-    # those here so every caller (current and future) gets safe JSON for free,
-    # rather than relying on each call site to escape its own free text.
+    # newline would split the JSONL entry; strip them here for every caller.
     reason=$(printf '%s' "$reason" | tr -d '"\\' | tr '\n\r' '  ')
     detail=$(printf '%s' "$detail" | tr -d '"\\' | tr '\n\r' '  ')
     mkdir -p "$(dirname "$RESTART_LOG")"
-    # Store uptime rather than a wall-clock timestamp: it's correct even if
-    # the device's clock has never synced (e.g. no tower for NITZ/NTP).
-    # get_restart_log converts this to an estimated wall-clock time at read
-    # time using the live clock, so display improves once the clock syncs.
-    printf '{"uptime":%d,"reason":"%s","detail":"%s"}\n' "$(get_uptime)" "$reason" "$detail" >> "$RESTART_LOG"
+    # Store wall ts, uptime AND boot_id: the wall clock may never sync, and
+    # uptime is only meaningful within its own boot. get_restart_log picks
+    # whichever source is trustworthy at read time.
+    printf '{"ts":%d,"uptime":%d,"boot_id":"%s","reason":"%s","detail":"%s"}\n' \
+        "$(date +%s)" "$(get_uptime)" "$BOOT_ID" "$reason" "$detail" >> "$RESTART_LOG"
     local count
     count=$(wc -l < "$RESTART_LOG" 2>/dev/null || echo 0)
     if [ "$count" -gt 50 ]; then

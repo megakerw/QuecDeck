@@ -321,3 +321,14 @@ if [ "$dialect_errors" = "1" ]; then
   echo "Commit blocked: shell dialect mismatch (see errors above)."
   exit 1
 fi
+
+# Host-side test suite (pure shell functions + JS structure). Runs against
+# the working tree; the fast set skips tests that sleep.
+if ! bash tools/run-tests.sh > /tmp/quecdeck_test_output 2>&1; then
+  cat /tmp/quecdeck_test_output
+  echo ""
+  echo "Commit blocked: test suite failed (tools/run-tests.sh)."
+  rm -f /tmp/quecdeck_test_output
+  exit 1
+fi
+rm -f /tmp/quecdeck_test_output

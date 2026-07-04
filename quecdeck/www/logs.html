@@ -103,9 +103,9 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <template x-for="ev in restartEvents" :key="ev.ts">
+                    <template x-for="(ev, idx) in restartEvents" :key="idx">
                       <tr>
-                        <td class="text-muted text-nowrap" x-text="formatTs(ev.ts)"></td>
+                        <td class="text-muted text-nowrap" x-text="ev.ts ? formatTs(ev.ts) : 'Previous boot'"></td>
                         <td x-text="ev.detail"></td>
                       </tr>
                     </template>
