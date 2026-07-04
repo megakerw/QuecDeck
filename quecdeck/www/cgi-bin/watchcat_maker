@@ -64,6 +64,9 @@ fi
 cgi_output_text
 
 rm -f /usrdata/quecdeck/var/watchcat_reboot_state.json
+# Stale stats from the previous run would show against the new config until
+# the restarted daemon's first write (after its settle sleep).
+rm -f /tmp/quecdeck/watchcat_stats.json
 
 # Build JSON array of IPs
 ips_space=$(echo "$TRACK_IPS_COLON" | tr ':' ' ')

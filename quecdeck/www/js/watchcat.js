@@ -1,26 +1,36 @@
+// Watchcat parameter defaults: initial form state, fetch fallbacks, and the
+// Defaults button all read from here.
+const WATCHCAT_DEFAULTS = {
+  ips: ['8.8.8.8', '1.1.1.1', '9.9.9.9'],
+  pingInterval: 30,
+  pingFailureCount: 3,
+  disableOnNoSim: true,
+  rebootBackoff: true,
+  logRestarts: true,
+};
+
 function quecdeckWatchCat() {
   return {
     // Watchcat
     enabled: false,
-    ips: ['8.8.8.8', '1.1.1.1', '9.9.9.9'],
-    pingInterval: 30,
-    pingFailureCount: 3,
-    disableOnNoSim: true,
-    rebootBackoff: true,
-    logRestarts: true,
+    ips: [...WATCHCAT_DEFAULTS.ips],
+    pingInterval: WATCHCAT_DEFAULTS.pingInterval,
+    pingFailureCount: WATCHCAT_DEFAULTS.pingFailureCount,
+    // The running daemon's current (possibly escalated) failure threshold;
+    // the stats panel compares against this, not the mid-edit form value.
+    failureThreshold: WATCHCAT_DEFAULTS.pingFailureCount,
+    disableOnNoSim: WATCHCAT_DEFAULTS.disableOnNoSim,
+    rebootBackoff: WATCHCAT_DEFAULTS.rebootBackoff,
+    logRestarts: WATCHCAT_DEFAULTS.logRestarts,
     serviceActive: false,
     isLoading: false,
     response: '',
     stats: [],
     consecutiveFailures: 0,
     rebootCount: 0,
-    backoffRemaining: 0,
-    backoffFetchedAt: 0,
     statsUpdatedAt: '',
     statsTimer: null,
     statsFetching: false,
-    now: Date.now(),
-    nowTimer: null,
     responseTimer: null,
 
     // Scheduled restart
@@ -36,25 +46,8 @@ function quecdeckWatchCat() {
     srResponseTimer: null,
 
     get capExceeded() {
-      return this.pingInterval * this.pingFailureCount > 3600;
-    },
-
-    // Remaining seconds is reported by the device relative to its own (possibly
-    // unsynced) clock, so it's ticked down here using elapsed *browser* time
-    // since the fetch rather than comparing two absolute clocks.
-    get currentBackoffRemaining() {
-      return Math.max(0, this.backoffRemaining - (this.now - this.backoffFetchedAt) / 1000);
-    },
-
-    get backoffActive() {
-      return this.rebootCount > 0 && this.currentBackoffRemaining > 0;
-    },
-
-    get backoffRemainingText() {
-      const remaining = this.currentBackoffRemaining;
-      const m = Math.floor(remaining / 60);
-      const s = Math.floor(remaining % 60);
-      return m > 0 ? `${m}m ${s}s` : `${s}s`;
+      // Must match MAX_REBOOT_INTERVAL in watchcat.sh.
+      return this.pingInterval * this.pingFailureCount > 7200;
     },
 
     get validIps() {
@@ -134,6 +127,17 @@ function quecdeckWatchCat() {
       if (this.ips.length < 6) this.ips.push('');
     },
 
+    // Resets the form fields only; the enable switch is untouched and nothing
+    // is applied until Save.
+    restoreDefaults() {
+      this.ips = [...WATCHCAT_DEFAULTS.ips];
+      this.pingInterval = WATCHCAT_DEFAULTS.pingInterval;
+      this.pingFailureCount = WATCHCAT_DEFAULTS.pingFailureCount;
+      this.disableOnNoSim = WATCHCAT_DEFAULTS.disableOnNoSim;
+      this.rebootBackoff = WATCHCAT_DEFAULTS.rebootBackoff;
+      this.logRestarts = WATCHCAT_DEFAULTS.logRestarts;
+    },
+
     removeIp(index) {
       if (this.ips.length > 1) this.ips.splice(index, 1);
     },
@@ -163,8 +167,6 @@ function quecdeckWatchCat() {
           if (response.ok) {
             this.response = this.enabled ? 'Saved.' : 'Disabled.';
             this.rebootCount = 0;
-            this.backoffRemaining = 0;
-            this.backoffFetchedAt = Date.now();
             this.fetchSettings();
             this.responseTimer = setTimeout(() => { this.response = ''; }, 4000);
           } else {
@@ -183,9 +185,11 @@ function quecdeckWatchCat() {
           if (data && Object.keys(data).length > 0) {
             this.enabled = data.enabled === true;
             this.serviceActive = data.enabled === true;
-            this.ips = data.track_ips && data.track_ips.length > 0 ? data.track_ips : ['8.8.8.8', '1.1.1.1', '9.9.9.9'];
-            this.pingInterval = data.ping_interval || 30;
-            this.pingFailureCount = data.ping_failure_count || 3;
+            this.ips = data.track_ips && data.track_ips.length > 0 ? data.track_ips : [...WATCHCAT_DEFAULTS.ips];
+            this.pingInterval = data.ping_interval || WATCHCAT_DEFAULTS.pingInterval;
+            this.pingFailureCount = data.ping_failure_count || WATCHCAT_DEFAULTS.pingFailureCount;
+            // Seed until the first stats poll reports the daemon's live value.
+            this.failureThreshold = this.pingFailureCount;
             this.disableOnNoSim = data.disable_on_no_sim !== false;
             this.rebootBackoff = data.reboot_backoff !== false;
             if (this.capExceeded) this.rebootBackoff = false;
@@ -203,10 +207,8 @@ function quecdeckWatchCat() {
             this.stats = data.stats;
             this.consecutiveFailures = data.consecutive_failures || 0;
             this.rebootCount = data.reboot_count || 0;
-            this.backoffRemaining = data.backoff_remaining || 0;
-            const now = new Date();
-            this.backoffFetchedAt = now.getTime();
-            this.statsUpdatedAt = now.toLocaleString([], { hour12: false });
+            this.failureThreshold = data.failure_threshold || this.pingFailureCount;
+            this.statsUpdatedAt = new Date().toLocaleString([], { hour12: false });
           }
         })
         .catch(() => {})
@@ -217,17 +219,12 @@ function quecdeckWatchCat() {
       this.stopStatsPolling();
       this.fetchStats();
       this.statsTimer = setInterval(() => this.fetchStats(), 2000);
-      this.nowTimer = setInterval(() => { this.now = Date.now(); }, 1000);
     },
 
     stopStatsPolling() {
       if (this.statsTimer) {
         clearInterval(this.statsTimer);
         this.statsTimer = null;
-      }
-      if (this.nowTimer) {
-        clearInterval(this.nowTimer);
-        this.nowTimer = null;
       }
     },
 

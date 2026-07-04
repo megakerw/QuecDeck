@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=c9f2af5d" />
-    <link rel="stylesheet" href="css/styles.css?v=c9f2af5d" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=8806ea5c" />
+    <link rel="stylesheet" href="css/styles.css?v=8806ea5c" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=c9f2af5d"></script>
-    <script src="js/utils.js?v=c9f2af5d"></script>
-    <script src="js/alpinejs.min.js?v=c9f2af5d" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=8806ea5c"></script>
+    <script src="js/utils.js?v=8806ea5c"></script>
+    <script src="js/alpinejs.min.js?v=8806ea5c" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="quecdeckWatchCat()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=c9f2af5d"></script>
+        <script src="js/nav.js?v=8806ea5c"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
 
@@ -75,7 +75,7 @@
                         <input class="form-check-input" type="checkbox" role="switch" x-model="rebootBackoff" :disabled="capExceeded" />
                       </div>
                     </div>
-                    <div class="text-warning small mt-1" x-show="capExceeded" x-cloak>Your cycle time exceeds 1 hour, so this setting has no effect.</div>
+                    <div class="text-warning small mt-1" x-show="capExceeded" x-cloak>Your cycle time exceeds 2 hours, so this setting has no effect.</div>
                   </div>
 
                   <div class="mb-4">
@@ -164,7 +164,7 @@
                       ? Math.round(pingInterval * pingFailureCount / 60) + ' min'
                       : (pingInterval * pingFailureCount) + ' sec'"></span> without response).
                     <span x-show="rebootBackoff && !capExceeded">
-                      Reboots space out progressively if the connection stays down (doubling each cycle, max once per hour).
+                      Reboots space out progressively if the connection stays down: the required failure streak doubles after each reboot, up to roughly two hours of failed pings. Pings continue at the normal interval.
                     </span>
                     <span x-show="logRestarts">
                       Reboots will be logged to the Logs page.
@@ -181,6 +181,12 @@
                   :disabled="isLoading || !canSave"
                   x-text="isLoading ? 'Saving...' : 'Save'"
                 ></button>
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary ms-2"
+                  @click="restoreDefaults()"
+                  :disabled="isLoading"
+                >Defaults</button>
                 <span class="ms-3 text-muted small" x-text="response"></span>
               </div>
             </div>
@@ -216,13 +222,13 @@
               <div class="mt-auto pt-3">
                 <div class="d-flex justify-content-between small text-muted mb-1">
                   <span>Consecutive failures</span>
-                  <span x-text="consecutiveFailures + ' / ' + pingFailureCount"></span>
+                  <span x-text="consecutiveFailures + ' / ' + failureThreshold"></span>
                 </div>
                 <div class="progress bar-xs">
                   <div
                     class="progress-bar"
-                    :class="consecutiveFailures >= pingFailureCount ? 'bg-danger' : consecutiveFailures > 0 ? 'bg-warning' : 'bg-success'"
-                    :style="'width: ' + Math.min(100, (consecutiveFailures / Math.max(pingFailureCount, 1)) * 100) + '%'"
+                    :class="consecutiveFailures >= failureThreshold ? 'bg-danger' : consecutiveFailures > 0 ? 'bg-warning' : 'bg-success'"
+                    :style="'width: ' + Math.min(100, (consecutiveFailures / Math.max(failureThreshold, 1)) * 100) + '%'"
                   ></div>
                 </div>
                 <div x-show="rebootCount > 0" class="mt-3 pt-2 border-top">
@@ -230,8 +236,8 @@
                     <span>Reboots triggered</span>
                     <span x-text="rebootCount"></span>
                   </div>
-                  <div x-show="backoffActive" class="small text-warning mt-1" x-cloak>
-                    Reboot rate limited. Next attempt in <span x-text="backoffRemainingText"></span>.
+                  <div x-show="failureThreshold > pingFailureCount" class="small text-warning mt-1" x-cloak>
+                    Reboots throttled: <span x-text="failureThreshold"></span> consecutive failures now required.
                   </div>
                 </div>
               </div>
@@ -331,7 +337,7 @@
         </div>
       </div>
     </main>
-    <script src="js/dark-mode.js?v=c9f2af5d"></script>
-    <script src="js/watchcat.js?v=c9f2af5d"></script>
+    <script src="js/dark-mode.js?v=8806ea5c"></script>
+    <script src="js/watchcat.js?v=8806ea5c"></script>
   </body>
 </html>

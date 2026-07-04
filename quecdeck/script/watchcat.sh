@@ -7,7 +7,9 @@
 
 CONFIG=/usrdata/quecdeck/var/watchcat.json
 REBOOT_STATE=/usrdata/quecdeck/var/watchcat_reboot_state.json
-MAX_REBOOT_INTERVAL=3600
+# ~2h of pings between capped reboots keeps a worst-case continuous outage
+# well under Quectel's ~20 reboots/day flash-wear guidance.
+MAX_REBOOT_INTERVAL=7200
 
 if [ ! -s "$CONFIG" ]; then
     echo "watchcat: config not found or empty: $CONFIG" >&2
@@ -30,10 +32,10 @@ log=$(json_get "$config_json" log_restarts)
 
 # Validate
 case "$PING_INTERVAL" in
-    ''|*[!0-9]*) echo "watchcat: invalid ping_interval in config" >&2; exit 1 ;;
+    ''|0|*[!0-9]*) echo "watchcat: invalid ping_interval in config" >&2; exit 1 ;;
 esac
 case "$PING_FAILURE_COUNT" in
-    ''|*[!0-9]*) echo "watchcat: invalid ping_failure_count in config" >&2; exit 1 ;;
+    ''|0|*[!0-9]*) echo "watchcat: invalid ping_failure_count in config" >&2; exit 1 ;;
 esac
 [ -z "$TRACK_IPS" ] && { echo "watchcat: no track_ips in config" >&2; exit 1; }
 
@@ -65,21 +67,27 @@ log_restart() {
 
 get_uptime() { awk '{print int($1)}' /proc/uptime; }
 
+# Consecutive failures required before the next reboot: doubles per reboot,
+# capped at roughly MAX_REBOOT_INTERVAL worth of pings, never below the
+# configured base. Throttling is failure-denominated on purpose: no clock or
+# uptime source is involved, so it cannot be affected by time sync.
+calc_threshold() {
+    # Clamp the shift: bash wraps at 64 bits, which would cycle the threshold
+    # back to base during a very long outage. 2^20 already exceeds any cap.
+    shift_n=$reboot_count
+    [ "$shift_n" -gt 20 ] && shift_n=20
+    threshold=$((PING_FAILURE_COUNT * (1 << shift_n)))
+    max_threshold=$((MAX_REBOOT_INTERVAL / PING_INTERVAL))
+    [ "$max_threshold" -lt "$PING_FAILURE_COUNT" ] && max_threshold=$PING_FAILURE_COUNT
+    [ "$threshold" -gt "$max_threshold" ] && threshold=$max_threshold
+    echo "$threshold"
+}
+
 # Read persistent reboot state
 reboot_count=0
-last_reboot_uptime=0
 if [ "$REBOOT_BACKOFF" = "1" ] && [ -f "$REBOOT_STATE" ]; then
-    reboot_state_json=$(cat "$REBOOT_STATE")
-    reboot_count=$(json_get "$reboot_state_json" reboot_count)
-    last_reboot_uptime=$(json_get "$reboot_state_json" last_reboot_uptime)
-    [ -z "$reboot_count" ] && reboot_count=0
-    [ -z "$last_reboot_uptime" ] && last_reboot_uptime=0
-    # Uptime (unlike the wall clock) only resets to 0 on an actual reboot, so
-    # it can't be thrown off by NTP/NITZ never syncing (e.g. no tower signal).
-    # If the persisted value is ahead of current uptime, the state predates
-    # this boot; anchor it to now so the backoff timer counts from this boot.
-    now_uptime=$(get_uptime)
-    [ "$last_reboot_uptime" -gt "$now_uptime" ] && last_reboot_uptime=$now_uptime
+    reboot_count=$(json_get "$(cat "$REBOOT_STATE")" reboot_count)
+    case "$reboot_count" in ''|*[!0-9]*) reboot_count=0 ;; esac
 fi
 
 # Wait for the system to settle before starting to ping.
@@ -109,15 +117,6 @@ check_sim() {
     atcmd_run 'AT+QSIMSTAT?' | grep -qE '^\+QSIMSTAT: [0-9]+,1$'
 }
 
-# Calculate minimum wait before the next reboot based on reboot_count.
-# Doubles each time (2x, 4x, 8x ... cycle_time), capped at MAX_REBOOT_INTERVAL.
-calc_min_wait() {
-    cycle_time=$((PING_INTERVAL * PING_FAILURE_COUNT))
-    min_wait=$((cycle_time * (1 << reboot_count)))
-    [ "$min_wait" -gt "$MAX_REBOOT_INTERVAL" ] && min_wait=$MAX_REBOOT_INTERVAL
-    echo "$min_wait"
-}
-
 write_stats() {
     stats="["
     first_stat=1
@@ -130,20 +129,7 @@ write_stats() {
     done
     stats="$stats]"
 
-    # Report remaining seconds (derived from monotonic uptime) rather than an
-    # absolute deadline. An absolute wall-clock deadline would be wrong if the
-    # device's clock is unsynced (e.g. never registered on a tower for
-    # NITZ/NTP); the frontend ticks this value down locally using its own
-    # elapsed time, so neither clock's absolute correctness matters.
-    backoff_remaining=0
-    if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ]; then
-        min_wait=$(calc_min_wait)
-        elapsed=$(($(get_uptime) - last_reboot_uptime))
-        backoff_remaining=$((min_wait - elapsed))
-        [ "$backoff_remaining" -lt 0 ] && backoff_remaining=0
-    fi
-
-    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"backoff_remaining\":$backoff_remaining}" > "$STATS_PATH"
+    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"failure_threshold\":$(calc_threshold)}" > "$STATS_PATH"
 }
 
 while :; do
@@ -168,45 +154,31 @@ while :; do
         successes=$((successes + 1))
         if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ] && [ "$successes" -ge "$PING_FAILURE_COUNT" ]; then
             reboot_count=0
-            last_reboot_uptime=0
-            printf '{"reboot_count":0,"last_reboot_uptime":0}\n' > "$REBOOT_STATE"
+            printf '{"reboot_count":0}\n' > "$REBOOT_STATE"
         fi
     else
         failures=$((failures + 1))
         successes=0
     fi
 
-    if [ "$failures" -ge "$PING_FAILURE_COUNT" ]; then
+    if [ "$failures" -ge "$(calc_threshold)" ]; then
         if [ "$DISABLE_ON_NO_SIM" = "1" ] && ! check_sim; then
             echo "uptime $(get_uptime)s: reboot suppressed, SIM check failed ($failures ping failures)"
             failures=0
         else
-            should_reboot=1
-            if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ]; then
-                min_wait=$(calc_min_wait)
-                now_uptime=$(get_uptime)
-                elapsed=$((now_uptime - last_reboot_uptime))
-                if [ "$elapsed" -lt "$min_wait" ]; then
-                    should_reboot=0
-                    failures=$PING_FAILURE_COUNT
-                fi
+            if [ "$REBOOT_BACKOFF" = "1" ]; then
+                reboot_count=$((reboot_count + 1))
+                printf '{"reboot_count":%d}\n' "$reboot_count" > "$REBOOT_STATE"
+                detail="$failures consecutive ping failures (reboot streak #$reboot_count)"
+            else
+                detail="$failures consecutive ping failures"
             fi
-
-            if [ "$should_reboot" = "1" ]; then
-                if [ "$REBOOT_BACKOFF" = "1" ]; then
-                    reboot_count=$((reboot_count + 1))
-                    printf '{"reboot_count":%d,"last_reboot_uptime":%d}\n' "$reboot_count" "$(get_uptime)" > "$REBOOT_STATE"
-                    detail="$failures consecutive ping failures (reboot streak #$reboot_count)"
-                else
-                    detail="$failures consecutive ping failures"
-                fi
-                [ "$LOG_RESTARTS" = "1" ] && log_restart "watchcat" "$detail"
-                sync
-                sleep 2
-                echo "uptime $(get_uptime)s: $detail"
-                atcmd_run 'AT+CFUN=1,1' >/dev/null
-                exit 0
-            fi
+            [ "$LOG_RESTARTS" = "1" ] && log_restart "watchcat" "$detail"
+            sync
+            sleep 2
+            echo "uptime $(get_uptime)s: $detail"
+            atcmd_run 'AT+CFUN=1,1' >/dev/null
+            exit 0
         fi
     fi
 

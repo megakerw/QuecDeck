@@ -11,8 +11,15 @@ else
     firmware_revision="UNKNOWN"
 fi
 
+# Version file holds a release number ("1.0.5") or a branch name ("main")
+# for installs from an untagged tree.
+quecdeck_version=$(cat /usrdata/quecdeck/version 2>/dev/null)
+case "$quecdeck_version" in
+    [0-9]*) quecdeck_version="v$quecdeck_version" ;;
+esac
+
 echo "=============================================================="
-echo "QuecDeck v1.0"
+echo "QuecDeck${quecdeck_version:+ $quecdeck_version}"
 echo "Firmware Revision: $firmware_revision"
 echo "Serial Number: $serial_number"
 echo "=============================================================="

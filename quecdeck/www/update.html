@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=c9f2af5d" />
-    <link rel="stylesheet" href="css/styles.css?v=c9f2af5d" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=8806ea5c" />
+    <link rel="stylesheet" href="css/styles.css?v=8806ea5c" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=c9f2af5d"></script>
-    <script src="js/utils.js?v=c9f2af5d"></script>
-    <script src="js/alpinejs.min.js?v=c9f2af5d" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=8806ea5c"></script>
+    <script src="js/utils.js?v=8806ea5c"></script>
+    <script src="js/alpinejs.min.js?v=8806ea5c" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="updatePage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=c9f2af5d"></script>
+        <script src="js/nav.js?v=8806ea5c"></script>
 
         <div class="row gy-3 mt-4 mb-4 justify-content-center">
           <div class="col-12 col-md-8 col-lg-6">
@@ -41,6 +41,7 @@
                 <div class="mb-4">
                   <div class="fw-semibold mb-1" style="font-size:0.875rem">Latest version</div>
                   <div class="text-muted small" x-text="checked ? latestVersion : (checkError ? '-' : 'Checking…')"></div>
+                  <div x-show="checkError" x-cloak class="text-warning small mt-1" x-text="checkError"></div>
                   <a x-show="updateAvailable && latestTag" :href="'https://github.com/megakerw/QuecDeck/releases/tag/' + latestTag" target="_blank" rel="noopener" class="small text-muted">Release notes</a>
                 </div>
 
@@ -53,8 +54,6 @@
                     x-text="'Update to ' + latestVersion"></button>
                   <button x-show="checked && !updateAvailable" class="btn btn-outline-primary btn-sm" @click="triggerUpdate(true)">Force reinstall</button>
                 </div>
-
-                <div x-show="checkError" x-cloak class="text-danger small mt-2" x-text="checkError"></div>
 
               </div>
 
@@ -123,7 +122,7 @@
       </div>
     </main>
 
-    <script src="js/update.js?v=c9f2af5d"></script>
-    <script src="js/dark-mode.js?v=c9f2af5d"></script>
+    <script src="js/update.js?v=8806ea5c"></script>
+    <script src="js/dark-mode.js?v=8806ea5c"></script>
   </body>
 </html>

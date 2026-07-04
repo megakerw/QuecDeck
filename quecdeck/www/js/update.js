@@ -43,7 +43,12 @@ function updatePage() {
           this.checked  = true;
           this.checkedAt = new Date().toLocaleString([], { hour12: false });
         })
-        .catch((err) => { this.checkError = err?.message || 'Could not reach update server.'; })
+        .catch((err) => {
+          // Raw exception text (e.g. a JSON parse error from a captive
+          // portal's HTML reply) is meaningless to the user; log it instead.
+          console.error('check_update failed:', err);
+          this.checkError = 'Could not reach the update server.';
+        })
         .finally(() => { this.checking = false; });
     },
 
@@ -69,7 +74,8 @@ function updatePage() {
             this.startPolling();
           })
           .catch((err) => {
-            this.$store.errorModal.open(err?.message || 'Failed to start update.');
+            console.error('trigger_update failed:', err);
+            this.$store.errorModal.open('Failed to start the update. Check the connection and try again.');
             this.updating = false;
           });
       });
