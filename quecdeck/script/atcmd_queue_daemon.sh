@@ -89,8 +89,8 @@ while IFS= read -r _line <&5; do
 
     _resp_fifo="$_ATCMD_QUEUE/${_id}.resp.fifo"
 
-    # Normal AT command: dispatch via atcli and deliver response.
-    # Strip \r (atcli does not strip CR from modem's \r\n line endings).
+    # Normal AT command: dispatch via atcli and deliver response. atcli
+    # emits clean \n lines (strips \r itself since the 2026-07 binary).
     # Wrap in `timeout` (kill ~5s past atcli's own -t) so a hung atcli can't
     # stall the whole serial queue; fall back to a bare call if unavailable.
     if [ -n "$_TIMEOUT" ]; then
@@ -102,7 +102,6 @@ while IFS= read -r _line <&5; do
     else
         _result=$("$_ATCLI" ${_timeout:+-t "$_timeout"} "$_cmd" 2>/dev/null)
     fi
-    _result=${_result//$'\r'/}
 
     if [ -p "$_resp_fifo" ]; then
         exec 6<>"$_resp_fifo"

@@ -81,10 +81,12 @@ function processAllInfos() {
       return STATUS_COLOR_RED;
     },
     get cpuLoadColor() {
+      // Single-core device with a ~0.3-0.55 resting load; yellow must mean
+      // "elevated beyond the normal stack", red "sustained saturation".
       const v = parseFloat(this.cpuLoad);
       if (isNaN(v)) return STATUS_COLOR_GREY;
-      if (v < 0.5) return STATUS_COLOR_GREEN;
-      if (v < 1.0) return STATUS_COLOR_YELLOW;
+      if (v < 0.7) return STATUS_COLOR_GREEN;
+      if (v < 1.2) return STATUS_COLOR_YELLOW;
       return STATUS_COLOR_RED;
     },
     ramPercent: "-",

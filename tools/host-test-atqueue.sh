@@ -30,17 +30,22 @@ _teardown() {
 }
 trap _teardown EXIT
 
-# Stub atcli: canned \r\n responses keyed on the command, logs every dispatch
-# so tests can assert what did (and did not) reach the "modem".
+# Stub atcli: canned responses keyed on the command, logs every dispatch so
+# tests can assert what did (and did not) reach the "modem". Emits clean \n
+# lines, matching the 2026-07 atcli binary that strips \r itself.
 cat > "$WORK/atcli" <<'EOF'
 #!/usr/bin/env bash
 [ "${1:-}" = "-t" ] && shift 2
 echo "$1" >> "${0%/*}/dispatch.log"
 case "$1" in
-    AT+CSQ)  printf '+CSQ: 20,99\r\nOK\r\n' ;;
-    AT+FAIL) printf '+CME ERROR: 3\r\n' ;;
-    AT+HANG) sleep 2; printf 'OK\r\n' ;;
-    *)       printf 'OK\r\n' ;;
+    AT+CSQ)  printf '+CSQ: 20,99\nOK\n' ;;
+    AT+FAIL) printf '+CME ERROR: 3\n' ;;
+    AT+HANG) sleep 2; printf 'OK\n' ;;
+    AT+BIG)  # ~100 KB / 600 lines, SMS-list shaped: large responses must
+             # flow through the daemon well inside the client timeout.
+             for i in $(seq 600); do printf '+CMGL: %s,"REC READ",,,\n0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF\n' "$i"; done
+             printf 'OK\n' ;;
+    *)       printf 'OK\n' ;;
 esac
 EOF
 chmod +x "$WORK/atcli"
@@ -80,6 +85,14 @@ printf '../evil\tAT+EVIL\t1000\t9999999999\n' > "$_ATCMD_NOTIFY"
 t "daemon survives malformed lines" $'+CSQ: 20,99\nOK' "$(atcmd_run AT+CSQ)"
 grep -q 'AT+EVIL' "$WORK/dispatch.log" && dispatched=yes || dispatched=no
 t "bad-id command never dispatched" "no" "$dispatched"
+
+# --------------------------------------------------- large response --------
+big=$(atcmd_run AT+BIG 3000)
+t "large response arrives complete" "OK" "${big##*$'\n'}"
+t "large response line count" "1201" "$(printf '%s\n' "$big" | wc -l | tr -d ' ')"
+# The daemon must not introduce CRs (atcli emits none since 2026-07).
+case "$big" in *$'\r'*) crs=present ;; *) crs=absent ;; esac
+t "large response CR-free" "absent" "$crs"
 
 # --------------------------------------------------- client timeout --------
 # Stub sleeps past the 1s client timeout: empty response, client FIFO reaped.

@@ -23,10 +23,11 @@
 # Builtin read: runs per queued command; a fork costs ~3.4 ms on-device.
 _atq_uptime() { local _u; read -r _u _ < /proc/uptime; echo "${_u%%.*}"; }
 
+# atcli emits clean \n lines (strips \r itself since the 2026-07 binary).
+# If bulk stripping is ever needed again: tr, never ${var//} (bash replace
+# took ~48 s on a 44 KB response on-device).
 atcli_direct() {
-    local _r
-    _r=$("$_ATCLI" ${2:+-t "$2"} "$1" 2>/dev/null)
-    printf '%s\n' "${_r//$'\r'/}"
+    "$_ATCLI" ${2:+-t "$2"} "$1" 2>/dev/null
 }
 
 # Send an AT command to the modem via the queue daemon (if running) and return

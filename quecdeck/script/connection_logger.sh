@@ -142,6 +142,10 @@ while true; do
 
     ts=$(date +%s)
     response=$(atcmd_run 'AT+QENG="servingcell"' 10000)
+    # A timed-out or truncated poll (queue congestion, e.g. an SMS fetch
+    # holding the port) says nothing about radio state: only a complete
+    # OK-terminated response may change logged state.
+    [ "${response##*$'\n'}" = "OK" ] || continue
     parse_qeng "$response"
 
     was_registered=0; is_registered "$prev_state" && was_registered=1
@@ -155,6 +159,9 @@ while true; do
         sleep 5
         ts=$(date +%s)
         response=$(atcmd_run 'AT+QENG="servingcell"' 10000)
+        # Incomplete re-poll: skip without updating prev_*; the next cycle
+        # logs the connected event with real cell info instead.
+        [ "${response##*$'\n'}" = "OK" ] || continue
         parse_qeng "$response"
         log_event "{\"ts\":$ts,\"type\":\"connected\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}"
 
