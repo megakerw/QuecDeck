@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# atcli_direct rather than atcmd_run: this runs as root, and the queue FIFO
-# is www-data-owned (SELinux blocks the cross-domain write).
+# atcli_direct rather than atcmd_run: keeps this root-context banner
+# independent of the www-data queue daemon.
 if [ -f /usrdata/quecdeck/script/at-lib.sh ]; then
     . /usrdata/quecdeck/script/at-lib.sh
     serial_number=$(atcli_direct 'AT+EGMR=0,5' | grep '+EGMR:' | cut -d '"' -f2)

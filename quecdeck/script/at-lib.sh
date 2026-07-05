@@ -9,7 +9,8 @@
 # atcmd_run <cmd> [timeout_ms]    - serialized via the queue daemon; falls
 #     back to direct atcli when the daemon is down.
 # atcli_direct <cmd> [timeout_ms] - bypasses the queue, for root-context
-#     callers (the FIFO is www-data-owned; SELinux blocks cross-domain writes).
+#     callers: keeps root independent of the www-data queue and of whether
+#     cross-domain FIFO writes are permitted on a given firmware build.
 
 _ATCMD_NOTIFY=/tmp/quecdeck/atcmd.notify
 _ATCMD_QUEUE=/tmp/quecdeck/queue

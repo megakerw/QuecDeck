@@ -153,6 +153,15 @@ Updates can be triggered from the Update page in the web UI or by re-running `qu
 - **SSH:** OpenSSH server. A pre-start script (`update_sshd_ip.sh`) updates `sshd_config`'s `ListenAddress` to the current LAN IP before the daemon starts, restricting it to LAN only. Requires a root password to be set first.
 - **Lean Mode:** disables the GPS/location stack on boot to free up resources when location services are not needed
 
+## Development
+
+Two check suites run on every push and pull request via GitHub Actions, and can be run locally:
+
+- **Test suite** (`tools/run-tests.sh`): host-side unit tests for the pure shell functions (JSON parsing, CGI helpers, watchcat backoff math, AT queue protocol parsing) and JS structure checks. Runs on the dev machine with no device needed; pass `--slow` to include tests that sleep (login lockout). The fast set also runs from the pre-commit hook.
+- **Repository integrity checks** (`tools/ci-checks.sh`): shell syntax, the atcli access guard, checksum manifest and pinned bootstrap hashes, asset version tokens, and updater heredoc validation. These mirror the pre-commit hook, so CI catches commits made without the hook configured. Assumes an LF checkout, so on Windows run the test suite instead.
+
+The pre-commit hook is enabled with `git config core.hooksPath .githooks`.
+
 ## Credits
 
 QuecDeck is based on [quectel-rgmii-toolkit](https://github.com/iamromulan/quectel-rgmii-toolkit) by [iamromulan](https://github.com/iamromulan), with contributions from:
