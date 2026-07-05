@@ -95,13 +95,14 @@ while IFS= read -r _line <&5; do
     # stall the whole serial queue; fall back to a bare call if unavailable.
     if [ -n "$_TIMEOUT" ]; then
         if [ -n "$_timeout" ]; then
-            _result=$("$_TIMEOUT" "$(( _timeout / 1000 + 5 ))" "$_ATCLI" -t "$_timeout" "$_cmd" 2>/dev/null | tr -d '\r')
+            _result=$("$_TIMEOUT" "$(( _timeout / 1000 + 5 ))" "$_ATCLI" -t "$_timeout" "$_cmd" 2>/dev/null)
         else
-            _result=$("$_TIMEOUT" 30 "$_ATCLI" "$_cmd" 2>/dev/null | tr -d '\r')
+            _result=$("$_TIMEOUT" 30 "$_ATCLI" "$_cmd" 2>/dev/null)
         fi
     else
-        _result=$("$_ATCLI" ${_timeout:+-t "$_timeout"} "$_cmd" 2>/dev/null | tr -d '\r')
+        _result=$("$_ATCLI" ${_timeout:+-t "$_timeout"} "$_cmd" 2>/dev/null)
     fi
+    _result=${_result//$'\r'/}
 
     if [ -p "$_resp_fifo" ]; then
         exec 6<>"$_resp_fifo"

@@ -117,8 +117,8 @@ write_json_config() {
 validate_htpasswd() {
     local htpasswd_file="$1" username="$2" password="$3"
     [ -f "$htpasswd_file" ] || return 1
-    # Literal prefix match, not a grep pattern: keeps the helper safe even if
-    # a caller ever passes an unvalidated username.
+    # Literal prefix match, never a grep pattern: the username may be
+    # unvalidated.
     local line="" l
     while IFS= read -r l || [ -n "$l" ]; do
         case "$l" in "${username}:"*) line="$l"; break ;; esac
@@ -192,11 +192,9 @@ bf_fail() {
     local f count now
     f=$(_bf_file "$1" "$2")
     sleep 1
-    # flock the record itself so parallel failures can't undercount. All
-    # writers are www-data CGIs (no cross-domain lock risk). Plain blocking
-    # form: BusyBox flock has no -w, and the critical section is tiny.
-    # Degrades to unlocked where flock is absent (dev machine; the device
-    # has it).
+    # flock the record: parallel failures must not undercount. All writers
+    # are www-data CGIs (no SELinux cross-domain risk). BusyBox flock has
+    # no -w; degrades to unlocked where flock is absent (dev machine).
     exec 9>>"$f"
     command -v flock >/dev/null 2>&1 && flock -x 9
     count=$(grep '^count=' "$f" | cut -d= -f2)
@@ -256,10 +254,13 @@ cache_is_fresh() {
 }
 
 # Returns 0 if an AT response is valid (last non-empty line is exactly OK).
+# Runs on every fetch; trailing blank/padded lines must not mask the OK.
 at_response_ok() {
-    local last
-    last=$(printf '%s' "$1" | awk 'NF{last=$0} END{print last}')
-    [ "$last" = "OK" ]
+    local s="$1"
+    while :; do
+        case "$s" in *$'\n'|*$'\t'|*' ') s=${s%?} ;; *) break ;; esac
+    done
+    [ "${s##*$'\n'}" = "OK" ]
 }
 
 
@@ -303,12 +304,13 @@ cache_get_or_fetch() {
         if find /tmp/quecdeck/qscan.active -mmin +5 2>/dev/null | grep -q .; then
             rm -f /tmp/quecdeck/qscan.active
         else
-            [ -f "$f" ] && cat "$f"
+            # $(<f) is safe here: cache files carry no trailing newline.
+            [ -f "$f" ] && printf '%s' "$(<"$f")"
             return
         fi
     fi
     if cache_is_fresh "$f" "$ttl"; then
-        cat "$f"
+        printf '%s' "$(<"$f")"
         return
     fi
     # Ensure cache dir exists (tmpfs is empty after boot).
@@ -330,7 +332,7 @@ cache_get_or_fetch() {
         printf '%s' "$result"
     else
         # All attempts failed. Serve stale cache rather than bad data.
-        [ -f "$f" ] && cat "$f"
+        [ -f "$f" ] && printf '%s' "$(<"$f")"
     fi
 }
 
@@ -372,9 +374,16 @@ device_sim_fetch() {
 # Emits the body only (no HTTP header), so callers control framing.
 system_stats_json() {
     local load mem_total mem_available mem_used mem_total_mb mem_used_mb mem_percent up
-    load=$(cut -d' ' -f1 /proc/loadavg)
-    mem_total=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
-    mem_available=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+    local _k _v _rest
+    # Builtin /proc reads: runs per dashboard poll.
+    read -r load _rest < /proc/loadavg
+    mem_total=0; mem_available=0
+    while read -r _k _v _rest; do
+        case "$_k" in
+            MemTotal:) mem_total=$_v ;;
+            MemAvailable:) mem_available=$_v; break ;;
+        esac
+    done < /proc/meminfo
     mem_used=$((mem_total - mem_available))
     mem_total_mb=$((mem_total / 1024))
     mem_used_mb=$((mem_used / 1024))
