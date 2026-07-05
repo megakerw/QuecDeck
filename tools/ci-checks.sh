@@ -27,11 +27,35 @@ for f in quecdeck.sh update_quecdeck.sh installentware.sh \
     bash -n "$f" 2>/dev/null || err "syntax: $f fails bash -n"
 done
 
+# ---------------------------------------------------------- JS syntax ------
+# Real parse via node (present on CI runners; the dev machine has no JS
+# runtime, there run-tests.sh's structural check instead). Skips .min.js:
+# vendored, and any corruption is caught by the checksum manifest.
+if command -v node >/dev/null 2>&1; then
+    for f in quecdeck/www/js/*.js; do
+        case "$f" in *.min.js) continue ;; esac
+        node --check "$f" || err "syntax: $f fails node --check"
+    done
+else
+    echo "SKIP: node unavailable, JS syntax not checked"
+fi
+
 # --------------------------------------------------------- atcli guard -----
 while IFS= read -r f; do
     case "$f" in quecdeck/script/at-lib.sh|quecdeck/script/atcmd_queue_daemon.sh) continue ;; esac
     err "atcli guard: $f invokes atcli directly (route through at-lib.sh)"
 done < <(grep -rlE "/usrdata/quecdeck/atcli[ \"']" quecdeck/ update_quecdeck.sh quecdeck.sh installentware.sh 2>/dev/null)
+
+# ------------------------------------------------------- dev-gate guard ----
+# Every CGI the developer page calls must be dev-gated in auth.lua, so a new
+# dev endpoint can't silently ship admin-gated only. auth_dev is the unlock
+# endpoint itself and stays admin-level.
+gated_eps=$(sed -n '/requires_dev_unlocked = /,/^if /p' quecdeck/auth.lua | grep -oE '/cgi-bin/[a-z_]+')
+while IFS= read -r ep; do
+    [ "$ep" = "/cgi-bin/auth_dev" ] && continue
+    echo "$gated_eps" | grep -qx "$ep" || \
+        err "dev-gate: $ep is called by the developer page but not in auth.lua's requires_dev_unlocked"
+done < <(grep -hoE '/cgi-bin/[a-z_]+' quecdeck/www/js/developer.js quecdeck/www/developer.html | sort -u)
 
 # ------------------------------------------------------- dialect guard -----
 for f in quecdeck/script/*.sh quecdeck/www/cgi-bin/* quecdeck/console/*; do

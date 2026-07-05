@@ -322,6 +322,30 @@ if [ "$dialect_errors" = "1" ]; then
   exit 1
 fi
 
+# Dev-gate guard: every CGI the developer page calls must be dev-gated in
+# auth.lua, so a new dev endpoint can't silently ship admin-gated only.
+# auth_dev is the unlock endpoint itself and stays admin-level.
+devgate_errors=0
+gated_eps=$(git show :quecdeck/auth.lua 2>/dev/null \
+  | sed -n '/requires_dev_unlocked = /,/^if /p' | grep -oE '/cgi-bin/[a-z_]+')
+while IFS= read -r ep; do
+  [ -z "$ep" ] && continue
+  [ "$ep" = "/cgi-bin/auth_dev" ] && continue
+  if ! echo "$gated_eps" | grep -qx "$ep"; then
+    echo ""
+    echo "ERROR: $ep is called by the developer page but not dev-gated in auth.lua."
+    echo "  Add it to requires_dev_unlocked in auth.lua."
+    devgate_errors=1
+  fi
+done < <({ git show :quecdeck/www/js/developer.js; git show :quecdeck/www/developer.html; } 2>/dev/null \
+  | grep -oE '/cgi-bin/[a-z_]+' | sort -u)
+
+if [ "$devgate_errors" = "1" ]; then
+  echo ""
+  echo "Commit blocked: dev-gate the new endpoint in auth.lua."
+  exit 1
+fi
+
 # Host-side test suite (pure shell functions + JS structure). Runs against
 # the working tree; the fast set skips tests that sleep.
 if ! bash tools/run-tests.sh > /tmp/quecdeck_test_output 2>&1; then

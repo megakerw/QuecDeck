@@ -15,10 +15,9 @@
 #   4. read loop on fd 8 until OK/ERROR                      (block for response)
 # deadline is uptime seconds; lines past it are skipped, not dispatched.
 
-# FIFO paths come from at-lib.sh so both ends of the protocol cannot drift.
-. /usrdata/quecdeck/script/at-lib.sh
-
-_ATCLI=/usrdata/quecdeck/atcli
+# FIFO and atcli paths come from at-lib.sh so both ends of the protocol
+# cannot drift. ATLIB override is for the host-side test only.
+. "${ATLIB:-/usrdata/quecdeck/script/at-lib.sh}"
 
 # Parse one notify line into _id/_cmd/_timeout/_deadline; returns 1 to drop
 # it. Tolerates older 3-field clients (deadline empty = never expires) and

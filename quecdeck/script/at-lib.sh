@@ -12,15 +12,19 @@
 #     callers: keeps root independent of the www-data queue and of whether
 #     cross-domain FIFO writes are permitted on a given firmware build.
 
-_ATCMD_NOTIFY=/tmp/quecdeck/atcmd.notify
-_ATCMD_QUEUE=/tmp/quecdeck/queue
+# Default-assigned so the host-side daemon test (tools/host-test-atqueue.sh)
+# can point them at a temp dir and a stub atcli. Not settable via HTTP: CGI
+# request headers only surface as HTTP_* variables.
+: "${_ATCMD_NOTIFY:=/tmp/quecdeck/atcmd.notify}"
+: "${_ATCMD_QUEUE:=/tmp/quecdeck/queue}"
+: "${_ATCLI:=/usrdata/quecdeck/atcli}"
 
 # Uptime, not wall clock: deadlines must survive the clock stepping when
 # NITZ/NTP first syncs. Both FIFO ends are in the same boot by definition.
 _atq_uptime() { awk '{print int($1)}' /proc/uptime; }
 
 atcli_direct() {
-    /usrdata/quecdeck/atcli ${2:+-t "$2"} "$1" 2>/dev/null | tr -d '\r'
+    "$_ATCLI" ${2:+-t "$2"} "$1" 2>/dev/null | tr -d '\r'
 }
 
 # Send an AT command to the modem via the queue daemon (if running) and return

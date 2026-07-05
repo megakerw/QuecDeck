@@ -158,6 +158,7 @@ Updates can be triggered from the Update page in the web UI or by re-running `qu
 Two check suites run on every push and pull request via GitHub Actions, and can be run locally:
 
 - **Test suite** (`tools/run-tests.sh`): host-side unit tests for the pure shell functions (JSON parsing, CGI helpers, watchcat backoff math, AT queue protocol parsing) and JS structure checks. Runs on the dev machine with no device needed; pass `--slow` to include tests that sleep (login lockout). The fast set also runs from the pre-commit hook.
+- **Integration tests** (`tools/host-test-atqueue.sh`, `tools/host-test-authlua.sh`): run the real AT queue daemon against a stub atcli, and the real auth.lua against a stubbed lighttpd request environment. Linux-only (FIFO semantics, disposable root paths); they self-skip elsewhere and run in CI.
 - **Repository integrity checks** (`tools/ci-checks.sh`): shell syntax, the atcli access guard, checksum manifest and pinned bootstrap hashes, asset version tokens, and updater heredoc validation. These mirror the pre-commit hook, so CI catches commits made without the hook configured. Assumes an LF checkout, so on Windows run the test suite instead.
 
 The pre-commit hook is enabled with `git config core.hooksPath .githooks`.

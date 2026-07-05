@@ -14,5 +14,13 @@ jobs:
       - name: Test suite
         run: bash tools/run-tests.sh --slow
 
+      - name: Queue daemon integration test
+        run: bash tools/host-test-atqueue.sh
+
+      - name: auth.lua tests
+        run: |
+          sudo apt-get install -y -qq lua5.1
+          sudo bash tools/host-test-authlua.sh
+
       - name: Repository integrity checks
         run: bash tools/ci-checks.sh

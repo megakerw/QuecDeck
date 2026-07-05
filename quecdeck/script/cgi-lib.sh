@@ -117,8 +117,12 @@ write_json_config() {
 validate_htpasswd() {
     local htpasswd_file="$1" username="$2" password="$3"
     [ -f "$htpasswd_file" ] || return 1
-    local line
-    line=$(grep "^${username}:" "$htpasswd_file" 2>/dev/null | head -1)
+    # Literal prefix match, not a grep pattern: keeps the helper safe even if
+    # a caller ever passes an unvalidated username.
+    local line="" l
+    while IFS= read -r l || [ -n "$l" ]; do
+        case "$l" in "${username}:"*) line="$l"; break ;; esac
+    done < "$htpasswd_file"
     [ -n "$line" ] || return 1
     local stored_hash="${line#*:}"
     local salt computed
@@ -188,8 +192,14 @@ bf_fail() {
     local f count now
     f=$(_bf_file "$1" "$2")
     sleep 1
-    count=0
-    [ -f "$f" ] && count=$(grep '^count=' "$f" | cut -d= -f2)
+    # flock the record itself so parallel failures can't undercount. All
+    # writers are www-data CGIs (no cross-domain lock risk). Plain blocking
+    # form: BusyBox flock has no -w, and the critical section is tiny.
+    # Degrades to unlocked where flock is absent (dev machine; the device
+    # has it).
+    exec 9>>"$f"
+    command -v flock >/dev/null 2>&1 && flock -x 9
+    count=$(grep '^count=' "$f" | cut -d= -f2)
     count=$(( ${count:-0} + 1 ))
     now=$(date +%s)
     if [ "$count" -ge "$BF_MAX_ATTEMPTS" ]; then
@@ -199,6 +209,7 @@ bf_fail() {
         printf 'count=%s\nlockout_until=0\n' "$count" > "$f"
         echo "failed"
     fi
+    exec 9>&-
 }
 
 # Clears the failure record for <ip> under <dir>. Call on a successful auth.
