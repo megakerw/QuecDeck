@@ -1,5 +1,5 @@
 [Unit]
-Description=Lean Mode — terminate unnecessary modem services after boot
+Description=Lean Mode: terminate unnecessary modem services after boot
 
 [Service]
 Type=oneshot

@@ -111,7 +111,7 @@ uninstall_entware() {
     if mountpoint -q /opt; then
         umount /opt \
             && result_opt_unmount="OK" \
-            || { result_opt_unmount="WARNING"; echo -e "\e[1;31mWARNING: Could not unmount /opt — a reboot may be required to complete removal.\e[0m"; }
+            || { result_opt_unmount="WARNING"; echo -e "\e[1;31mWARNING: Could not unmount /opt; a reboot may be required to complete removal.\e[0m"; }
     fi
 
     # Remove Entware data directory (/usrdata is always writable)
@@ -139,7 +139,7 @@ uninstall_entware() {
             result_login="RESTORED"
         else
             result_login="WARNING"
-            echo -e "\e[1;31mWARNING: /bin/login.shadow not found — could not restore login binary. Console login may be broken.\e[0m"
+            echo -e "\e[1;31mWARNING: /bin/login.shadow not found; could not restore login binary. Console login may be broken.\e[0m"
         fi
     fi
 
@@ -453,7 +453,7 @@ sshd_service() {
     else
         echo -e "\e[1;31msshd is currently: NOT INSTALLED\e[0m"
     fi
-    echo "OpenSSH Server — allows SSH login to the modem."
+    echo "OpenSSH Server: allows SSH login to the modem."
     echo -e "\e[1;32m1) Install/Update sshd\e[0m"
     echo -e "\e[1;31m2) Uninstall sshd\e[0m"
     echo -e "\e[1;33m3) Cancel\e[0m"
@@ -543,7 +543,7 @@ sshd_service() {
             remount_ro
             trap - EXIT
             systemctl daemon-reload
-            systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start — check 'systemctl status sshd' for details.\e[0m"; }
+            systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start; check 'systemctl status sshd' for details.\e[0m"; }
             # Reload firewall so port 22 LAN-only rule takes effect immediately
             systemctl restart firewall 2>/dev/null || true
             echo ""
@@ -597,7 +597,7 @@ lean_mode_service() {
             echo "1289206e9c115c3e20e66f5fb4ca92bb230a1be1a2ad06d1c23e0583d3995f42  /usrdata/quecdeck/script/lean_mode.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean_mode.sh.\e[0m"; rm -f /usrdata/quecdeck/script/lean_mode.sh; return; }
             echo -e "\e[1;32mIntegrity verified: lean_mode.sh\e[0m"
             /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/systemd/lean-mode.service "$GITROOT/quecdeck/systemd/lean-mode.service" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
-            echo "146beb37b2840d5aaad4323b6979dcc9a03373ea56ee2e9d7dcfabaad6ff91d0  /usrdata/quecdeck/systemd/lean-mode.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean-mode.service.\e[0m"; rm -f /usrdata/quecdeck/systemd/lean-mode.service; return; }
+            echo "e4700f2d27ef2fceaa80e8519bfd46cdae6c3fc09583ef0c781d573518108bd8  /usrdata/quecdeck/systemd/lean-mode.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean-mode.service.\e[0m"; rm -f /usrdata/quecdeck/systemd/lean-mode.service; return; }
             echo -e "\e[1;32mIntegrity verified: lean-mode.service\e[0m"
             chmod +x /usrdata/quecdeck/script/lean_mode.sh
             trap 'remount_ro' EXIT  # ensures RO is restored on any exit path

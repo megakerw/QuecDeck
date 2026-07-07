@@ -8,7 +8,9 @@ After=network.target opt.mount QCMAP_ConnectionManagerd.service firewall.service
 
 [Service]
 Type=simple
-PIDFile=/opt/var/run/lighttpd.pid
+# No PIDFile: with -D (foreground) systemd tracks the ExecStart process
+# directly. A PIDFile here (the shared opkg path) would let systemd adopt a
+# foreign lighttpd, e.g. Entware's, as the main process and mask a bind failure.
 ExecStartPre=/bin/sh /usrdata/quecdeck/script/lighttpd_prestart.sh
 ExecStartPre=/bin/rm -rf /tmp/quecdeck/auth_failures
 ExecStartPre=/bin/mkdir -p /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures

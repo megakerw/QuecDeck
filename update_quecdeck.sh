@@ -603,14 +603,6 @@ swap_in_release() {
         ln -sf /lib/systemd/system/scheduled_restart.service /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
     fi
 
-    # Ensure rc.unslung doesn't try to start its own copy of lighttpd
-    for script in /opt/etc/init.d/*lighttpd*; do
-        if [ -f "\$script" ]; then
-            echo "Removing existing Lighttpd init script: \$script"
-            rm "\$script"
-        fi
-    done
-
     # Whether lighttpd packages need installing was already determined (and
     # the opkg index already refreshed if so) back in stage_release, while
     # the old site was still serving. So this is just the actual install,
@@ -621,6 +613,17 @@ swap_in_release() {
         timeout 300 /opt/bin/opkg install \$_lighttpd_pkgs || { echo -e "\e[1;31mFailed to install lighttpd packages (or it timed out).\e[0m"; result_lighttpd="FAILED"; return 1; }
         result_lighttpd="UPDATED"
     fi
+
+    # MUST run AFTER the opkg install: the lighttpd package's postinst
+    # (re)creates /opt/etc/init.d/S80lighttpd, which rc.unslung would start at
+    # boot as a second lighttpd on 0.0.0.0:80, stealing the port from our
+    # systemd unit (which binds the LAN IP). Remove it so only our unit runs.
+    for script in /opt/etc/init.d/*lighttpd*; do
+        if [ -f "\$script" ]; then
+            echo "Removing opkg lighttpd init script: \$script"
+            rm "\$script"
+        fi
+    done
 
     systemctl daemon-reload
     if [ "\$_need_lighttpd_restart" = "1" ]; then
