@@ -261,9 +261,26 @@ cache_is_fresh() {
 at_response_ok() {
     local s="$1"
     while :; do
-        case "$s" in *$'\n'|*$'\t'|*' ') s=${s%?} ;; *) break ;; esac
+        case "$s" in *$'\n'|*$'\r'|*$'\t'|*' ') s=${s%?} ;; *) break ;; esac
     done
     [ "${s##*$'\n'}" = "OK" ]
+}
+
+# Turn a write command's AT reply into a result the frontend can positively
+# ack: the reply passes through on success (ends in OK); otherwise it becomes a
+# line CONTAINING "ERROR" (the modem's own error line, or a synthesized one for
+# an empty/timed-out reply). So an empty reply - e.g. the daemon restarting -
+# reads as failure instead of false success. Callers that must tolerate a
+# cut-off reply (modem reboots) should skip this and print optimistically.
+# Usage: result=$(atcmd_run "AT+X"); at_result "$result"
+at_result() {
+    local reply="$1" err
+    if at_response_ok "$reply"; then
+        printf '%s\n' "$reply"
+        return
+    fi
+    err=$(printf '%s' "$reply" | grep -iE 'ERROR' | head -1 | tr -d '\r')
+    printf '%s\n' "${err:-ERROR: no response from the modem}"
 }
 
 

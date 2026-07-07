@@ -34,33 +34,9 @@ function fetchSMS() {
     parseSMSData(data) {
       const cmglRegex = /^\s*\+CMGL:\s*(\d+),"[^"]*","([^"]*)"[^"]*,"([^"]*)"/gm;
       this.messages = [];
-      let lastIndex = null;
-      // A body runs from the end of its +CMGL header to the start of the next
-      // header, so each header is held until the following match delimits it
-      // (match.index) and the last is closed at end of input. One forward
-      // pass, no second scan for the next "+CMGL:".
-      let pending = null;
-
-      const flush = (h, bodyEnd) => {
-        const messageHex = data.substring(h.bodyStart, bodyEnd).trim();
-        const message = /^[0-9a-fA-F]+$/.test(messageHex) ? this.convertHexToText(messageHex) : messageHex;
-        if (lastIndex !== null && this.messages[lastIndex].sender === h.sender && (h.date - this.messages[lastIndex].date) / 1000 <= 1) {
-          this.messages[lastIndex].text += message;
-          this.messages[lastIndex].indices.push(h.index);
-          // displayDate tracks the latest part's timestamp for display, while
-          // .date (used in the merge-window check above) stays the first
-          // part's timestamp so later parts keep comparing against it.
-          this.messages[lastIndex].displayDate = this.formatDate(h.date);
-        } else {
-          this.messages.push({ text: message, sender: h.sender, date: h.date, displayDate: this.formatDate(h.date), indices: [h.index] });
-          lastIndex = this.messages.length - 1;
-        }
-      };
-
       let match;
+      let lastIndex = null;
       while ((match = cmglRegex.exec(data)) !== null) {
-        if (pending) { flush(pending, match.index); pending = null; }
-
         const index = parseInt(match[1]);
         const senderHex = match[2];
          // Maximum world wide phone number length is 17 (North Korea), UTF-16BE Hex string comes back at 48+ for US Number, min length is 3.
@@ -73,13 +49,33 @@ function fetchSMS() {
           console.error(`Invalid Date: ${dateStr}`);
           continue;
         }
-        pending = { index, sender, date, bodyStart: cmglRegex.lastIndex };
+        // Body runs from the end of this header to the next "+CMGL:" literal
+        // (not the next regex match): a header that doesn't fully match the
+        // field pattern must still bound this message, or its content lumps in.
+        const startIndex = cmglRegex.lastIndex;
+        const endIndex = data.indexOf("+CMGL:", startIndex) !== -1 ? data.indexOf("+CMGL:", startIndex) : data.length;
+        const messageHex = data.substring(startIndex, endIndex).trim();
+        const message = /^[0-9a-fA-F]+$/.test(messageHex) ? this.convertHexToText(messageHex) : messageHex;
+        // Multipart parts share a sender and (near-)identical timestamp. Use
+        // abs(): messages arrive in storage-index order, not time order, so an
+        // older message after a newer one gives a negative delta that a plain
+        // "<= 1" would wrongly treat as same-second and merge.
+        if (lastIndex !== null && this.messages[lastIndex].sender === sender && Math.abs(date - this.messages[lastIndex].date) / 1000 <= 1) {
+          this.messages[lastIndex].text += message;
+          this.messages[lastIndex].indices.push(index);
+          // displayDate tracks the latest part's timestamp for display, while
+          // .date (used in the merge-window check above) stays the first
+          // part's timestamp so later parts keep comparing against it.
+          this.messages[lastIndex].displayDate = this.formatDate(date);
+        } else {
+          this.messages.push({ text: message, sender: sender, date: date, displayDate: this.formatDate(date), indices: [index] });
+          lastIndex = this.messages.length - 1;
+        }
       }
-      if (pending) flush(pending, data.length);
-
-      // The modem returns messages oldest-first by storage index; reverse so
-      // the newest message displays first.
-      this.messages.reverse();
+      // Sort newest-first by timestamp. Storage index is NOT reliably
+      // chronological: the modem reuses freed low slots for new messages, so
+      // reversing by index would misplace a recent message stored in a low slot.
+      this.messages.sort((a, b) => b.date - a.date);
     },
 
     convertHexToText(hex) {

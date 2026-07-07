@@ -55,10 +55,12 @@ if [ -z "$at_parts" ]; then
 fi
 
 result=$(atcmd_run "AT${at_parts}")
-echo "$result"
+at_result "$result"
 cache_invalidate "$_CACHE_MODEM_ALL" "$_CACHE_NETWORK" "$_CACHE_MODEM_CONN"
 
-if [ "$action" = "reconnect" ]; then
+# Only reconnect/reboot if the setting actually applied. A failed AT command
+# must not trigger a disruptive modem reset.
+if at_response_ok "$result" && [ "$action" = "reconnect" ]; then
     (
         sleep 2
         wc_running=0
@@ -71,7 +73,7 @@ if [ "$action" = "reconnect" ]; then
         [ "$wc_running" = "1" ] && /opt/bin/sudo /bin/systemctl start watchcat
     ) >/dev/null 2>&1 &
     disown $!
-elif [ "$action" != "simswap" ]; then
+elif at_response_ok "$result" && [ "$action" != "simswap" ]; then
     ( sleep 5; atcmd_fire 'AT+CFUN=1,1' 10000 ) >/dev/null 2>&1 &
     disown $!
 fi

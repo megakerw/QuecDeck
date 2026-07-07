@@ -360,6 +360,15 @@ function networkSettings() {
         method: "POST",
         body: new URLSearchParams(params),
       })
+        .then(text => {
+          // at_result turns a failed/empty AT reply into a line containing
+          // "ERROR"; a real ack requires an OK-terminated reply, so treat
+          // anything with ERROR (incl. daemon-down "no response") as failure.
+          if (text.includes("ERROR")) {
+            this.$store.errorModal.open('The modem did not apply the change: ' + text.trim());
+          }
+          return text;
+        })
         .catch(() => this.$store.errorModal.open('Failed to apply network changes. Please try again.'));
     },
   };

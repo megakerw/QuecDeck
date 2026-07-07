@@ -26,5 +26,5 @@ case "$mode" in
     *)
         cgi_error "ERROR: invalid mode" ;;
 esac
-echo "$result"
+at_result "$result"
 cache_invalidate "$_CACHE_NETWORK" "$_CACHE_MODEM_ALL"

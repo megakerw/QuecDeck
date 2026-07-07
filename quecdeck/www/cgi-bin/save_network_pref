@@ -37,5 +37,5 @@ if [ -z "$at_parts" ]; then
 fi
 
 result=$(atcmd_run "AT${at_parts}")
-echo "$result"
+at_result "$result"
 cache_invalidate "$_CACHE_NETWORK" "$_CACHE_MODEM_ALL"

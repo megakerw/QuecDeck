@@ -279,6 +279,25 @@ if [ "$atcli_errors" = "1" ]; then
   exit 1
 fi
 
+# The atcli socket path is hardcoded in at-lib.sh (clients), the daemon unit
+# (-s bind + ExecStopPost cleanup), and the updater health probe, and they MUST
+# agree, or the daemon binds one path while clients hit another (total AT
+# outage). The binary's generic DEFAULT_SOCKET is not part of this set. Keep in
+# sync with tools/ci-checks.sh.
+sock_paths=$( { git show :quecdeck/script/at-lib.sh
+                git show :quecdeck/systemd/atcmd-daemon.service
+                git show :update_quecdeck.sh; } 2>/dev/null \
+              | grep -ohE '/[^ "}]*atcli\.sock' | sort -u )
+if [ "$(printf '%s\n' "$sock_paths" | grep -c .)" -ne 1 ]; then
+  echo ""
+  echo "ERROR: atcli socket path drift. at-lib.sh, atcmd-daemon.service, and"
+  echo "  update_quecdeck.sh must all use the same socket path:"
+  printf '    %s\n' $sock_paths
+  echo ""
+  echo "Commit blocked: keep the atcli socket path consistent."
+  exit 1
+fi
+
 # Dialect guard: bash-only code must never execute under sh. Two rules:
 # (1) any script sourcing cgi-lib.sh/at-lib.sh (bash-dialect) must declare
 #     #!/bin/bash;

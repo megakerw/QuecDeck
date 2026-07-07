@@ -8,40 +8,50 @@ action=$(get_post_param action)
 
 cgi_output_text
 
+# at_result gives the UI a positive ack (empty/timeout reads as failure). The
+# reboot resets the modem and may cut off its own reply, so it stays raw and
+# optimistic rather than reporting a false failure.
 case "$action" in
     reboot)
         atcmd_run 'AT+CFUN=1,1' ;;
     cfun0)
-        atcmd_run 'AT+CFUN=0' ;;
+        at_result "$(atcmd_run 'AT+CFUN=0')" ;;
     dns_v4_enable)
-        atcmd_run 'AT+QMAP="DHCPV4DNS","enable"' ;;
+        at_result "$(atcmd_run 'AT+QMAP="DHCPV4DNS","enable"')" ;;
     dns_v4_disable)
-        atcmd_run 'AT+QMAP="DHCPV4DNS","disable"' ;;
+        at_result "$(atcmd_run 'AT+QMAP="DHCPV4DNS","disable"')" ;;
     dns_v6_enable)
-        atcmd_run 'AT+QMAP="DHCPV6DNS","enable"' ;;
+        at_result "$(atcmd_run 'AT+QMAP="DHCPV6DNS","enable"')" ;;
     dns_v6_disable)
-        atcmd_run 'AT+QMAP="DHCPV6DNS","disable"' ;;
+        at_result "$(atcmd_run 'AT+QMAP="DHCPV6DNS","disable"')" ;;
     autoconnect_enable)
-        atcmd_run 'AT+QMAPWAC=1' ;;
+        at_result "$(atcmd_run 'AT+QMAPWAC=1')" ;;
     autoconnect_disable)
-        atcmd_run 'AT+QMAPWAC=0' ;;
+        at_result "$(atcmd_run 'AT+QMAPWAC=0')" ;;
     gnss_enable)
-        atcmd_run 'AT+QGPS=1' ;;
+        at_result "$(atcmd_run 'AT+QGPS=1')" ;;
     gnss_disable)
-        atcmd_run 'AT+QGPSEND' ;;
+        at_result "$(atcmd_run 'AT+QGPSEND')" ;;
     ippt_enable)
-        atcmd_run 'AT+QMAP="MPDN_rule",0,1,0,1,1,"FF:FF:FF:FF:FF:FF"' 15000
-        ( sleep 2; . /usrdata/quecdeck/script/cgi-lib.sh; atcmd_fire 'AT+CFUN=1,1' 10000 ) >/dev/null 2>&1 &
-        disown $! ;;
+        _r=$(atcmd_run 'AT+QMAP="MPDN_rule",0,1,0,1,1,"FF:FF:FF:FF:FF:FF"' 15000)
+        at_result "$_r"
+        # Only reboot if the rule was set; don't reset the modem on a failed set.
+        if at_response_ok "$_r"; then
+            ( sleep 2; . /usrdata/quecdeck/script/cgi-lib.sh; atcmd_fire 'AT+CFUN=1,1' 10000 ) >/dev/null 2>&1 &
+            disown $!
+        fi ;;
     ippt_disable)
-        atcmd_run 'AT+QMAP="MPDN_rule",0' 15000
-        ( sleep 2; . /usrdata/quecdeck/script/cgi-lib.sh; atcmd_fire 'AT+CFUN=1,1' 10000 ) >/dev/null 2>&1 &
-        disown $! ;;
+        _r=$(atcmd_run 'AT+QMAP="MPDN_rule",0' 15000)
+        at_result "$_r"
+        if at_response_ok "$_r"; then
+            ( sleep 2; . /usrdata/quecdeck/script/cgi-lib.sh; atcmd_fire 'AT+CFUN=1,1' 10000 ) >/dev/null 2>&1 &
+            disown $!
+        fi ;;
     simdet_enable)
-        atcmd_run 'AT+QSIMDET=0,1'
+        at_result "$(atcmd_run 'AT+QSIMDET=0,1')"
         cache_invalidate "$_CACHE_NETWORK" ;;
     simdet_disable)
-        atcmd_run 'AT+QSIMDET=0,0'
+        at_result "$(atcmd_run 'AT+QSIMDET=0,0')"
         cache_invalidate "$_CACHE_NETWORK" ;;
     *)
         cgi_error "ERROR: invalid action" ;;

@@ -50,6 +50,20 @@ while IFS= read -r f; do
     err "atcli guard: $f invokes atcli directly (use atcmd_run/atcmd_fire from at-lib.sh)"
 done < <(grep -rlE "$ATCLI_INVOKE_RE" quecdeck/www/cgi-bin quecdeck/script quecdeck/console 2>/dev/null)
 
+# ------------------------------------------ atcli socket path consistency ---
+# The QuecDeck socket path is hardcoded in at-lib.sh (clients), the daemon unit
+# (-s bind + ExecStopPost cleanup), and the updater health probe. They MUST
+# agree: if the daemon binds one path while clients pass another, AT goes fully
+# dark. The atcli binary's own DEFAULT_SOCKET is intentionally generic and is
+# NOT part of this set. Keep in sync with the pre-commit hook.
+_socks=$(grep -ohE '/[^ "}]*atcli\.sock' \
+    quecdeck/script/at-lib.sh \
+    quecdeck/systemd/atcmd-daemon.service \
+    update_quecdeck.sh 2>/dev/null | sort -u)
+if [ "$(printf '%s\n' "$_socks" | grep -c .)" -ne 1 ]; then
+    err "atcli socket path drift (at-lib.sh / atcmd-daemon.service / updater must agree): $(printf '%s ' $_socks)"
+fi
+
 # ------------------------------------------------------- dev-gate guard ----
 # Every CGI the developer page calls must be dev-gated in auth.lua, so a new
 # dev endpoint can't silently ship admin-gated only. auth_dev is the unlock

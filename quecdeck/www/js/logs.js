@@ -37,6 +37,7 @@ function logsPage() {
         case 'connected':      return 'bg-success';
         case 'disconnected':   return 'bg-danger';
         case 'cell_change':    return 'bg-info text-dark';
+        case 'operator_change': return 'bg-warning text-dark';
         case 'mode_change':    return 'bg-warning text-dark';
         case 'band_change':    return 'bg-primary';
         case 'cell_scan_start':
@@ -50,6 +51,7 @@ function logsPage() {
         case 'connected':      return 'Connected';
         case 'disconnected':   return 'Disconnected';
         case 'cell_change':    return 'Cell Change';
+        case 'operator_change': return 'Operator Change';
         case 'mode_change':    return 'Mode Change';
         case 'band_change':    return 'Band Change';
         case 'cell_scan_start': return 'Scan Start';
@@ -79,6 +81,11 @@ function logsPage() {
           const toMode   = ev.to   || '—';
           const cellPci  = ev.cell_id ? ' | Cell: ' + ev.cell_id + ' | PCI: ' + ev.pci : '';
           return fromMode + ' → ' + toMode + cellPci;
+        }
+        case 'operator_change': {
+          const modePrefix = ev.mode ? ev.mode + ' | ' : '';
+          const cellPci    = ev.cell_id ? ' | Cell: ' + ev.cell_id + ' | PCI: ' + ev.pci : '';
+          return modePrefix + ev.from + ' → ' + ev.to + cellPci;
         }
         case 'band_change':
           return (ev.mode || '') + ' | Cell: ' + ev.cell_id + ' | PCI: ' + ev.pci + ' | Band ' + ev.from + ' → ' + ev.to;
