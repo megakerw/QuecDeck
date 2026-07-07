@@ -4,9 +4,10 @@
 #   tools/run-tests.sh          # fast set (used by the pre-commit hook)
 #   tools/run-tests.sh --slow   # adds tests that sleep (brute-force lockout)
 #
-# Device-coupled code (queue daemon I/O, caches, systemd paths) is exercised
-# on-device only; this suite covers the parsing and arithmetic where the
-# historical bugs (\r endings, shift overflow, JSON extraction) have lived.
+# Device-coupled code (caches, systemd paths) is exercised on-device only,
+# and the AT daemon in the atcli repo's own harness; this suite covers the
+# parsing and arithmetic where the historical bugs (\r endings, shift
+# overflow, JSON extraction) have lived.
 
 set -u
 cd "$(dirname "$0")/.."
@@ -67,6 +68,17 @@ t "at_response_ok clean"      "0" "$(at_response_ok $'+QSIMSTAT: 1,1\nOK'; echo 
 t "at_response_ok trailing"   "0" "$(at_response_ok $'DATA\nOK\n\n'; echo $?)"
 t "at_response_ok error"      "1" "$(at_response_ok $'+CME ERROR: 3'; echo $?)"
 t "at_response_ok empty"      "1" "$(at_response_ok ''; echo $?)"
+
+# cache_is_fresh: a future mtime (clock stepped backwards, e.g. NITZ
+# re-sync after a modem reboot) must read as stale, or caches pin forever.
+_cf=$(mktemp)
+touch -d "@$(( $(date +%s) - 100 ))" "$_cf"
+cache_is_fresh "$_cf" 10;   t_rc "cache stale past ttl"       "1" "$?"
+cache_is_fresh "$_cf" 200;  t_rc "cache fresh within ttl"     "0" "$?"
+touch -d "@$(( $(date +%s) + 1000 ))" "$_cf"
+cache_is_fresh "$_cf" 10;   t_rc "cache future mtime stale"   "1" "$?"
+rm -f "$_cf"
+cache_is_fresh "$_cf" 10;   t_rc "cache missing file stale"   "1" "$?"
 
 # The sanitizer keeps hex chars (IPv6); it strips shell/path metacharacters.
 REMOTE_ADDR='192.168.1.7<>;$/'
@@ -142,30 +154,6 @@ t "qeng no service pci"   "0"         "$sc_pci"
 
 parse_qeng '+QENG: "servingcell","CONNECT","EVIL\"injection","FDD",240,01,AA,1,2,3'
 t "qeng mode whitelist blocks injection" "" "$sc_mode"
-
-# ------------------------------------------ daemon notify line parsing -----
-eval "$(extract_fn quecdeck/script/atcmd_queue_daemon.sh _parse_notify)"
-
-_parse_notify $'123_4_5\tAT+CSQ\t3000\t8642'
-t_rc "notify 4-field parses" "0" "$?"
-t "notify 4-field id"       "123_4_5" "$_id"
-t "notify 4-field cmd"      "AT+CSQ"  "$_cmd"
-t "notify 4-field timeout"  "3000"    "$_timeout"
-t "notify 4-field deadline" "8642"    "$_deadline"
-
-_parse_notify $'77_1_2\tAT+QGMR\t5000'
-t_rc "notify 3-field (old client) parses" "0" "$?"
-t "notify 3-field deadline empty" "" "$_deadline"
-t "notify 3-field timeout kept"   "5000" "$_timeout"
-
-_parse_notify $'..\/evil\tAT+CSQ\t3000\t1'
-t_rc "notify bad id rejected" "1" "$?"
-_parse_notify 'no-tabs-at-all'
-t_rc "notify malformed rejected" "1" "$?"
-_parse_notify $'9_9_9\tAT+CSQ\tgarbage\talso-garbage'
-t_rc "notify garbage fields parse" "0" "$?"
-t "notify garbage timeout cleared"  "" "$_timeout"
-t "notify garbage deadline cleared" "" "$_deadline"
 
 # ------------------------------------------- restart log time source logic --
 # Mirrors get_restart_log's per-entry decision (kept in sync by this test:

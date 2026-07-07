@@ -41,10 +41,14 @@ else
 fi
 
 # --------------------------------------------------------- atcli guard -----
+# Runtime code (CGIs/scripts/console) must send AT commands through at-lib.sh
+# (atcmd_run/atcmd_fire), never invoke the atcli binary directly. Same scope +
+# pattern as the pre-commit hook's atcli guard; keep them in sync.
+ATCLI_INVOKE_RE='(/atcli|\$[{]?_ATCLI[}]?)([^A-Za-z0-9._/-]|$)'
 while IFS= read -r f; do
-    case "$f" in quecdeck/script/at-lib.sh|quecdeck/script/atcmd_queue_daemon.sh) continue ;; esac
-    err "atcli guard: $f invokes atcli directly (route through at-lib.sh)"
-done < <(grep -rlE "/usrdata/quecdeck/atcli[ \"']" quecdeck/ update_quecdeck.sh quecdeck.sh installentware.sh 2>/dev/null)
+    [ "$f" = "quecdeck/script/at-lib.sh" ] && continue
+    err "atcli guard: $f invokes atcli directly (use atcmd_run/atcmd_fire from at-lib.sh)"
+done < <(grep -rlE "$ATCLI_INVOKE_RE" quecdeck/www/cgi-bin quecdeck/script quecdeck/console 2>/dev/null)
 
 # ------------------------------------------------------- dev-gate guard ----
 # Every CGI the developer page calls must be dev-gated in auth.lua, so a new

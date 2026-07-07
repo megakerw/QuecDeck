@@ -3,9 +3,11 @@ function logsPage() {
     connectionEvents: [],
     accessEvents: [],
     restartEvents: [],
+    atcmdEvents: [],
     loadingConn: false,
     loadingAccess: false,
     loadingRestart: false,
+    loadingAtcmd: false,
     connUpdatedAt: '',
     accessUpdatedAt: '',
     refreshTimer: null,
@@ -19,8 +21,15 @@ function logsPage() {
     // old as a sign the clock isn't synced, so the UI can warn the user.
     get clockUnsynced() {
       const MIN_PLAUSIBLE_TS = 1700000000; // 2023-11-14, well before this feature existed
-      return [...this.connectionEvents, ...this.accessEvents, ...this.restartEvents]
+      return [...this.connectionEvents, ...this.accessEvents, ...this.restartEvents, ...this.atcmdEvents]
         .some((ev) => ev.ts && ev.ts < MIN_PLAUSIBLE_TS);
+    },
+
+    // Daemon log lines are plain text: "<epoch> atclid: <message>".
+    parseAtcmdLine(line) {
+      const m = line.match(/^(\d+) atclid: (.*)$/);
+      if (m) return { ts: parseInt(m[1], 10), msg: m[2] };
+      return { ts: 0, msg: line };
     },
 
     connBadgeClass(type) {
@@ -141,11 +150,12 @@ function logsPage() {
       );
     },
 
-    // One fetch serves both panels; the flags pick which half to apply so a
-    // per-panel Refresh doesn't clobber the other panel's timestamp.
-    refreshLogs(conn, access) {
+    // One fetch serves all panels; the flags pick which parts to apply so a
+    // per-panel Refresh doesn't clobber the other panels' timestamps.
+    refreshLogs(conn, access, atcmd) {
       if (conn) this.loadingConn = true;
       if (access) this.loadingAccess = true;
+      if (atcmd) this.loadingAtcmd = true;
       fetchJSON('/cgi-bin/get_logs')
         .then((data) => {
           const ts = new Date().toLocaleString([], { hour12: false });
@@ -157,17 +167,22 @@ function logsPage() {
             this.accessEvents = (data.access_events || []).slice().reverse();
             this.accessUpdatedAt = ts;
           }
+          if (atcmd) {
+            this.atcmdEvents = (data.atcmd_log || []).map((l) => this.parseAtcmdLine(l)).reverse();
+          }
         })
         .catch(() => this.$store.errorModal.open('Failed to load logs.'))
         .finally(() => {
           if (conn) this.loadingConn = false;
           if (access) this.loadingAccess = false;
+          if (atcmd) this.loadingAtcmd = false;
         });
     },
 
-    refreshConnection() { this.refreshLogs(true, false); },
-    refreshAccess()     { this.refreshLogs(false, true); },
-    refresh()           { this.refreshLogs(true, true); },
+    refreshConnection() { this.refreshLogs(true, false, false); },
+    refreshAccess()     { this.refreshLogs(false, true, false); },
+    refreshAtcmd()      { this.refreshLogs(false, false, true); },
+    refresh()           { this.refreshLogs(true, true, true); },
 
     init() {
       this.refresh();

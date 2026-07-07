@@ -18,7 +18,6 @@ CHECKSUMMED_FILES=(
   quecdeck/script/create_scheduled_restart.sh
   quecdeck/script/remove_scheduled_restart.sh
   quecdeck/script/scheduled_restart.sh
-  quecdeck/script/atcmd_queue_daemon.sh
   quecdeck/script/connection_logger.sh
   quecdeck/script/lighttpd_prestart.sh
   quecdeck/script/lean_mode.sh
@@ -250,25 +249,26 @@ if [ "$hash_errors" = "1" ]; then
   exit 1
 fi
 
-# Enforce the AT access layer: only at-lib.sh (and the queue daemon, the
-# dispatcher) may invoke atcli directly. at-lib strips atcli's \r\n line
-# endings and serializes port access.
-ATCLI_ALLOWED=(
-  quecdeck/script/at-lib.sh
-  quecdeck/script/atcmd_queue_daemon.sh
-)
+# Enforce the AT access layer: runtime code (CGIs, scripts, console) must send
+# AT commands through at-lib.sh (atcmd_run/atcmd_fire), never invoke the atcli
+# binary directly. Scoped to those dirs so the daemon-launch unit, docs, and
+# dev tools aren't swept in; at-lib.sh is the gateway itself. The pattern
+# catches the path (any /atcli), the symlink, and the $_ATCLI variable, but
+# not the $_ATCLI_SOCK socket or the atcli.sock path. Keep scope + pattern in
+# sync with the atcli guard in tools/ci-checks.sh.
+ATCLI_INVOKE_RE='(/atcli|\$[{]?_ATCLI[}]?)([^A-Za-z0-9._/-]|$)'
 atcli_errors=0
 while IFS= read -r f; do
-  skip=0
-  for a in "${ATCLI_ALLOWED[@]}"; do
-    [ "$f" = "$a" ] && { skip=1; break; }
-  done
-  [ "$skip" = "1" ] && continue
-  if git show ":$f" 2>/dev/null | grep -qE '/usrdata/quecdeck/atcli[ "'"'"']'; then
+  case "$f" in
+    quecdeck/script/at-lib.sh) continue ;;
+    quecdeck/www/cgi-bin/*|quecdeck/script/*|quecdeck/console/*) ;;
+    *) continue ;;
+  esac
+  if git show ":$f" 2>/dev/null | grep -qE "$ATCLI_INVOKE_RE"; then
     echo ""
     echo "ERROR: $f invokes atcli directly."
-    echo "  Source /usrdata/quecdeck/script/at-lib.sh and use atcmd_run (or"
-    echo "  atcli_direct for root-context callers) instead."
+    echo "  Source /usrdata/quecdeck/script/at-lib.sh and use atcmd_run"
+    echo "  (or atcmd_fire for fire-and-forget reboots) instead."
     atcli_errors=1
   fi
 done < <(git diff --cached --name-only)

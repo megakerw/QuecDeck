@@ -1,20 +1,38 @@
 [Unit]
-Description=quecdeck AT command queue daemon
+Description=quecdeck AT command daemon (atcli --daemon)
 
 [Service]
 Type=simple
-User=www-data
-ExecStart=/bin/bash /usrdata/quecdeck/script/atcmd_queue_daemon.sh
-ExecStopPost=/bin/rm -f /tmp/quecdeck/atcmd.notify
+# The daemon logs to both sinks: the --log tmpfs file (journald is disabled
+# on the device) and stderr (journalctl works on firmware where it is not).
+# The file is trimmed to 500 lines at each (re)start; in-run growth is
+# rate-limited in the daemon (consecutive timeouts collapse to 1 line per
+# 100). Trim must stay in ExecStartPre: a tail+mv on the live file would
+# strand the daemon's append fd on the old inode.
+# chown: this Pre runs as root and often creates the tree first on boot
+# (connection-logger orders After= this unit); without it the logs dir is
+# root-owned and the www-data writers (connection_logger, auth.lua) fail.
+# chmod: root's umask leaves fresh dirs 755, so atcmd.log would be
+# world-readable until another unit tightens the tree.
+ExecStartPre=-/bin/bash -c 'mkdir -p /tmp/quecdeck/logs; chown www-data /tmp/quecdeck /tmp/quecdeck/logs; chmod 700 /tmp/quecdeck /tmp/quecdeck/logs; L=/tmp/quecdeck/logs/atcmd.log; if [ -f "$L" ]; then tail -500 "$L" > "$L.tmp" && mv "$L.tmp" "$L"; fi'
+# Starts as root to open /dev/smd11, drops itself to www-data before
+# binding the socket; User= must stay unset. -s is explicit: at-lib.sh
+# clients connect to this exact path, not the atcli binary's own default.
+ExecStart=/usrdata/quecdeck/atcli --daemon -s /tmp/quecdeck/atcli.sock --log /tmp/quecdeck/logs/atcmd.log
+ExecStopPost=/bin/rm -f /tmp/quecdeck/atcli.sock
 Restart=always
-RestartSec=2s
+# 5s keeps repeated port-open failures (modem mid-reboot) under systemd's
+# default start limit (5 in 10s), which would otherwise park the unit in
+# failed state permanently.
+RestartSec=5s
 StandardOutput=null
-StandardError=null
+StandardError=journal
 ProtectHome=yes
 LockPersonality=yes
 ProtectControlGroups=yes
 RestrictRealtime=yes
 PrivateNetwork=yes
+NoNewPrivileges=yes
 
 [Install]
 WantedBy=multi-user.target

@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=02aaf7cb" />
-    <link rel="stylesheet" href="css/styles.css?v=02aaf7cb" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=6ccc02b6" />
+    <link rel="stylesheet" href="css/styles.css?v=6ccc02b6" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=02aaf7cb"></script>
-    <script src="js/utils.js?v=02aaf7cb"></script>
-    <script src="js/alpinejs.min.js?v=02aaf7cb" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=6ccc02b6"></script>
+    <script src="js/utils.js?v=6ccc02b6"></script>
+    <script src="js/alpinejs.min.js?v=6ccc02b6" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="logsPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=02aaf7cb"></script>
+        <script src="js/nav.js?v=6ccc02b6"></script>
 
         <div class="alert alert-warning small mb-3" x-show="clockUnsynced" x-cloak>
           Device clock appears unsynced. Timestamps below may be inaccurate until it syncs (e.g. once connected to a cell tower).
@@ -116,12 +116,42 @@
             </div>
           </div>
 
+          <div class="col-12 col-lg-6">
+            <div class="panel-section" style="height:100%">
+              <div class="panel-title d-flex align-items-center gap-2 mb-3">
+                AT Daemon
+                <span x-show="loadingAtcmd" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
+                <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshAtcmd()">Refresh</button>
+              </div>
+              <div x-show="atcmdEvents.length === 0 && !loadingAtcmd" class="text-muted small">No daemon log entries recorded yet.</div>
+              <div x-show="atcmdEvents.length > 0" style="max-height:420px; overflow-y:auto">
+                <table class="table table-sm mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col" style="width:1%;white-space:nowrap">Time</th>
+                      <th scope="col">Message</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="(ev, idx) in atcmdEvents" :key="idx">
+                      <tr>
+                        <td class="text-muted text-nowrap" x-text="ev.ts ? formatTs(ev.ts) : ''"></td>
+                        <td x-text="ev.msg"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div x-show="atcmdEvents.length > 0" class="small mt-auto pt-2">Last 100 lines. One "serving" line per daemon start is normal; timeouts and drops appear here. Cleared on reboot.</div>
+            </div>
+          </div>
+
         </div>
 
       </div>
     </main>
 
-    <script src="js/logs.js?v=02aaf7cb"></script>
-    <script src="js/dark-mode.js?v=02aaf7cb"></script>
+    <script src="js/logs.js?v=6ccc02b6"></script>
+    <script src="js/dark-mode.js?v=6ccc02b6"></script>
   </body>
 </html>

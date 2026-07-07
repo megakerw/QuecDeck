@@ -6,6 +6,7 @@ cgi_output_json
 
 CONN_LOG="/tmp/quecdeck/logs/connection_events.jsonl"
 ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
+ATCMD_LOG="/tmp/quecdeck/logs/atcmd.log"
 LIMIT=100
 
 jsonl_to_array() {
@@ -17,7 +18,24 @@ jsonl_to_array() {
     printf '%s' "$lines" | awk 'BEGIN{printf "["} NR>1{printf ","} {printf "%s",$0} END{printf "]"}'
 }
 
+# Plain-text lines (the AT daemon log is not jsonl): JSON-escape each line
+# into an array of strings. Commands in the lines may contain quotes.
+text_to_array() {
+    local file="$1"
+    [ -f "$file" ] || { printf '[]'; return; }
+    tail -"$LIMIT" "$file" 2>/dev/null | awk '
+        BEGIN{printf "["}
+        {
+            gsub(/\\/,"\\\\"); gsub(/"/,"\\\"")
+            gsub(/\t/,"\\t"); gsub(/\r/,"")
+            if (NR>1) printf ","
+            printf "\"%s\"",$0
+        }
+        END{printf "]"}'
+}
+
 conn=$(jsonl_to_array "$CONN_LOG")
 access=$(jsonl_to_array "$ACCESS_LOG")
+atcmd=$(text_to_array "$ATCMD_LOG")
 
-printf '{"connection_events":%s,"access_events":%s}\n' "$conn" "$access"
+printf '{"connection_events":%s,"access_events":%s,"atcmd_log":%s}\n' "$conn" "$access" "$atcmd"

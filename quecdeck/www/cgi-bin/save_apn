@@ -72,6 +72,6 @@ if [ "$action" = "reconnect" ]; then
     ) >/dev/null 2>&1 &
     disown $!
 elif [ "$action" != "simswap" ]; then
-    ( sleep 5; atcmd_run 'AT+CFUN=1,1' ) >/dev/null 2>&1 &
+    ( sleep 5; atcmd_fire 'AT+CFUN=1,1' 10000 ) >/dev/null 2>&1 &
     disown $!
 fi

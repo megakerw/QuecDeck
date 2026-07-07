@@ -1,11 +1,9 @@
 #!/bin/bash
 
-# atcli_direct rather than atcmd_run: keeps this root-context banner
-# independent of the www-data queue daemon.
 if [ -f /usrdata/quecdeck/script/at-lib.sh ]; then
     . /usrdata/quecdeck/script/at-lib.sh
-    serial_number=$(atcli_direct 'AT+EGMR=0,5' | grep '+EGMR:' | cut -d '"' -f2)
-    firmware_revision=$(atcli_direct 'AT+QGMR' | grep -o 'RM[0-9A-Z].*')
+    serial_number=$(atcmd_run 'AT+EGMR=0,5' | grep '+EGMR:' | cut -d '"' -f2)
+    firmware_revision=$(atcmd_run 'AT+QGMR' | grep -o 'RM[0-9A-Z].*')
 else
     serial_number="UNKNOWN"
     firmware_revision="UNKNOWN"

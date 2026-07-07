@@ -116,7 +116,7 @@ sleep 15
 
 # Initial poll: log startup event.
 ts=$(date +%s)
-if [ -p "$_ATCMD_NOTIFY" ]; then
+if [ -S "$_ATCLI_SOCK" ]; then
     response=$(atcmd_run 'AT+QENG="servingcell"' 10000)
     parse_qeng "$response"
 else
@@ -138,7 +138,7 @@ fi
 while true; do
     sleep "$INTERVAL"
 
-    [ ! -p "$_ATCMD_NOTIFY" ] && continue
+    [ ! -S "$_ATCLI_SOCK" ] && continue
 
     ts=$(date +%s)
     response=$(atcmd_run 'AT+QENG="servingcell"' 10000)

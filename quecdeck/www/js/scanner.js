@@ -90,15 +90,9 @@ function cellScanner() {
     parseNr5gCells() {
       // Parse the NR5G cells
       for (let i = 0; i < this.nr5g_cells.length; i++) {
-        let mcc, mnc, freq, pci, rsrp, band, provider;
-        mcc = this.nr5g_cells[i].split(":")[1].split(",")[1];
-        mnc = this.nr5g_cells[i].split(":")[1].split(",")[2];
-        freq = this.nr5g_cells[i].split(":")[1].split(",")[3];
-        pci = this.nr5g_cells[i].split(":")[1].split(",")[4];
-        rsrp = this.nr5g_cells[i].split(":")[1].split(",")[5];
-        band = this.nr5g_cells[i].split(":")[1].split(",")[12];
-
-        provider = this.convertMCCMNCtoNetworkName(mcc, mnc);
+        const f = this.nr5g_cells[i].split(":")[1].split(",");
+        const [mcc, mnc, freq, pci, rsrp, band] = [f[1], f[2], f[3], f[4], f[5], f[12]];
+        const provider = this.convertMCCMNCtoNetworkName(mcc, mnc);
 
         /// Append the value to lte_cells_parsed with this layout:
         // mcc mnc, band, freq, pci, rsrp
@@ -110,15 +104,9 @@ function cellScanner() {
 
     parseLTECells() {
       for (let i = 0; i < this.lte_cells.length; i++) {
-        let mcc, mnc, freq, pci, rsrp, band, provider;
-        mcc = this.lte_cells[i].split(":")[1].split(",")[1];
-        mnc = this.lte_cells[i].split(":")[1].split(",")[2];
-        freq = this.lte_cells[i].split(":")[1].split(",")[3];
-        pci = this.lte_cells[i].split(":")[1].split(",")[4];
-        rsrp = this.lte_cells[i].split(":")[1].split(",")[5];
-        band = this.lte_cells[i].split(":")[1].split(",")[12];
-
-        provider = this.convertMCCMNCtoNetworkName(mcc, mnc);
+        const f = this.lte_cells[i].split(":")[1].split(",");
+        const [mcc, mnc, freq, pci, rsrp, band] = [f[1], f[2], f[3], f[4], f[5], f[12]];
+        const provider = this.convertMCCMNCtoNetworkName(mcc, mnc);
 
         // Append the value to lte_cells_parsed with this layout:
         // mcc mnc, band, freq, pci, rsrp
@@ -240,21 +228,15 @@ function cellScanner() {
 
     lteNeighbourCellsParse() {
       for (let i = 0; i < this.lte_neighbourCells.length; i++) {
-        let freq, pci, rsrp;
-        freq = this.lte_neighbourCells[i].split(":")[1].split(",")[2];
-        pci = this.lte_neighbourCells[i].split(":")[1].split(",")[3];
-        rsrp = this.lte_neighbourCells[i].split(":")[1].split(",")[5];
-        this.lte_neighbourCellsParsed.push(`${freq}, ${pci}, ${rsrp}`);
+        const f = this.lte_neighbourCells[i].split(":")[1].split(",");
+        this.lte_neighbourCellsParsed.push(`${f[2]}, ${f[3]}, ${f[5]}`);
       }
     },
 
     nr5gNeighbourCellsParse() {
       for (let i = 0; i < this.nr5g_neighbourCells.length; i++) {
-        let freq, pci, rsrp;
-        freq = this.nr5g_neighbourCells[i].split(":")[1].split(",")[2];
-        pci = this.nr5g_neighbourCells[i].split(":")[1].split(",")[3];
-        rsrp = this.nr5g_neighbourCells[i].split(":")[1].split(",")[4];
-        this.nr5g_neighbourCellsParsed.push(`${freq}, ${pci}, ${rsrp}`);
+        const f = this.nr5g_neighbourCells[i].split(":")[1].split(",");
+        this.nr5g_neighbourCellsParsed.push(`${f[2]}, ${f[3]}, ${f[4]}`);
       }
     },
 

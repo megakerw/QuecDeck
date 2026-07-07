@@ -59,9 +59,10 @@ while :; do
 
     if [ "$time_match" = "1" ] && [ "$day_match" = "1" ]; then
         echo "$(date): Scheduled restart triggered."
-        # 240s: the reboot's deadline must outlive anything ahead in the
-        # queue (215s cell scan), or the daemon expires it as orphan work.
-        atcmd_run 'AT+CFUN=1,1' 240000 >/dev/null
+        # Fire-and-forget: the daemon executes the reboot even after this
+        # script is gone; a plain atcmd_run whose sender exits early is
+        # skipped. Timeout only bounds the daemon's response drain.
+        atcmd_fire 'AT+CFUN=1,1' 10000
         exit 0
     fi
 

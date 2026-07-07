@@ -2,7 +2,7 @@
 # Shared CGI helpers. Source this at the top of each CGI script:
 #   . /usrdata/quecdeck/script/cgi-lib.sh
 
-# AT access layer (atcmd_run, atcli_direct); used by the cache helpers below.
+# AT access layer (atcmd_run, atcmd_fire); used by the cache helpers below.
 . /usrdata/quecdeck/script/at-lib.sh
 
 # Reject cross-origin requests. Doubles as CSRF protection: browsers always send
@@ -250,7 +250,10 @@ cache_is_fresh() {
     # negative and stale cache is served forever).
     now=${EPOCHSECONDS:-$(date +%s)}
     age=$(( now - mtime ))
-    [ "$age" -lt "$ttl" ]
+    # Negative age = mtime in the future = the clock stepped backwards
+    # (NITZ re-sync after a modem reboot does this). Must read as stale,
+    # or every cache pins "fresh" until reboot.
+    [ "$age" -ge 0 ] && [ "$age" -lt "$ttl" ]
 }
 
 # Returns 0 if an AT response is valid (last non-empty line is exactly OK).
@@ -294,7 +297,7 @@ cache_refresh() {
 # Serves existing cache (without refreshing) during an active cell scan.
 #
 # No per-file locking: concurrent misses each submit an AT command; the daemon
-# serialises them. Duplicate cost is ~50-100 ms, cheaper than an empty result.
+# serialises them. Duplicate cost is ~5 ms, cheaper than an empty result.
 cache_get_or_fetch() {
     local f="$1" ttl="$2" at_cmd="$3" at_timeout="${4:-3000}"
     local result

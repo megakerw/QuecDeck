@@ -165,7 +165,6 @@ stage_release() {
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/lean_mode.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/create_scheduled_restart.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/remove_scheduled_restart.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/atcmd_queue_daemon.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/connection_logger.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/watchcat.sh &
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/scheduled_restart.sh &
@@ -291,10 +290,18 @@ stage_release() {
     /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/init_setup &
     wait
 
-    # atcli is a compiled binary (~350 KB). Copy forward from the live install
+    # atcli is a compiled binary (~790 KB, deliberately not UPX-compressed:
+    # decompression cost ~75 ms per exec). Copy forward from the live install
     # when the repo checksum matches it, instead of re-downloading.
     _atcli_expected=\$(/opt/bin/wget --timeout=30 --tries=2 -qO- "$GITROOT/quecdeck/checksums.sha256" 2>/dev/null | \
         awk '/[*]quecdeck\/bin\/atcli/{print \$1}')
+    # The manifest verification loop below cannot cover atcli (it is staged at
+    # \$STAGE_DIR/atcli, not \$STAGE_DIR/bin/atcli), so this inline check is the
+    # only integrity check on the one root-executed binary. No hash, no update.
+    if [ -z "\$_atcli_expected" ]; then
+        echo -e "\e[1;31mFATAL: Could not fetch the atcli checksum. Aborting.\e[0m"
+        return 1
+    fi
     _atcli_current=""
     [ -f "\$QUECDECK_DIR/atcli" ] && _atcli_current=\$(sha256sum "\$QUECDECK_DIR/atcli" 2>/dev/null | awk '{print \$1}')
     if [ -n "\$_atcli_expected" ] && [ "\$_atcli_expected" = "\$_atcli_current" ]; then
@@ -306,16 +313,19 @@ stage_release() {
             echo -e "\e[1;31mFailed to download atcli.\e[0m"
             return 1
         }
-        if [ -n "\$_atcli_expected" ]; then
-            _atcli_downloaded=\$(sha256sum "\$STAGE_DIR/atcli" 2>/dev/null | awk '{print \$1}')
-            if [ "\$_atcli_downloaded" != "\$_atcli_expected" ]; then
-                echo -e "\e[1;31mFATAL: atcli checksum mismatch after download.\e[0m"
-                return 1
-            fi
+        _atcli_downloaded=\$(sha256sum "\$STAGE_DIR/atcli" 2>/dev/null | awk '{print \$1}')
+        if [ "\$_atcli_downloaded" != "\$_atcli_expected" ]; then
+            echo -e "\e[1;31mFATAL: atcli checksum mismatch after download.\e[0m"
+            return 1
         fi
     fi
-    chown root:www-data "\$STAGE_DIR/atcli"
-    chmod 4750 "\$STAGE_DIR/atcli"
+    chown root:root "\$STAGE_DIR/atcli"
+    # Deliberately NOT setuid (zero-setuid design): the daemon, started as
+    # root by systemd, is the only thing that opens /dev/smd11 with
+    # privilege. Clients reach its socket by uid (www-data owns it; the
+    # daemon also verifies peers via SO_PEERCRED), so no caller needs
+    # elevation. --direct is root-only and never taken implicitly.
+    chmod 0755 "\$STAGE_DIR/atcli"
 
     echo "All files downloaded."
 
@@ -627,6 +637,19 @@ swap_in_release() {
     fi
     [ "\$_need_firewall_restart" = "1" ] && { systemctl restart firewall || echo "WARNING: Firewall failed to restart."; }
     systemctl restart atcmd-daemon
+    # Verify the AT daemon actually serves: unit active plus one round trip
+    # (binary -> socket -> daemon -> modem). -s must match the unit's bind
+    # path; the atcli default is generic, not this socket. Warns, never rolls
+    # back: the web UI stays up either way (AT panels go empty until the
+    # daemon recovers; systemd restarts it every 5 s).
+    sleep 2
+    if systemctl is-active atcmd-daemon >/dev/null 2>&1 && \
+       "\$QUECDECK_DIR/atcli" -s /tmp/quecdeck/atcli.sock -t 3000 'AT' >/dev/null 2>&1; then
+        echo "AT daemon serving."
+    else
+        echo -e "\e[1;33mWARNING: AT daemon not serving; AT data will be unavailable until it recovers.\e[0m"
+        echo "Check /tmp/quecdeck/logs/atcmd.log for the reason."
+    fi
     systemctl restart connection-logger
 
     if [ "\$lean_mode_was_installed" = "1" ]; then
