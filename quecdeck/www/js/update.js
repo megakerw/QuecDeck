@@ -19,6 +19,7 @@ function updatePage() {
     logOffset: 0,
     logDecoder: null,
     pollTimer: null,
+    logFetching: false,
     lastProgressAt: null,
     stallWarning: false,
     reloadCountdown: 0,
@@ -132,7 +133,13 @@ function updatePage() {
     startPolling() {
       this.lastProgressAt = Date.now();
       this.pollTimer = setInterval(() => {
-        fetchJSON('/cgi-bin/get_update_log?offset=' + this.logOffset)
+        // Skip if the previous tick's request is still in flight: it would
+        // read the same not-yet-advanced logOffset and duplicate the chunk.
+        // The paired timeout keeps a hung request from leaving this stuck
+        // true forever.
+        if (this.logFetching) return;
+        this.logFetching = true;
+        fetchWithTimeout(fetchJSON, '/cgi-bin/get_update_log?offset=' + this.logOffset, 8000)
           .then((data) => {
             if (this.reconnecting) {
               this.reconnecting = false;
@@ -177,7 +184,8 @@ function updatePage() {
               this.reconnectingTimeout = true;
             }
             this.reconnecting = true;
-          });
+          })
+          .finally(() => { this.logFetching = false; });
       }, 3000);
     },
 
