@@ -19,6 +19,18 @@ abort() {
     exit 1
 }
 
+# Clear a terminal status file at the UI's request. The status file is root
+# owned in sticky /tmp, so the www-data get_update_log CGI cannot unlink it and
+# calls this via the existing sudo entry. Only terminal states are cleared, so
+# an ack racing a live update never wipes a "running" status.
+if [ "$TAG" = "--clear-status" ]; then
+    case "$(cat "$STATUS_FILE" 2>/dev/null)" in
+        done|failed|failed:rollback_ok|failed:rollback_failed)
+            rm -f "$STATUS_FILE" ;;
+    esac
+    exit 0
+fi
+
 if [ -z "$TAG" ]; then
     echo "Usage: run_update.sh <tag>"
     exit 1

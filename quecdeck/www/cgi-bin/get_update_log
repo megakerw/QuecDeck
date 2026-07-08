@@ -19,12 +19,9 @@ fi
 
 ack=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^ack=' | cut -d= -f2)
 if [ "$ack" = "1" ]; then
-    raw_status=$(cat "$STATUS_FILE" 2>/dev/null)
-    case "$raw_status" in
-        done|failed|failed:rollback_ok|failed:rollback_failed)
-            rm -f "$STATUS_FILE"
-            ;;
-    esac
+    # The status file is root-owned in sticky /tmp, so www-data cannot unlink it
+    # here; run_update.sh clears it (terminal states only) as root via sudo.
+    /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --clear-status >/dev/null 2>&1
     printf '{"ok":true}\n'
     exit 0
 fi

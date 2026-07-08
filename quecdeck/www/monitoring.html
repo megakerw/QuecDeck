@@ -161,18 +161,18 @@
                   </div>
                   <ul class="text-muted small mb-0 ps-3" x-show="canSave">
                     <li>
-                      Reboots the modem after <span x-text="pingFailureCount"></span> failed pings in a row
-                      (~<span x-text="rebootWindowLabel"></span> without response).
+                      Reboots the modem after <span class="fw-semibold" x-text="pingFailureCount"></span> failed pings in a row
+                      (~<span class="fw-semibold" x-text="rebootWindowLabel"></span> without response).
                     </li>
                     <li x-show="rebootBackoff && !capExceeded">
-                      If the link stays down, each reboot needs twice the failed-ping streak of the last, up to a ~2-hour gap between reboots.
+                      If the link stays down, each reboot needs <span class="fw-semibold">twice</span> the failed-ping streak of the last, up to a ~2-hour gap between reboots.
                     </li>
                     <li x-show="logRestarts">
-                      Reboots are recorded on the Logs page.
+                      Reboots are recorded on the <span class="fw-semibold">Logs</span> page.
                     </li>
                     <li x-show="tooAggressive" :class="reckless ? 'text-danger' : 'text-warning'" x-cloak>
                       <span class="fw-semibold" x-text="severity.label + ':'"></span>
-                      reboots after only <span x-text="rebootWindowSec"></span> seconds without a response, so a brief network blip can trigger an unnecessary reboot. Raise the interval to at least <span x-text="safeInterval"></span> seconds, or add more failures, to keep a full-minute margin.
+                      reboots after only <span class="fw-semibold" x-text="rebootWindowSec"></span> seconds without a response, so a brief network blip can trigger an unnecessary reboot. Raise the interval to at least <span class="fw-semibold" x-text="safeInterval"></span> seconds, or add more failures, to keep a full-minute margin.
                     </li>
                   </ul>
 

@@ -46,7 +46,11 @@ Description=Update $DIR_NAME temporary service
 
 [Service]
 Type=oneshot
-TimeoutStartSec=0
+# 15 min: above the slowest legitimate install (downloads + opkg + swap), so a
+# genuine hang gets force-failed into a recoverable "failed" state rather than
+# sitting in "activating" forever (which would wedge the UI on "running" and
+# block retries via the is-active mutual-exclusion check).
+TimeoutStartSec=900
 ExecStart=/bin/bash $TMP_SCRIPT
 StandardOutput=append:$LOG_FILE
 StandardError=append:$LOG_FILE
@@ -135,190 +139,78 @@ stage_release() {
     echo -e "\e[1;32mDownloading new release...\e[0m"
 
     rm -rf "\$STAGE_DIR"
-    mkdir -p \$STAGE_DIR
-    mkdir -p \$STAGE_DIR/systemd
-    mkdir -p \$STAGE_DIR/script
-    mkdir -p \$STAGE_DIR/console
-    mkdir -p \$STAGE_DIR/console/menu
-    mkdir -p \$STAGE_DIR/www
-    mkdir -p \$STAGE_DIR/www/cgi-bin
-    mkdir -p \$STAGE_DIR/www/css
-    mkdir -p \$STAGE_DIR/www/js
-    mkdir -p \$STAGE_DIR/www/fonts
+    mkdir -p "\$STAGE_DIR"
 
-    echo "Downloading files..."
+    # The quecdeck/ subtree comes down as one archive rather than one request
+    # per file, so a dropped connection is a single unambiguous failure to
+    # retry, not a partial set of missing files.
+    _tarball_url="https://codeload.github.com/$GITUSER/$REPONAME/tar.gz/$GITTREE"
+    _tarball="/tmp/.quecdeck-release.tar.gz"
+    _extract_dir="/tmp/.quecdeck-release-extract"
+    rm -rf "\$_tarball" "\$_extract_dir"
 
-    cd \$STAGE_DIR/systemd
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/lighttpd.service &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/watchcat.service &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/scheduled_restart.service &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/atcmd-daemon.service &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/lean-mode.service &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/connection-logger.service &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/systemd/firewall.service &
-    wait
-
-    cd \$STAGE_DIR/script
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/remove_watchcat.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/create_watchcat.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/lighttpd_prestart.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/lean_mode.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/create_scheduled_restart.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/remove_scheduled_restart.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/connection_logger.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/watchcat.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/scheduled_restart.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/json-lib.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/cgi-lib.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/at-lib.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/write_htpasswd.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/firewall.sh &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/script/run_update.sh &
-    wait
-
-    cd \$STAGE_DIR/console
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/console/.profile
-
-    cd \$STAGE_DIR/console/menu
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/console/menu/start_menu.sh
-
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "\$STAGE_DIR/auth.lua" $GITROOT/quecdeck/auth.lua
-    printf '%s\n' "${GITTREE#v}" > "\$STAGE_DIR/version"
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "\$STAGE_DIR/lighttpd.conf" $GITROOT/quecdeck/lighttpd.conf || { echo -e "\e[1;31mFailed to download lighttpd.conf.\e[0m"; return 1; }
-
-    cd \$STAGE_DIR/www
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/deviceinfo.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/login.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/setup.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/developer.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/favicon.ico &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/index.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/network.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/settings.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/sms.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/scanner.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/monitoring.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/logs.html &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/update.html &
-    wait
-
-    cd \$STAGE_DIR/www/js
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/alpinejs.min.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/bootstrap.bundle.min.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/dark-mode.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/nav.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/utils.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/parse-settings.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/populate-bands.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/login.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/home.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/settings.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/scanner.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/network-names.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/deviceinfo.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/developer.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/sms.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/watchcat.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/network.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/logs.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/setup.js &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/js/update.js &
-    wait
-
-    cd \$STAGE_DIR/www/css
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/css/bootstrap.min.css &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/css/styles.css &
-    wait
-
-    # Fonts are large binary files that never change between updates. Copy
-    # forward from the live install if present instead of re-downloading ~500 KB.
-    cd \$STAGE_DIR/www/fonts
-    if [ -f "\$QUECDECK_DIR/www/fonts/poppins-v23-latin-regular.woff2" ]; then
-        cp -f \$QUECDECK_DIR/www/fonts/*.woff2 . 2>/dev/null
-        echo "Fonts copied from existing install."
-    else
-        echo "Downloading fonts..."
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-300italic.woff2 &
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-300.woff2 &
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-500italic.woff2 &
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-500.woff2 &
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-600italic.woff2 &
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-600.woff2 &
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-700italic.woff2 &
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-700.woff2 &
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-italic.woff2 &
-        /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/fonts/poppins-v23-latin-regular.woff2 &
-        wait
-    fi
-
-    cd \$STAGE_DIR/www/cgi-bin
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_login &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_logout &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/auth_dev &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_deviceinfo &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_settings &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_setting &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_network_info &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_bands &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/save_apn &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/save_network_pref &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/set_cell_lock &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_neighbour_cells &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_sms &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/delete_sms &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/user_atcommand &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_ping &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_dashboard &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_watchcat_status &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_watchcat_stats &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/watchcat_maker &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/toggle_ttyd &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_scheduled_restart &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/scheduled_restart_maker &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_set_lanip &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_ippt_status &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_upnp_status &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/run_cell_scan &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_service_status &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_scan_status &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_logs &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_restart_log &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/clear_restart_log &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/check_update &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/trigger_update &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/get_update_log &
-    /opt/bin/wget --timeout=30 --tries=2 -q $GITROOT/quecdeck/www/cgi-bin/init_setup &
-    wait
-
-    # atcli is a compiled binary (~790 KB, deliberately not UPX-compressed:
-    # decompression cost ~75 ms per exec). Copy forward from the live install
-    # when the repo checksum matches it, instead of re-downloading.
-    _atcli_expected=\$(/opt/bin/wget --timeout=30 --tries=2 -qO- "$GITROOT/quecdeck/checksums.sha256" 2>/dev/null | \
-        awk '/[*]quecdeck\/bin\/atcli/{print \$1}')
-    # The manifest verification loop below cannot cover atcli (it is staged at
-    # \$STAGE_DIR/atcli, not \$STAGE_DIR/bin/atcli), so this inline check is the
-    # only integrity check on the one root-executed binary. No hash, no update.
-    if [ -z "\$_atcli_expected" ]; then
-        echo -e "\e[1;31mFATAL: Could not fetch the atcli checksum. Aborting.\e[0m"
+    echo "Downloading release archive..."
+    _tarball_ok=0
+    _attempt=1
+    while [ "\$_attempt" -le 4 ]; do
+        rm -f "\$_tarball"
+        if /opt/bin/wget --timeout=60 --tries=1 -q -O "\$_tarball" "\$_tarball_url" && [ -s "\$_tarball" ]; then
+            _tarball_ok=1
+            break
+        fi
+        echo "Download attempt \$_attempt failed, retrying..."
+        _attempt=\$((_attempt + 1))
+        sleep 3
+    done
+    if [ "\$_tarball_ok" != "1" ]; then
+        echo -e "\e[1;31mFATAL: Could not download the release archive after multiple attempts.\e[0m"
+        rm -f "\$_tarball"
         return 1
     fi
-    _atcli_current=""
-    [ -f "\$QUECDECK_DIR/atcli" ] && _atcli_current=\$(sha256sum "\$QUECDECK_DIR/atcli" 2>/dev/null | awk '{print \$1}')
-    if [ -n "\$_atcli_expected" ] && [ "\$_atcli_expected" = "\$_atcli_current" ]; then
-        echo "atcli up to date, copying from existing install."
-        cp -f "\$QUECDECK_DIR/atcli" "\$STAGE_DIR/atcli"
-    else
-        echo "Downloading atcli..."
-        /opt/bin/wget --timeout=30 --tries=2 -q -O "\$STAGE_DIR/atcli" "$GITROOT/quecdeck/bin/atcli" || {
-            echo -e "\e[1;31mFailed to download atcli.\e[0m"
-            return 1
-        }
-        _atcli_downloaded=\$(sha256sum "\$STAGE_DIR/atcli" 2>/dev/null | awk '{print \$1}')
-        if [ "\$_atcli_downloaded" != "\$_atcli_expected" ]; then
-            echo -e "\e[1;31mFATAL: atcli checksum mismatch after download.\e[0m"
-            return 1
-        fi
+
+    mkdir -p "\$_extract_dir"
+    tar -xzf "\$_tarball" -C "\$_extract_dir" || {
+        echo -e "\e[1;31mFATAL: Failed to extract the release archive.\e[0m"
+        rm -rf "\$_tarball" "\$_extract_dir"
+        return 1
+    }
+    rm -f "\$_tarball"
+
+    # GitHub wraps the archive in a single top-level directory whose exact name
+    # varies by ref type; discover it rather than assume a naming pattern. If
+    # find ever returns more than one dir, the embedded newline makes the -d
+    # check below fail on its own, so no separate count check is needed.
+    _top_dir=\$(find "\$_extract_dir" -mindepth 1 -maxdepth 1 -type d)
+    if [ ! -d "\$_top_dir/quecdeck" ]; then
+        echo -e "\e[1;31mFATAL: Unexpected release archive layout.\e[0m"
+        rm -rf "\$_extract_dir"
+        return 1
     fi
+
+    echo "Populating staged release..."
+    cp -a "\$_top_dir/quecdeck/." "\$STAGE_DIR/"
+    rm -rf "\$_extract_dir"
+
+    # bin/atcli is staged directly at \$STAGE_DIR/atcli (no bin/ subdir) so it is
+    # reachable without a PATH entry outside the root console.
+    [ -f "\$STAGE_DIR/bin/atcli" ] && mv "\$STAGE_DIR/bin/atcli" "\$STAGE_DIR/atcli"
+    # rmdir (not rm -rf): fails loudly in the log if bin/ ever gains a second
+    # file, instead of silently discarding whatever wasn't moved out above.
+    rmdir "\$STAGE_DIR/bin"
+
+    # ttyd and the dev-password setup script are intentionally not part of the
+    # staged release: install_ttyd() fetches ttyd.bash/ttyd.service itself after
+    # the swap, and quecdeckdevpasswd is a one-time console utility fetched by
+    # the initial installer (quecdeck.sh), never staged here. Both are still
+    # exempted from the "missing" check below.
+    rm -f "\$STAGE_DIR/console/ttyd.bash" "\$STAGE_DIR/systemd/ttyd.service" "\$STAGE_DIR/quecdeckdevpasswd"
+
+    printf '%s\n' "${GITTREE#v}" > "\$STAGE_DIR/version"
+
+    echo "All files downloaded."
+
+    cd /
+
     chown root:root "\$STAGE_DIR/atcli"
     # Deliberately NOT setuid (zero-setuid design): the daemon, started as
     # root by systemd, is the only thing that opens /dev/smd11 with
@@ -326,10 +218,6 @@ stage_release() {
     # daemon also verifies peers via SO_PEERCRED), so no caller needs
     # elevation. --direct is root-only and never taken implicitly.
     chmod 0755 "\$STAGE_DIR/atcli"
-
-    echo "All files downloaded."
-
-    cd /
 
     # cgi.assign executes ANY file under cgi-bin, so keep it root-owned and not
     # www-data-writable (755): a web-tier compromise can't drop/overwrite a CGI.
@@ -349,24 +237,18 @@ stage_release() {
     chown root:root \$STAGE_DIR/script/run_update.sh
     chmod 700 \$STAGE_DIR/script/run_update.sh
 
-    # Detect empty files from failed downloads before checksum verification
-    _empty=\$(find "\$STAGE_DIR" -type f -empty 2>/dev/null)
-    if [ -n "\$_empty" ]; then
-        echo "FATAL: One or more downloads produced empty files (possible network failure):"
-        printf '%s\n' "\$_empty" | while IFS= read -r _f; do echo "  \$_f"; done
-        return 1
-    fi
+    # An unexpectedly empty file fails checksum verification below like any
+    # other mismatch (no file in the repo is legitimately zero-byte), so no
+    # separate empty-file pass is needed first.
 
-    # Verify integrity of all downloaded files against published checksums
+    # Verify integrity of all staged files against the manifest bundled in the
+    # same archive they came from (no separate fetch: a second request against
+    # a moving ref like main could return a newer manifest than what was
+    # actually staged, failing a perfectly good install on a false mismatch).
     echo "Verifying file integrity..."
-    CHECKSUMS_FILE="/tmp/quecdeck/checksums.sha256"
-    mkdir -p /tmp/quecdeck
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "\$CHECKSUMS_FILE" "$GITROOT/quecdeck/checksums.sha256" || {
-        echo "FATAL: Could not download checksums file. Aborting."
-        return 1
-    }
+    CHECKSUMS_FILE="\$STAGE_DIR/checksums.sha256"
     if [ ! -s "\$CHECKSUMS_FILE" ]; then
-        echo "FATAL: Checksums file is empty after download. Aborting."
+        echo "FATAL: checksums.sha256 missing or empty in the staged release. Aborting."
         return 1
     fi
     verify_ok=1
@@ -378,7 +260,12 @@ stage_release() {
         # Map repo-relative path to staged path; skip entries not under quecdeck/
         rel=\${key#*quecdeck/}
         [ "\$rel" = "\$key" ] && continue
-        file="\$STAGE_DIR/\$rel"
+        # atcli is staged at \$STAGE_DIR/atcli, not \$STAGE_DIR/bin/atcli (see
+        # stage_release); remap so its hash is checked here too.
+        case "\$rel" in
+            bin/atcli) file="\$STAGE_DIR/atcli" ;;
+            *)         file="\$STAGE_DIR/\$rel" ;;
+        esac
         if [ -f "\$file" ]; then
             actual=\$(sha256sum "\$file" | awk '{print \$1}')
             if [ "\$actual" != "\$expected" ]; then
@@ -389,7 +276,7 @@ stage_release() {
             fi
         else
             case "\$rel" in
-                bin/atcli|systemd/ttyd.service|console/ttyd.bash|quecdeckdevpasswd) ;;
+                systemd/ttyd.service|console/ttyd.bash|quecdeckdevpasswd) ;;
                 *)
                     echo "ERROR: File missing from staged release: \$file"
                     verify_ok=0
