@@ -352,6 +352,7 @@ uninstall_quecdeck_components() {
     result_ttyd="SKIPPED"
     result_lighttpd="SKIPPED"
     result_files="SKIPPED"
+    result_runtime_state="SKIPPED"
 
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     remount_rw
@@ -428,6 +429,15 @@ uninstall_quecdeck_components() {
     [ -d "$QUECDECK_DIR" ] && result_files="REMOVED"
     rm -rf "$QUECDECK_DIR" "${QUECDECK_DIR}.old" "${QUECDECK_DIR}.new"
 
+    # /tmp is tmpfs, so it survives an uninstall (only a reboot clears it):
+    # without this, sessions, auth-failure/lockout counters, and logs from the
+    # old install would silently carry into the next one.
+    [ -e /tmp/quecdeck ] && result_runtime_state="REMOVED"
+    rm -rf /tmp/quecdeck /tmp/quecdeck_update.status /tmp/quecdeck_preflight.sha256 \
+        /tmp/install_quecdeck.log /tmp/install_quecdeck.sh /tmp/installentware.sh \
+        /tmp/.quecdeck-update /tmp/.quecdeck-update-cli \
+        /tmp/.quecdeck-release.tar.gz /tmp/.quecdeck-release-extract
+
     remount_ro
     trap - EXIT
 
@@ -443,6 +453,7 @@ uninstall_quecdeck_components() {
     _show_uninstall_result "ttyd"               "$result_ttyd"
     _show_uninstall_result "Lighttpd"           "$result_lighttpd"
     _show_uninstall_result "QuecDeck files"     "$result_files"
+    _show_uninstall_result "Runtime state (/tmp)" "$result_runtime_state"
     echo "============================================"
 }
 

@@ -136,7 +136,7 @@ preflight_check() {
 }
 
 stage_release() {
-    echo -e "\e[1;32mDownloading new release...\e[0m"
+    echo -e "\e[1;32mDownloading new release (ref: $GITTREE)...\e[0m"
 
     rm -rf "\$STAGE_DIR"
     mkdir -p "\$STAGE_DIR"
@@ -207,7 +207,7 @@ stage_release() {
 
     printf '%s\n' "${GITTREE#v}" > "\$STAGE_DIR/version"
 
-    echo "All files downloaded."
+    echo "Release staged."
 
     cd /
 
