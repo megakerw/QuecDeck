@@ -9,6 +9,15 @@ const WATCHCAT_DEFAULTS = {
   logRestarts: true,
 };
 
+// Reboot-window severity levels, each with its badge label and class. The
+// severity getter maps the current window onto one of these.
+const WATCHCAT_SEVERITY = Object.freeze({
+  RECKLESS:   { label: 'Reckless',   cls: 'text-bg-danger' },
+  AGGRESSIVE: { label: 'Aggressive', cls: 'text-bg-warning text-dark' },
+  RELAXED:    { label: 'Relaxed',    cls: 'text-bg-primary' },
+  BALANCED:   { label: 'Balanced',   cls: 'text-bg-success' },
+});
+
 function quecdeckWatchCat() {
   return {
     // Watchcat
@@ -48,6 +57,47 @@ function quecdeckWatchCat() {
     get capExceeded() {
       // Must match MAX_REBOOT_INTERVAL in watchcat.sh.
       return this.pingInterval * this.pingFailureCount > 7200;
+    },
+
+    // Seconds from the first missed ping to a reboot; the summary labels this
+    // "without response".
+    get rebootWindowSec() {
+      return this.pingInterval * this.pingFailureCount;
+    },
+
+    // Human-readable reboot window, e.g. "90 sec" or "3 min".
+    get rebootWindowLabel() {
+      const s = this.rebootWindowSec;
+      return s >= 60 ? Math.round(s / 60) + ' min' : s + ' sec';
+    },
+
+    // Under 40s from first miss to reboot: a brief blip reboots the modem.
+    get reckless() {
+      return this.rebootWindowSec < 40;
+    },
+
+    // Under a minute (reckless or aggressive): shows the warning bullet.
+    get tooAggressive() {
+      return this.rebootWindowSec < 60;
+    },
+
+    // 10 minutes or more before rebooting: slow to recover from a real outage.
+    get relaxed() {
+      return this.rebootWindowSec >= 600;
+    },
+
+    // Smallest interval that reaches a full 60s window at the current failure
+    // count, so the warning can point at a concrete safer value.
+    get safeInterval() {
+      return Math.ceil(60 / this.pingFailureCount);
+    },
+
+    // Severity badge shown beside the summary heading.
+    get severity() {
+      if (this.reckless)      return WATCHCAT_SEVERITY.RECKLESS;
+      if (this.tooAggressive) return WATCHCAT_SEVERITY.AGGRESSIVE;
+      if (this.relaxed)       return WATCHCAT_SEVERITY.RELAXED;
+      return WATCHCAT_SEVERITY.BALANCED;
     },
 
     get validIps() {

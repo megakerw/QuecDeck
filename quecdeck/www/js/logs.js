@@ -1,3 +1,27 @@
+// Connection-log event types: badge label and class per type. connDetail
+// builds the per-event detail string separately (it is not a simple lookup).
+const CONN_EVENTS = Object.freeze({
+  connected:       { label: 'Connected',       cls: 'bg-success' },
+  disconnected:    { label: 'Disconnected',    cls: 'bg-danger' },
+  cell_change:     { label: 'Cell Change',     cls: 'bg-info text-dark' },
+  operator_change: { label: 'Operator Change', cls: 'bg-warning text-dark' },
+  mode_change:     { label: 'Mode Change',     cls: 'bg-warning text-dark' },
+  band_change:     { label: 'Band Change',     cls: 'bg-primary' },
+  cell_scan_start: { label: 'Scan Start',      cls: 'bg-secondary' },
+  cell_scan_end:   { label: 'Scan End',        cls: 'bg-secondary' },
+});
+
+// Access-log event types: badge label and class per type.
+const ACCESS_EVENTS = Object.freeze({
+  login_success:      { label: 'Login',             cls: 'bg-success' },
+  login_failure:      { label: 'Failed Login',      cls: 'bg-warning text-dark' },
+  login_locked:       { label: 'Lockout',           cls: 'bg-danger' },
+  logout:             { label: 'Logout',            cls: 'bg-secondary' },
+  dev_unlock_success: { label: 'Dev Unlock',        cls: 'bg-success' },
+  dev_unlock_failure: { label: 'Failed Dev Unlock', cls: 'bg-warning text-dark' },
+  dev_unlock_locked:  { label: 'Dev Lockout',       cls: 'bg-danger' },
+});
+
 function logsPage() {
   return {
     connectionEvents: [],
@@ -33,31 +57,11 @@ function logsPage() {
     },
 
     connBadgeClass(type) {
-      switch (type) {
-        case 'connected':      return 'bg-success';
-        case 'disconnected':   return 'bg-danger';
-        case 'cell_change':    return 'bg-info text-dark';
-        case 'operator_change': return 'bg-warning text-dark';
-        case 'mode_change':    return 'bg-warning text-dark';
-        case 'band_change':    return 'bg-primary';
-        case 'cell_scan_start':
-        case 'cell_scan_end':  return 'bg-secondary';
-        default:               return 'bg-secondary';
-      }
+      return (CONN_EVENTS[type] || {}).cls || 'bg-secondary';
     },
 
     connLabel(type) {
-      switch (type) {
-        case 'connected':      return 'Connected';
-        case 'disconnected':   return 'Disconnected';
-        case 'cell_change':    return 'Cell Change';
-        case 'operator_change': return 'Operator Change';
-        case 'mode_change':    return 'Mode Change';
-        case 'band_change':    return 'Band Change';
-        case 'cell_scan_start': return 'Scan Start';
-        case 'cell_scan_end':   return 'Scan End';
-        default:               return type;
-      }
+      return (CONN_EVENTS[type] || {}).label || type;
     },
 
     connDetail(ev) {
@@ -99,29 +103,11 @@ function logsPage() {
     },
 
     accessBadgeClass(type) {
-      switch (type) {
-        case 'login_success':      return 'bg-success';
-        case 'login_failure':      return 'bg-warning text-dark';
-        case 'login_locked':       return 'bg-danger';
-        case 'logout':             return 'bg-secondary';
-        case 'dev_unlock_success': return 'bg-success';
-        case 'dev_unlock_failure': return 'bg-warning text-dark';
-        case 'dev_unlock_locked':  return 'bg-danger';
-        default:                   return 'bg-secondary';
-      }
+      return (ACCESS_EVENTS[type] || {}).cls || 'bg-secondary';
     },
 
     accessLabel(type) {
-      switch (type) {
-        case 'login_success':      return 'Login';
-        case 'login_failure':      return 'Failed Login';
-        case 'login_locked':       return 'Lockout';
-        case 'logout':             return 'Logout';
-        case 'dev_unlock_success': return 'Dev Unlock';
-        case 'dev_unlock_failure': return 'Failed Dev Unlock';
-        case 'dev_unlock_locked':  return 'Dev Lockout';
-        default:                   return type;
-      }
+      return (ACCESS_EVENTS[type] || {}).label || type;
     },
 
     accessDetail(ev) {

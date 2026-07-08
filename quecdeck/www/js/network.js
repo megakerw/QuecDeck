@@ -220,7 +220,7 @@ function networkSettings() {
             setTimeout(() => this.init(), 6000);
           }
         })
-        .catch(() => this.$store.errorModal.open('Failed to load network information. Please refresh the page.'));
+        .catch(reportFetchError('Failed to load network information. Please refresh the page.'));
     },
 
     init() {
@@ -351,7 +351,7 @@ function networkSettings() {
       this.$store.waitModal.start("Switching SIM slot...", 10, () => this.init());
     },
     fetchNetworkInfo() {
-      return fetchText("/cgi-bin/get_network_info", { method: "POST" })
+      return fetchWithRetry(() => fetchText("/cgi-bin/get_network_info", { method: "POST" }))
         .catch((error) => { console.error("Error:", error); throw error; });
     },
 
@@ -364,12 +364,15 @@ function networkSettings() {
           // at_result turns a failed/empty AT reply into a line containing
           // "ERROR"; a real ack requires an OK-terminated reply, so treat
           // anything with ERROR (incl. daemon-down "no response") as failure.
+          // Stop the wait countdown first: errorModal.open is a no-op while
+          // the wait modal is showing, and a failed set never reboots anyway.
           if (text.includes("ERROR")) {
+            this.$store.waitModal.stop();
             this.$store.errorModal.open('The modem did not apply the change: ' + text.trim());
           }
           return text;
         })
-        .catch(() => this.$store.errorModal.open('Failed to apply network changes. Please try again.'));
+        .catch(reportFetchError('Failed to apply network changes. Please try again.', true));
     },
   };
 }

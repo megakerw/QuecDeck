@@ -171,9 +171,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const main = document.querySelector('main');
   if (main) main.parentNode.insertBefore(banner, main);
 
-  fetchWithTimeout(fetchJSON, '/cgi-bin/get_scan_status', 4000)
-    .then(data => { Alpine.store('scanBanner').active = !!data.scanning; })
-    .catch(() => {});
+  // Poll scan status so the banner clears when the scan ends. The flag is only
+  // read once at load otherwise, and nothing flips it back on non-scanner
+  // pages, so a banner shown mid-scan would stick forever. Re-poll only while a
+  // scan is running, so idle pages make no steady-state requests. The scanner
+  // page owns its own scan (ownScan), so leave its state alone.
+  const pollScanStatus = () => {
+    fetchWithTimeout(fetchJSON, '/cgi-bin/get_scan_status', 4000)
+      .then(data => {
+        const scanning = !!data.scanning;
+        const store = Alpine.store('scanBanner');
+        if (!store.ownScan) store.active = scanning;
+        if (scanning) setTimeout(pollScanStatus, 5000);
+      })
+      .catch(() => {
+        // Keep polling through a transient failure while a scan is believed
+        // running, so the banner still clears once the endpoint recovers.
+        if (Alpine.store('scanBanner').active) setTimeout(pollScanStatus, 5000);
+      });
+  };
+  pollScanStatus();
 });
 
 function fetchJSON(url, options) {
@@ -201,6 +218,36 @@ function fetchWithTimeout(fetchFn, url, timeoutMs, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetchFn(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+// Retries a fetch-returning call once on rejection. A fetch that rejects right
+// after an idle wait usually died with its pooled keep-alive connection (QCMAP
+// rebuilds connection state on WWAN changes, and a reboot kills sockets without
+// a FIN); the retry opens a fresh connection. Session redirects pass through:
+// navigation to the login page is already underway.
+function fetchWithRetry(fetchFn, delayMs = 1500) {
+  return fetchFn().catch((err) => {
+    if (isSessionExpired(err)) throw err;
+    return new Promise(resolve => setTimeout(resolve, delayMs)).then(fetchFn);
+  });
+}
+
+// A rejected fetch is a session expiry when authFetch caught a login redirect
+// and is already navigating away; callers should stay silent in that case.
+function isSessionExpired(err) {
+  return !!err && err.name === 'SessionExpiredError';
+}
+
+// Standard .catch handler for a fetch that may run while a session-expiry
+// redirect is underway: it stays silent for that (navigation is happening) and
+// otherwise shows the error modal. Pass stopWaitModal for actions that opened a
+// wait modal, so the error can surface (errorModal is a no-op while it shows).
+function reportFetchError(message, stopWaitModal = false) {
+  return (err) => {
+    if (isSessionExpired(err)) return;
+    if (stopWaitModal) Alpine.store('waitModal').stop();
+    Alpine.store('errorModal').open(message);
+  };
 }
 
 // Splits a delimiter-framed snapshot response (get_dashboard / get_deviceinfo)

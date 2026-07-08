@@ -85,7 +85,7 @@ function quecdeckSettings() {
     },
 
     fetchCurrentSettings() {
-      fetchText("/cgi-bin/get_settings", { method: "POST" })
+      fetchWithRetry(() => fetchText("/cgi-bin/get_settings", { method: "POST" }))
         .then((data) => {
           const currentData = data.split("\n");
 
@@ -105,22 +105,18 @@ function quecdeckSettings() {
           this.simDetEnabled = !!(simDetLine && simDetLine.split(':')[1]?.trim().split(',')[1]?.trim() === '1');
 
         })
-        .catch(() => {
-          this.$store.errorModal.open('Failed to load settings. Please refresh the page.');
-        });
+        .catch(reportFetchError('Failed to load settings. Please refresh the page.'));
     },
 
     fetchLanConfig() {
-      fetchJSON('/cgi-bin/get_set_lanip')
+      fetchWithRetry(() => fetchJSON('/cgi-bin/get_set_lanip'))
         .then((data) => {
           this.lanIp = data.lan_ip;
           this.dhcpStart = data.dhcp_start;
           this.dhcpEnd = data.dhcp_end;
         })
-        .catch(() => {
-          this.$store.errorModal.open('Failed to load settings. Please refresh the page.');
-        });
-      fetchJSON('/cgi-bin/get_ippt_status')
+        .catch(reportFetchError('Failed to load settings. Please refresh the page.'));
+      fetchWithRetry(() => fetchJSON('/cgi-bin/get_ippt_status'))
         .then((data) => { this.ipptEnabled = data.ippt_enabled === true; })
         .catch(() => { this.ipptEnabled = false; });
     },

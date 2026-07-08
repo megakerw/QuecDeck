@@ -443,6 +443,16 @@ body {
   font-size: 0.9rem;
 }
 
+/* Valid but aggressive: amber cue, distinct from the red .is-invalid state. */
+.form-control.is-aggressive {
+  border-color: var(--status-color-yellow);
+}
+
+.form-control.is-aggressive:focus {
+  border-color: var(--status-color-yellow);
+  box-shadow: 0 0 0 0.25rem rgba(255, 193, 7, 0.25);
+}
+
 .form-label {
   font-size: 0.875rem;
   font-weight: 500;
