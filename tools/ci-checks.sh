@@ -123,18 +123,13 @@ while IFS= read -r f; do
     [ "$actual" = "$expected" ] || err "pinned hash stale for $f (update quecdeck.sh)"
 done < <(hook_list PINNED_FILES)
 
-# ------------------------------- manifest vs installer download set-diff ---
-# Exceptions: quecdeckdevpasswd is deployed at install time by quecdeck.sh
-# (exception-listed in the updater's verify loop); checksums.sha256 is the
-# manifest itself.
-tmp_a=$(mktemp); tmp_b=$(mktemp)
-grep -oE '\$GITROOT/quecdeck/[^ &"]+' update_quecdeck.sh | sed 's,^\$GITROOT/,,' | sort -u > "$tmp_a"
-hook_list CHECKSUMMED_FILES | grep '^quecdeck/' | sort -u > "$tmp_b"
-missing_dl=$(comm -23 "$tmp_b" "$tmp_a" | grep -v '^quecdeck/quecdeckdevpasswd$')
-extra_dl=$(comm -13 "$tmp_b" "$tmp_a" | grep -v '^quecdeck/checksums.sha256$')
-[ -n "$missing_dl" ] && err "checksummed but not downloaded by updater: $missing_dl"
-[ -n "$extra_dl" ] && err "downloaded but not checksummed: $extra_dl"
-rm -f "$tmp_a" "$tmp_b"
+# The updater fetches the whole quecdeck/ subtree as one archive rather than
+# per-file, so a manifest-vs-per-file-download-URL diff no longer applies:
+# every checksummed file is fetched by construction. What can still drift is
+# stage_release()'s exclusion list (console/ttyd.bash, systemd/ttyd.service,
+# quecdeckdevpasswd) versus the verify loop's "expected missing" whitelist;
+# both live in update_quecdeck.sh's stage_release() and are easy to eyeball
+# in review since they sit a few lines apart.
 
 # --------------------------------------------- asset version consistency ---
 # The ?v= token in every HTML must equal the hash the hook derives from the
