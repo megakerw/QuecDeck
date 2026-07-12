@@ -83,9 +83,10 @@ fi
 # on this firmware it causes some scan modes to return immediate OK with no results.
 #
 # The scan runs in the background so we can emit keepalive newlines every second.
-# Without this, lighttpd's max-keep-alive-idle=2 closes the connection before the
-# first +QSCAN: URC arrives (2+ seconds into the scan). JS filters empty lines
-# (lines[i] !== "") so keepalive newlines are invisible to the parser.
+# A scan can run up to 215s with long quiet stretches between +QSCAN: URCs;
+# without the newlines, a gap longer than lighttpd's max-keep-alive-idle (45s)
+# would drop the connection mid-scan. JS filters empty lines (lines[i] !== "")
+# so keepalive newlines are invisible to the parser.
 atcmd_run "AT+QSCAN=${scan_mode},1" 215000 > "$scan_tmp" &
 scan_pid=$!
 
