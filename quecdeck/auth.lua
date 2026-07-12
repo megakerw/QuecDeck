@@ -16,8 +16,11 @@ local function redirect(dest)
     return 302
 end
 
--- Reject any path containing traversal sequences before any exemption check
-if path:find("%.%.", 1, true) then
+-- Reject any path containing traversal sequences before any exemption check.
+-- Percent-encoded dots are rejected too: this runs on the raw URI (magnet
+-- attract-raw-url), so "%2e%2e" would not match the literal ".." check yet
+-- could decode to a dot-segment later in request handling.
+if path:find("%.%.", 1, true) or path:lower():find("%2e", 1, true) then
     return redirect(LOGIN)
 end
 

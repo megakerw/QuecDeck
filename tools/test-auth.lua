@@ -85,6 +85,12 @@ rc = run("/index.html", "session=" .. string.rep("a", 129))
 t("oversized token: redirect", 302, rc)
 rc = run("/../index.html", "session=whatever")
 t("traversal path: redirect", 302, rc)
+-- Percent-encoded traversal inside an exempt prefix must not pass the
+-- exemption: unpatched, "/js/%2e%2e/..." matches ^/js/ and returns 0.
+rc = run("/js/%2e%2e/index.html", nil)
+t("encoded traversal in exempt prefix: redirect", 302, rc)
+rc = run("/js/%2E%2E/index.html", nil)
+t("encoded traversal uppercase: redirect", 302, rc)
 
 local now = os.time()
 write_session("tokA1", { user = "admin", role = "admin",

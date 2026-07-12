@@ -46,6 +46,7 @@ CHECKSUMMED_FILES=(
   quecdeck/www/developer.html
   quecdeck/www/js/utils.js
   quecdeck/www/js/dark-mode.js
+  quecdeck/www/js/theme-boot.js
   quecdeck/www/js/parse-settings.js
   quecdeck/www/js/populate-bands.js
   quecdeck/www/js/login.js

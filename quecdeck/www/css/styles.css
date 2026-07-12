@@ -99,7 +99,7 @@
 .loader {
   width: 64px;
   height: 64px;
-  border: 3px dotted #000;
+  border: 3px dotted var(--bs-body-color);
   border-style: solid solid dotted dotted;
   border-radius: 50%;
   display: inline-block;
@@ -150,7 +150,7 @@
 
 .stat-card svg path,
 .stat-card svg circle {
-  stroke: rgba(0, 0, 0, 0.35);
+  stroke: var(--sa-icon-stroke);
   stroke-width: 16;
   paint-order: stroke fill;
 }
@@ -210,17 +210,40 @@
    DESIGN TOKENS
    ============================================================ */
 :root {
-  --sa-bg: #f0f2f5;
+  --sa-bg: #e2e8f2;
+  --sa-surface: #f7f9fd;
   --sa-card-radius: 12px;
-  --sa-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.05);
-  --sa-card-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.08), 0 12px 24px rgba(0, 0, 0, 0.08);
+  --sa-card-shadow: 0 1px 3px rgba(30, 58, 138, 0.06), 0 4px 12px rgba(30, 58, 138, 0.05);
+  --sa-card-shadow-hover: 0 4px 8px rgba(30, 58, 138, 0.08), 0 12px 24px rgba(30, 58, 138, 0.08);
   --sa-navbar-border: rgba(0, 0, 0, 0.08);
+  --sa-icon-stroke: rgba(0, 0, 0, 0.35);
   --sa-transition: 0.15s ease;
 }
 
+/* Blue-slate light theme: no pure white (cuts glare) and every neutral,
+   including the shadows, leans toward the brand blue instead of plain grey.
+   Cards, inputs, and modals pick up the surface through Bootstrap's
+   --bs-body-bg; must load after bootstrap.min.css to win. */
+[data-bs-theme="light"] {
+  --bs-body-bg: var(--sa-surface);
+  --bs-body-bg-rgb: 247, 249, 253;
+  --bs-body-color: #273143;
+  --bs-body-color-rgb: 39, 49, 67;
+  --bs-secondary-color: rgba(39, 49, 67, 0.75);
+  --bs-border-color: #d5dce8;
+}
+
+/* Dark surface is solid (the flattened value of the old white alpha overlay
+   over --sa-bg): cards used Bootstrap's #212529 while navbar/panels used the
+   overlay, two different shades. One token now covers both, mapped into
+   --bs-body-bg the same way as the light theme. */
 [data-bs-theme="dark"] {
   --sa-bg: #0f1117;
+  --sa-surface: #1b1d23;
+  --bs-body-bg: var(--sa-surface);
+  --bs-body-bg-rgb: 27, 29, 35;
   --sa-navbar-border: rgba(255, 255, 255, 0.08);
+  --sa-icon-stroke: rgba(255, 255, 255, 0.3);
   --sa-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.2);
   --sa-card-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.25);
 }
@@ -236,7 +259,7 @@ body {
    NAVBAR
    ============================================================ */
 .navbar {
-  background: #ffffff !important;
+  background: var(--sa-surface) !important;
   border: none;
   box-shadow: var(--sa-card-shadow);
   border-radius: 8px;
@@ -506,15 +529,11 @@ body {
   background-color: var(--sa-bg);
 }
 
-[data-bs-theme="dark"] .navbar {
-  background: rgba(255, 255, 255, 0.05) !important;
-}
-
 /* ============================================================
    PANEL SECTIONS (D style)
    ============================================================ */
 .panel-section {
-  background: #ffffff;
+  background: var(--sa-surface);
   border-radius: 8px;
   box-shadow: var(--sa-card-shadow);
   padding: 1.25rem 1.5rem;
@@ -542,10 +561,6 @@ body {
   font-size: 0.75rem;
   letter-spacing: 0;
   text-transform: none;
-}
-
-[data-bs-theme="dark"] .panel-section {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 /* Tables inside panel-sections (info/data tables without .table class) */
