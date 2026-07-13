@@ -142,60 +142,10 @@ expected_v=$(
 stray_v=$(grep -rhoE '\?v=[a-f0-9]+' quecdeck/www/*.html | sort -u | grep -v "?v=$expected_v" || true)
 [ -n "$stray_v" ] && err "HTML asset version tokens out of date: found $stray_v, expected ?v=$expected_v"
 
-# --------------------------------------------- updater heredoc validation --
-# update_quecdeck.sh generates the on-device installer via an unquoted
-# heredoc: unescaped $ expands at generation time, \$ at run time. Policy:
-# generation-time expansion is limited to the whitelisted variables and no
-# unescaped command substitution exists. The body is then expanded with
-# dummy values (bash's own heredoc semantics) and the RESULT is syntax
-# checked, so escaping mistakes fail here instead of on a device mid-update.
-hd_body=$(mktemp); hd_harness=$(mktemp); hd_gen=$(mktemp)
-sed -n '/^cat <<EOF > "\$TMP_SCRIPT"$/,/^EOF$/p' update_quecdeck.sh | sed '1d;$d' > "$hd_body"
-
-if [ ! -s "$hd_body" ]; then
-    err "updater heredoc: body extraction failed (has the TMP_SCRIPT marker changed?)"
-else
-    hd_policy=$(perl - "$hd_body" <<'PERL'
-use strict; use warnings;
-my %allowed = map { $_ => 1 } qw(GITUSER REPONAME GITTREE GITROOT QUECDECK_DIR);
-my @bad; my $cmdsub = 0; my $ticks = 0;
-open my $fh, '<', $ARGV[0] or die "open: $!";
-while (<$fh>) {
-    s/\\\$/\x01/g;      # neutralize run-time escapes
-    s/\\`/\x02/g;
-    $ticks++ while /`/g;
-    while (/\$(\{([A-Za-z_][A-Za-z0-9_]*)[^}]*\}|([A-Za-z_][A-Za-z0-9_]*)|\()/g) {
-        if ($1 eq '(') { $cmdsub++; next; }
-        my $name = defined $2 ? $2 : $3;
-        push @bad, "\$$name (line $.)" unless $allowed{$name};
-    }
-}
-print "unescaped command substitution \$(...) x$cmdsub\n" if $cmdsub;
-print "unescaped backtick x$ticks\n" if $ticks;
-print "non-whitelisted generation-time variable: $_\n" for @bad;
-exit(($cmdsub || $ticks || @bad) ? 1 : 0);
-PERL
-    ) || err "updater heredoc policy: ${hd_policy}"
-
-    if [ "$errors" = "0" ] || [ -z "$hd_policy" ]; then
-        {
-            echo 'GITUSER=testuser; REPONAME=testrepo; GITTREE=v9.9.9'
-            echo 'GITROOT=https://example.invalid/testrepo/v9.9.9'
-            echo 'QUECDECK_DIR=/usrdata/quecdeck'
-            echo 'cat <<EOF'
-            cat "$hd_body"
-            echo 'EOF'
-        } > "$hd_harness"
-        if ! bash "$hd_harness" > "$hd_gen" 2>/dev/null; then
-            err "updater heredoc: generation emulation failed"
-        elif ! bash -n "$hd_gen" 2>/dev/null; then
-            err "updater heredoc: GENERATED installer fails bash -n"
-            bash -n "$hd_gen" 2>&1 | head -3
-        fi
-        grep -Fq '\$' "$hd_gen" && err "updater heredoc: double-escaped \\\$ survives into the generated installer"
-    fi
-fi
-rm -f "$hd_body" "$hd_harness" "$hd_gen"
+# The updater no longer generates its installer via a heredoc: update_quecdeck.sh
+# runs its install phase directly (update_quecdeck.sh --install <tag>), so it is
+# ordinary committed code covered by the bash -n loop at the top of this file.
+# The old heredoc-escaping validator was removed with that refactor.
 
 # ----------------------------------------------------------------------------
 if [ "$errors" = "0" ]; then

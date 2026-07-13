@@ -176,6 +176,23 @@ t "logts same boot reconstructs"   "1751600300" "$(pick_ts 94608300 300 cur cur 
 t "logts old boot goes unknown"    "0"          "$(pick_ts 94608300 300 old cur 1751600000)"
 t "logts legacy entry goes unknown" "0"         "$(pick_ts '' 2500 '' cur 1751600000)"
 
+# --------------------------------------------- updater pure helpers --------
+# The updater's install phase is now plain committed code (no generated
+# heredoc), so its pure helpers can be extracted and tested directly.
+eval "$(extract_fn update_quecdeck.sh _tag_to_version)"
+# v-strip for the version file; regression guard for the bug the de-heredoc
+# equivalence diff caught (would have written "v1.0.15" instead of "1.0.15").
+t "tag_to_version strips v"   "1.0.15" "$(_tag_to_version v1.0.15)"
+t "tag_to_version idempotent" "1.0.15" "$(_tag_to_version 1.0.15)"
+t "tag_to_version branch"     "main"   "$(_tag_to_version main)"
+
+eval "$(extract_fn update_quecdeck.sh _normalize_bind)"
+# Both the live-IP-patched and repo (0.0.0.0) conf must normalize identically,
+# or a mere IP patch forces an unnecessary lighttpd restart during updates.
+t "normalize_bind LAN ip"    'server.bind = "0.0.0.0"'              "$(printf 'server.bind = "192.168.225.1"\n' | _normalize_bind)"
+t "normalize_bind 443 sock"  '$SERVER["socket"] == "0.0.0.0:443" {' "$(printf '$SERVER["socket"] == "192.168.8.1:443" {\n' | _normalize_bind)"
+t "normalize_bind untouched" 'server.port = 80'                     "$(printf 'server.port = 80\n' | _normalize_bind)"
+
 # ---------------------------------------------------------- JS structure ----
 js_fail=0
 for f in quecdeck/www/js/*.js; do

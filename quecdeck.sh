@@ -17,6 +17,22 @@ remount_ro() {
     mount -o remount,ro /
 }
 
+# Point root's home at the writable /usrdata/root and its shell at bash in the
+# Entware passwd. Matches root's line by field, so it works regardless of the
+# firmware's current root home/shell values. The previous exact-string sed
+# ('1s|/home/root:/bin/sh|...') silently did nothing on any firmware whose root
+# entry differed, quietly breaking the console menu and password tools. Warns on
+# failure so a missed patch is visible instead of silent.
+patch_root_passwd() {
+    [ -f /opt/etc/passwd ] || { echo -e "\e[1;31mWarning: /opt/etc/passwd not found; cannot set root home.\e[0m"; return 1; }
+    sed -i 's|^\(root:[^:]*:[^:]*:[^:]*:[^:]*:\)[^:]*:[^:]*$|\1/usrdata/root:/bin/bash|' /opt/etc/passwd
+    if ! grep -q '^root:[^:]*:[^:]*:[^:]*:[^:]*:/usrdata/root:/bin/bash$' /opt/etc/passwd; then
+        echo -e "\e[1;31mWarning: could not repoint root's home to /usrdata/root in /opt/etc/passwd.\e[0m"
+        echo -e "\e[1;31mThe console menu and password tools may not work until root's entry is corrected.\e[0m"
+        return 1
+    fi
+}
+
 # Check for existing Entware/opkg installation, install if not installed
 ensure_entware_installed() {
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
@@ -54,7 +70,7 @@ ensure_entware_installed() {
             echo "# Set PATH for all shells" > /usrdata/root/.profile
             echo "export PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin" >> /usrdata/root/.profile
             chmod +x /usrdata/root/.profile
-            sed -i '1s|/home/root:/bin/sh|/usrdata/root:/bin/bash|' /opt/etc/passwd
+            patch_root_passwd
             rm -f /bin/login /usr/bin/passwd
             ln -sf /opt/bin/login /bin
             ln -sf /opt/bin/passwd /usr/bin/
@@ -70,7 +86,7 @@ ensure_entware_installed() {
             echo "# Set PATH for all shells" > /usrdata/root/.profile
             echo "export PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin" >> /usrdata/root/.profile
             chmod +x /usrdata/root/.profile
-            sed -i '1s|/home/root:/bin/sh|/usrdata/root:/bin/bash|' /opt/etc/passwd
+            patch_root_passwd
         fi
     fi
     if [ ! -f "/opt/sbin/useradd" ]; then
