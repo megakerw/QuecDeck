@@ -148,17 +148,9 @@
   overflow: visible;
 }
 
-.stat-card svg path,
-.stat-card svg circle {
-  stroke: var(--sa-icon-stroke);
-  stroke-width: 16;
-  paint-order: stroke fill;
-}
-
-/* Cloud face (eyes + smile) stays dark in both themes: it's a facial feature,
-   not the edge halo the rule above adds to icon bodies. Without this override
-   the theme-aware --sa-icon-stroke turns the fill:none smile white in dark
-   mode, where it vanishes against the white cloud body. */
+/* Pin the cloud face (eyes + smile) to solid black. The smile is a fill:none
+   stroke, so leaving its colour to inheritance risks it vanishing against the
+   white cloud body. */
 .stat-card svg.cloud-icon .cloud-face path,
 .stat-card svg.cloud-icon .cloud-face circle {
   stroke: #000;
@@ -227,7 +219,6 @@
   --sa-card-shadow: 0 1px 3px rgba(30, 58, 138, 0.06), 0 4px 12px rgba(30, 58, 138, 0.05);
   --sa-card-shadow-hover: 0 4px 8px rgba(30, 58, 138, 0.08), 0 12px 24px rgba(30, 58, 138, 0.08);
   --sa-navbar-border: rgba(0, 0, 0, 0.08);
-  --sa-icon-stroke: rgba(0, 0, 0, 0.35);
   --sa-transition: 0.15s ease;
 }
 
@@ -254,7 +245,6 @@
   --bs-body-bg: var(--sa-surface);
   --bs-body-bg-rgb: 27, 29, 35;
   --sa-navbar-border: rgba(255, 255, 255, 0.08);
-  --sa-icon-stroke: rgba(255, 255, 255, 0.3);
   --sa-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.2);
   --sa-card-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.25);
 }
