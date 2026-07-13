@@ -357,6 +357,11 @@ uninstall_quecdeck_components() {
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     remount_rw
 
+    # Remove any transient update unit. Newer installs write it to /run; older
+    # ones wrote it to /lib, where a failed update could strand it. Harmless if
+    # absent.
+    rm -f /run/systemd/system/install_quecdeck.service /lib/systemd/system/install_quecdeck.service
+
     # Uninstall watchcat
     systemctl stop watchcat > /dev/null 2>&1
     [ -f /lib/systemd/system/watchcat.service ] && result_watchcat="REMOVED"

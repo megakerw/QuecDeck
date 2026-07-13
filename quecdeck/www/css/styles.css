@@ -155,6 +155,17 @@
   paint-order: stroke fill;
 }
 
+/* Cloud face (eyes + smile) stays dark in both themes: it's a facial feature,
+   not the edge halo the rule above adds to icon bodies. Without this override
+   the theme-aware --sa-icon-stroke turns the fill:none smile white in dark
+   mode, where it vanishes against the white cloud body. */
+.stat-card svg.cloud-icon .cloud-face path,
+.stat-card svg.cloud-icon .cloud-face circle {
+  stroke: #000;
+  stroke-width: 18;
+  paint-order: normal;
+}
+
 .stat-card svg.ram-icon {
   width: 82px !important;
   height: auto !important;

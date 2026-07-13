@@ -7,20 +7,16 @@ GITTREE="${1:-main}"
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 
 DIR_NAME="quecdeck"
-SERVICE_FILE="/lib/systemd/system/install_quecdeck.service"
+SERVICE_FILE="/run/systemd/system/install_quecdeck.service"
 SERVICE_NAME="install_quecdeck"
 TMP_SCRIPT="/tmp/install_quecdeck.sh"
 LOG_FILE="/tmp/install_quecdeck.log"
 QUECDECK_DIR="/usrdata/quecdeck"
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin:/usrdata/root/bin
 
-remount_rw() {
-    mount -o remount,rw /
-}
-
-remount_ro() {
-    mount -o remount,ro /
-}
+# This outer script writes only to /run (tmpfs) and /tmp, never the read-only
+# rootfs, so it does not remount anything. The install service it launches owns
+# the brief rootfs-rw window for the swap itself.
 
 # Mutual exclusion via systemd: this generates and starts the stable-named
 # install_quecdeck oneshot. If one is already running, don't regenerate/clobber
@@ -34,9 +30,13 @@ fi
 # cleanly (the web path does this in run_update.sh; this covers the CLI path).
 systemctl reset-failed "$SERVICE_NAME" 2>/dev/null
 
-# Installation prep
-remount_rw
-trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
+# Installation prep. The unit goes on /run (tmpfs): standard systemd runtime
+# unit path, so no rootfs write is needed to create it. The installer removes
+# it when it finishes, and this rm -f clears any stale one left by an
+# interrupted prior run -- so cleanup never depends on a reboot (we don't force
+# one), and unlike a /lib file the rm can't fail on the read-only rootfs.
+# Device-verified (tools/device-test-rununit.sh).
+mkdir -p /run/systemd/system
 rm -f $SERVICE_FILE
 
 # Create the systemd service file
@@ -94,6 +94,11 @@ _update_cleanup() {
     remount_ro
 }
 trap '_update_cleanup' EXIT
+# Convert SIGTERM/SIGINT (systemd stop, TimeoutStartSec expiry) into a normal
+# exit so the EXIT trap still runs and restores the read-only rootfs. Without
+# this, an uncaught signal would kill bash before cleanup and leave / mounted
+# read-write. SIGKILL still can't be trapped, but a reboot remounts / read-only.
+trap 'exit 1' INT TERM
 
 # Preserve lean mode, watchcat, and scheduled restart state across updates
 lean_mode_was_installed=0
@@ -720,7 +725,10 @@ elif [ "\$result_rollback" = "FAILED" ]; then
 fi
 
 rm -f /tmp/install_quecdeck.sh
-rm -f /lib/systemd/system/install_quecdeck.service
+# Remove the transient unit from /run, plus any pre-B leftover on /lib (older
+# installs wrote the install unit to the rootfs). This runs inside the swap's
+# rw window, so the /lib rm succeeds.
+rm -f /run/systemd/system/install_quecdeck.service /lib/systemd/system/install_quecdeck.service
 systemctl daemon-reload
 remount_ro
 exit 0
@@ -742,6 +750,7 @@ if [ -t 1 ]; then
     tail -n +1 -f "$LOG_FILE" 2>/dev/null &
     _tail_pid=$!
 fi
+
 systemctl start $SERVICE_NAME
 _start_rc=$?
 # The install writes its summary as the final step. Give the background tail a
@@ -764,10 +773,8 @@ if [ -f "$LOG_FILE" ]; then
         fi
     else
         echo -e "\e[1;31mInstall did not complete. Check $LOG_FILE for details.\e[0m"
-        remount_ro
         rm -f "$0"
         exit 1
     fi
 fi
-remount_ro
 rm -f "$0"
