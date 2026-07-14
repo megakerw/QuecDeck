@@ -163,6 +163,13 @@ function updatePage() {
 
             if (data.status === 'done') {
               this.done = true;
+              // get_update_log reports the installed version file, which is
+              // authoritative after the swap; it keeps the cached version
+              // correct even if check_update is unreachable.
+              if (data.version) {
+                this.currentVersion = data.version;
+                localStorage.setItem('quecdeck_version', data.version);
+              }
               this.updating = false;
               clearInterval(this.pollTimer);
               this.ackUpdate();

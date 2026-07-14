@@ -4,6 +4,8 @@
 
 # Only accept POST. Redirect GET requests (e.g. iOS Safari BFCache restoring this URL) to home.
 # auth.lua will then forward valid sessions through or redirect to login if the session is expired.
+# CONTRACT: update_quecdeck.sh's post-swap health probe relies on this GET branch answering with
+# an immediate 303 and no side effects (no lockout accounting, no logging). Change it in sync.
 if [ "$REQUEST_METHOD" != "POST" ]; then
     printf 'Status: 303 See Other\r\nLocation: /\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n'
     exit 0

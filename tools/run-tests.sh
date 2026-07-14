@@ -186,6 +186,15 @@ t "tag_to_version strips v"   "1.0.15" "$(_tag_to_version v1.0.15)"
 t "tag_to_version idempotent" "1.0.15" "$(_tag_to_version 1.0.15)"
 t "tag_to_version branch"     "main"   "$(_tag_to_version main)"
 
+eval "$(extract_fn update_quecdeck.sh _version_lt)"
+# Downgrade guard compare; numeric per field, not lexical (1.0.9 < 1.0.10).
+_version_lt 1.0.9  1.0.10; t_rc "version_lt numeric not lexical" "0" "$?"
+_version_lt 1.0.10 1.0.9;  t_rc "version_lt greater patch"      "1" "$?"
+_version_lt 1.0.5  1.0.5;  t_rc "version_lt equal"              "1" "$?"
+_version_lt 1.9.9  2.0.0;  t_rc "version_lt major"              "0" "$?"
+_version_lt 2.0.0  1.9.9;  t_rc "version_lt greater major"      "1" "$?"
+_version_lt 1.2.3  1.10.0; t_rc "version_lt minor numeric"      "0" "$?"
+
 eval "$(extract_fn update_quecdeck.sh _normalize_bind)"
 # Both the live-IP-patched and repo (0.0.0.0) conf must normalize identically,
 # or a mere IP patch forces an unnecessary lighttpd restart during updates.

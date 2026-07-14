@@ -448,7 +448,7 @@ uninstall_quecdeck_components() {
     rmdir /usrdata/root 2>/dev/null
     systemctl daemon-reload
     [ -d "$QUECDECK_DIR" ] && result_files="REMOVED"
-    rm -rf "$QUECDECK_DIR" "${QUECDECK_DIR}.old" "${QUECDECK_DIR}.new"
+    rm -rf "$QUECDECK_DIR" "${QUECDECK_DIR}.old" "${QUECDECK_DIR}.new" /usrdata/quecdeck_last_update.log
 
     # /tmp is tmpfs, so it survives an uninstall (only a reboot clears it):
     # without this, sessions, auth-failure/lockout counters, and logs from the

@@ -20,19 +20,14 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin:/usrdata/root/bin
 # Runs as the install_quecdeck systemd oneshot: stage, verify, swap, roll back.
 # The release tag comes from the --install argument.
 if [ "$1" = "--install" ]; then
-_INSTALL_TAG="${2:-main}"
-
-GITUSER="megakerw"
-REPONAME="QuecDeck"
-GITTREE="${_INSTALL_TAG:-main}"
+# GITUSER/REPONAME/QUECDECK_DIR/PATH come from the shared header above.
+GITTREE="${2:-main}"
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 
-QUECDECK_DIR="/usrdata/quecdeck"
 STAGE_DIR="${QUECDECK_DIR}.new"
 OLD_DIR="${QUECDECK_DIR}.old"
 STATUS_FILE=/tmp/quecdeck_update.status
 export HOME=/usrdata/root
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin:/usrdata/root/bin
 
 remount_rw() {
     mount -o remount,rw /
@@ -58,8 +53,25 @@ _update_status="failed"
 _write_status() {
     echo "$1" > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || rm -f "${STATUS_FILE}.tmp"
 }
+# Copy the install log off tmpfs so it survives the reboot a user reaches for
+# when an update goes wrong. /usrdata is its own writable partition, so this
+# needs no rootfs remount and works from the EXIT trap.
+# Path is also hardcoded in quecdeck.sh's uninstall cleanup; keep in sync.
+PERSIST_LOG=/usrdata/quecdeck_last_update.log
+_persist_log() {
+    cp -f "$LOG_FILE" "$PERSIST_LOG" 2>/dev/null && chmod 600 "$PERSIST_LOG" 2>/dev/null
+}
 _update_cleanup() {
+    # A SIGTERM mid-swap (TimeoutStartSec expiry, systemctl stop) unwinds the
+    # shell past the main flow's failure handling, which would leave the new
+    # release half-configured with no rollback. Detect that here: the swap
+    # started, but neither success nor a rollback attempt was recorded.
+    if [ "${_swap_committed:-0}" = "1" ] && [ "${result_quecdeck:-}" != "OK" ] && [ "${result_rollback:-N/A}" = "N/A" ]; then
+        echo "Install interrupted mid-swap; attempting rollback."
+        _revert_swap && _update_status="failed:rollback_ok" || _update_status="failed:rollback_failed"
+    fi
     _write_status "$_update_status"
+    _persist_log
     remount_ro
 }
 trap '_update_cleanup' EXIT
@@ -93,8 +105,32 @@ _normalize_bind() {
     sed 's/server\.bind = "[0-9.]*"/server.bind = "0.0.0.0"/;s/== "[0-9.]*:443"/== "0.0.0.0:443"/'
 }
 
+# True (rc 0) if X.Y.Z version $1 is strictly lower than $2. Field-by-field
+# numeric compare (1.0.9 < 1.0.10); callers validate the format first.
+_version_lt() {
+    _va=${1%%.*}; _vr=${1#*.}; _vb=${_vr%%.*}; _vc=${_vr#*.}
+    _wa=${2%%.*}; _wr=${2#*.}; _wb=${_wr%%.*}; _wc=${_wr#*.}
+    [ "$_va" -ne "$_wa" ] && { [ "$_va" -lt "$_wa" ]; return; }
+    [ "$_vb" -ne "$_wb" ] && { [ "$_vb" -lt "$_wb" ]; return; }
+    [ "$_vc" -lt "$_wc" ]
+}
+
 preflight_check() {
     echo "Running pre-flight checks..."
+
+    # Downgrade guard: refuse a target release older than the installed one,
+    # so a replayed old release URL can't reintroduce fixed vulnerabilities.
+    # Equal versions pass (the UI's force-reinstall re-sends the installed
+    # tag). Non-semver refs (branch names) and fresh installs skip the guard;
+    # deliberate downgrades run from the console with QUECDECK_ALLOW_DOWNGRADE=1.
+    _installed_ver=$(cat "$QUECDECK_DIR/version" 2>/dev/null | tr -d '[:space:]')
+    _target_ver=$(_tag_to_version "$GITTREE")
+    if printf '%s' "$_target_ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' &&        printf '%s' "$_installed_ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' &&        [ "${QUECDECK_ALLOW_DOWNGRADE:-0}" != "1" ] &&        _version_lt "$_target_ver" "$_installed_ver"; then
+        echo "FATAL: Target version $_target_ver is older than the installed $_installed_ver."
+        echo "To downgrade deliberately, run from the console: QUECDECK_ALLOW_DOWNGRADE=1 update_quecdeck.sh v$_target_ver"
+        return 1
+    fi
+
     _pf_checksums=/tmp/quecdeck_preflight.sha256
 
     /opt/bin/wget --timeout=30 --tries=2 -q -O "$_pf_checksums" "$GITROOT/quecdeck/checksums.sha256" || {
@@ -191,9 +227,10 @@ stage_release() {
     # ttyd and the dev-password setup script are intentionally not part of the
     # staged release: install_ttyd() fetches ttyd.bash/ttyd.service itself after
     # the swap, and quecdeckdevpasswd is a one-time console utility fetched by
-    # the initial installer (quecdeck.sh), never staged here. Both are still
-    # exempted from the "missing" check below.
-    rm -f "$STAGE_DIR/console/ttyd.bash" "$STAGE_DIR/systemd/ttyd.service" "$STAGE_DIR/quecdeckdevpasswd"
+    # the initial installer (quecdeck.sh), never staged here. One list drives
+    # both this removal and the verify loop's "expected missing" exemption.
+    _STAGE_EXEMPT="console/ttyd.bash systemd/ttyd.service quecdeckdevpasswd"
+    for _f in $_STAGE_EXEMPT; do rm -f "$STAGE_DIR/$_f"; done
 
     printf '%s\n' "$(_tag_to_version "$GITTREE")" > "$STAGE_DIR/version"
 
@@ -265,8 +302,8 @@ stage_release() {
                 verify_ok=0
             fi
         else
-            case "$rel" in
-                systemd/ttyd.service|console/ttyd.bash|quecdeckdevpasswd) ;;
+            case " $_STAGE_EXEMPT " in
+                *" $rel "*) ;;
                 *)
                     echo "ERROR: File missing from staged release: $file"
                     verify_ok=0
@@ -274,7 +311,10 @@ stage_release() {
             esac
         fi
     done < "$CHECKSUMS_FILE"
-    rm -f "$CHECKSUMS_FILE"
+    # The manifest is kept in the staged tree and stays with the install:
+    # install_ttyd verifies its post-swap fetches against it (no second
+    # network fetch that could skew on a moving ref), and it remains on disk
+    # afterward as a record of what this release shipped.
     if [ "$verify_ok" != "1" ]; then
         echo "FATAL: One or more files failed checksum verification. Staged release may be compromised."
         return 1
@@ -534,23 +574,38 @@ swap_in_release() {
         echo "Scheduled restart preserved and restarted."
     fi
 
-    # Verify the new site is serving. If lighttpd was restarted, poll for up to
-    # ~20s to allow for slow startup. If it stayed up, just confirm it is still
-    # active (the mv is atomic so content is already live).
+    # Verify the new site is serving with one probe: an unauthenticated GET to
+    # /cgi-bin/auth_login. It is allowlisted pre-auth in auth.lua and answers
+    # GET with an immediate 303 and no side effects, and wget follows the
+    # redirect chain to a 200 on the static login (or pre-setup: setup) page.
+    # So a single request exercises TLS, auth.lua, mod_cgi, cgi-lib, and
+    # static serving. If lighttpd was restarted, poll for up to ~20s to allow
+    # for slow startup. If it stayed up, confirm CGIs still execute (the mv is
+    # atomic so content is already live).
     _health_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
     printf '%s' "$_health_ip" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || _health_ip="192.168.225.1"
+    _probe_site() {
+        systemctl is-active lighttpd >/dev/null 2>&1 &&            /opt/bin/wget --timeout=10 --tries=1 -q -O /dev/null --no-check-certificate "https://$_health_ip/cgi-bin/auth_login"
+    }
     _health_ok=0
     if [ "$_need_lighttpd_restart" = "1" ]; then
         echo "Verifying the new site responds on $_health_ip..."
         for _i in 1 2 3 4 5 6 7 8 9 10; do
             sleep 2
-            if systemctl is-active lighttpd >/dev/null 2>&1 &&                /opt/bin/wget --timeout=10 --tries=1 -q -O /dev/null --no-check-certificate "https://$_health_ip/login.html"; then
+            if _probe_site; then
                 _health_ok=1
                 break
             fi
         done
     else
-        systemctl is-active lighttpd >/dev/null 2>&1 && _health_ok=1
+        echo "Verifying CGIs respond on $_health_ip..."
+        for _i in 1 2 3; do
+            if _probe_site; then
+                _health_ok=1
+                break
+            fi
+            sleep 2
+        done
         [ "$_health_ok" = "1" ] && echo "lighttpd stayed up through the swap."
     fi
     if [ "$_health_ok" != "1" ]; then
@@ -622,21 +677,20 @@ install_ttyd() {
     chmod +x ttyd
     # ttyd.bash and ttyd.service are fetched from the tag rather than the staged
     # tarball, so they miss stage_release's checksum verification. Verify them
-    # against the release manifest here, since both run as root.
-    _ttyd_sums=/tmp/.quecdeck-ttyd-sums
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "$_ttyd_sums" "$GITROOT/quecdeck/checksums.sha256" || { echo -e "\e[1;31mFailed to download checksums for ttyd files.\e[0m"; return 1; }
+    # against the manifest retained from the staged (already-verified) release,
+    # since both run as root.
+    _ttyd_sums="$QUECDECK_DIR/checksums.sha256"
+    [ -s "$_ttyd_sums" ] || { echo -e "\e[1;31mRelease manifest missing; cannot verify ttyd files.\e[0m"; return 1; }
 
-    /opt/bin/wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/console/ttyd.bash" || { echo -e "\e[1;31mFailed to download ttyd.bash.\e[0m"; rm -f "$_ttyd_sums"; return 1; }
+    /opt/bin/wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/console/ttyd.bash" || { echo -e "\e[1;31mFailed to download ttyd.bash.\e[0m"; return 1; }
     _exp=$(awk '$2=="*quecdeck/console/ttyd.bash"{print $1}' "$_ttyd_sums")
-    [ -n "$_exp" ] && [ "$_exp" = "$(sha256sum ttyd.bash | awk '{print $1}')" ] || { echo -e "\e[1;31mIntegrity check failed for ttyd.bash.\e[0m"; rm -f ttyd.bash "$_ttyd_sums"; return 1; }
+    [ -n "$_exp" ] && [ "$_exp" = "$(sha256sum ttyd.bash | awk '{print $1}')" ] || { echo -e "\e[1;31mIntegrity check failed for ttyd.bash.\e[0m"; rm -f ttyd.bash; return 1; }
     chmod +x ttyd.bash
-    cd $QUECDECK_DIR/systemd/ || { rm -f "$_ttyd_sums"; return 1; }
-    /opt/bin/wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/systemd/ttyd.service" || { echo -e "\e[1;31mFailed to download ttyd.service.\e[0m"; rm -f "$_ttyd_sums"; return 1; }
+    cd $QUECDECK_DIR/systemd/ || return 1
+    /opt/bin/wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/systemd/ttyd.service" || { echo -e "\e[1;31mFailed to download ttyd.service.\e[0m"; return 1; }
     _exp=$(awk '$2=="*quecdeck/systemd/ttyd.service"{print $1}' "$_ttyd_sums")
-    [ -n "$_exp" ] && [ "$_exp" = "$(sha256sum ttyd.service | awk '{print $1}')" ] || { echo -e "\e[1;31mIntegrity check failed for ttyd.service.\e[0m"; rm -f ttyd.service "$_ttyd_sums"; return 1; }
-    rm -f "$_ttyd_sums"
+    [ -n "$_exp" ] && [ "$_exp" = "$(sha256sum ttyd.service | awk '{print $1}')" ] || { echo -e "\e[1;31mIntegrity check failed for ttyd.service.\e[0m"; rm -f ttyd.service; return 1; }
     cp -f $QUECDECK_DIR/systemd/ttyd.service /lib/systemd/system/
-    ln -sf /usrdata/quecdeck/console/ttyd /bin
 
     # Install the service but don't enable/start it; ttyd is launched
     # on demand from the Developer page.
@@ -649,7 +703,8 @@ install_ttyd() {
 result_stage="FAILED"
 result_swap="FAILED"
 result_quecdeck="FAILED"
-result_ttyd="FAILED"
+# N/A = never attempted (update failed earlier); hidden from the summary.
+result_ttyd="N/A"
 result_firewall="N/A"
 result_rollback="N/A"
 result_lighttpd="N/A"
@@ -695,7 +750,7 @@ _show_result "Stage release"      "$result_stage"
 _show_result "Switch to release"  "$result_swap"
 _show_result "QuecDeck"           "$result_quecdeck"
 _show_result "Firewall"           "$result_firewall"
-_show_result "ttyd"               "$result_ttyd"
+[ "$result_ttyd" != "N/A" ] && _show_result "ttyd"              "$result_ttyd"
 [ "$result_lighttpd" != "N/A" ] && _show_result "Lighttpd"          "$result_lighttpd"
 [ "$result_rollback" != "N/A" ] && _show_result "Rollback"          "$result_rollback"
 echo "============================================"
@@ -712,12 +767,14 @@ fi
 # doing that while running AS install_quecdeck can make systemd cut this process
 # short, skipping the EXIT-trap write and leaving the UI without a final status.
 # The EXIT trap re-affirms it; the atomic write means it's never left corrupt.
+# Persist the log at the same point, for the same reason.
 _write_status "$_update_status"
+_persist_log
 
 # Remove the transient unit from /run, plus any leftover on /lib (older installs
 # wrote the install unit to the read-only rootfs). This runs inside the swap's
 # rw window, so the /lib rm succeeds.
-rm -f /run/systemd/system/install_quecdeck.service /lib/systemd/system/install_quecdeck.service
+rm -f "$SERVICE_FILE" /lib/systemd/system/install_quecdeck.service
 systemctl daemon-reload
 remount_ro
 exit 0
@@ -758,6 +815,7 @@ Type=oneshot
 # force-failed into a recoverable "failed" state rather than sitting in
 # "activating" forever (which would wedge the UI and block retries).
 TimeoutStartSec=900
+$([ "${QUECDECK_ALLOW_DOWNGRADE:-0}" = "1" ] && echo "Environment=QUECDECK_ALLOW_DOWNGRADE=1")
 ExecStart=/bin/bash $SELF --install $GITTREE
 StandardOutput=append:$LOG_FILE
 StandardError=append:$LOG_FILE
@@ -784,10 +842,9 @@ _start_rc=$?
 [ "$_start_rc" -ne 0 ] && { echo -e "\e[1;31mFailed to start install service. Check 'systemctl status $SERVICE_NAME' for details.\e[0m"; exit 1; }
 if [ -f "$LOG_FILE" ]; then
     if grep -q "Install Summary" "$LOG_FILE"; then
-        if [ -t 1 ]; then
-            echo -e "\e[1;32mQuecDeck installed.\e[0m"
-        else
-            echo -e "\e[1;32mQuecDeck installed.\e[0m"
+        echo -e "\e[1;32mQuecDeck installed.\e[0m"
+        # Non-terminal callers didn't see the streamed log; replay the summary.
+        if [ ! -t 1 ]; then
             echo ""
             sed -n '/Install Summary/,$p' "$LOG_FILE"
             echo ""

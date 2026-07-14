@@ -36,8 +36,14 @@ else
 fi
 
 raw_status=$(cat "$STATUS_FILE" 2>/dev/null)
+version=""
 case "$raw_status" in
-    done)                   status="done"   ; rollback="none"   ;;
+    # On "done" the swapped-in version file is the installed version; report
+    # it so the UI doesn't have to infer it. Sanitized for JSON embedding.
+    done)
+        status="done" ; rollback="none"
+        version=$(cat /usrdata/quecdeck/version 2>/dev/null | tr -cd '0-9A-Za-z.-')
+        ;;
     failed:rollback_ok)     status="failed" ; rollback="ok"     ;;
     failed:rollback_failed) status="failed" ; rollback="failed" ;;
     failed)                 status="failed" ; rollback="none"   ;;
@@ -56,4 +62,4 @@ case "$raw_status" in
         ;;
 esac
 
-printf '{"log":"%s","offset":%s,"status":"%s","rollback":"%s"}\n' "$chunk_b64" "$total" "$status" "$rollback"
+printf '{"log":"%s","offset":%s,"status":"%s","rollback":"%s","version":"%s"}\n' "$chunk_b64" "$total" "$status" "$rollback" "$version"

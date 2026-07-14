@@ -125,11 +125,10 @@ done < <(hook_list PINNED_FILES)
 
 # The updater fetches the whole quecdeck/ subtree as one archive rather than
 # per-file, so a manifest-vs-per-file-download-URL diff no longer applies:
-# every checksummed file is fetched by construction. What can still drift is
-# stage_release()'s exclusion list (console/ttyd.bash, systemd/ttyd.service,
-# quecdeckdevpasswd) versus the verify loop's "expected missing" whitelist;
-# both live in update_quecdeck.sh's stage_release() and are easy to eyeball
-# in review since they sit a few lines apart.
+# every checksummed file is fetched by construction. The old drift hazard
+# between stage_release()'s exclusion list and the verify loop's "expected
+# missing" whitelist is gone too: both are driven by the single _STAGE_EXEMPT
+# list in stage_release().
 
 # --------------------------------------------- asset version consistency ---
 # The ?v= token in every HTML must equal the hash the hook derives from the
