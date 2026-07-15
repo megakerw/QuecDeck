@@ -25,10 +25,19 @@ if path:find("%.%.", 1, true) or path:lower():find("%2e", 1, true) then
 end
 
 -- Redirect to setup wizard if no admin password has been configured yet.
--- Use a shell test rather than io.open (lighttpd runs as www-data but its
--- only supplementary group is dialout, so htpasswd files are root:dialout 640).
-local ret = os.execute("test -s /opt/etc/.htpasswd 2>/dev/null")
-local setup_needed = not (ret == true or ret == 0)
+-- lighty.c.stat (mod_magnet 1.4.60+; every install's Entware lighttpd is
+-- newer) needs no read permission (htpasswd files are root:dialout 640) and
+-- no fork. Served from lighttpd's stat cache; ~1s staleness on setup/reset
+-- transitions is fine. The shell test keeps auth alive on a build without
+-- the API rather than 500ing every request.
+local setup_needed
+if lighty.c and lighty.c.stat then
+    local st = lighty.c.stat("/opt/etc/.htpasswd")
+    setup_needed = not (st and st.st_size and st.st_size > 0)
+else
+    local ret = os.execute("test -s /opt/etc/.htpasswd 2>/dev/null")
+    setup_needed = not (ret == true or ret == 0)
+end
 if setup_needed then
     if path ~= "/setup.html" and path ~= "/cgi-bin/init_setup"
         and not path:match("^/css/")

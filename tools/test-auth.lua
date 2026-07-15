@@ -18,14 +18,28 @@ local function t(name, expected, actual)
     end
 end
 
+-- Mirrors mod_magnet's lighty.c.stat: nil for a missing file, else a table
+-- with the fields auth.lua reads. The harness runs as root, so io.open
+-- stands in for the permissionless stat.
+local function stub_stat(p)
+    local f = io.open(p, "r")
+    if not f then return nil end
+    local size = f:seek("end")
+    f:close()
+    return { st_size = size, is_file = true }
+end
+
 -- Each case gets a fresh lighty stub; auth.lua's top-level return is the
 -- status it hands back to mod_magnet (nil/0 = pass request through).
-local function run(uri, cookie)
+-- no_stat drops the stat API so auth.lua's shell fallback runs instead.
+local function run(uri, cookie, no_stat)
     lighty = {
         env     = { ["request.uri"] = uri },
         request = { Cookie = cookie },
         header  = {},
+        c       = { stat = stub_stat },
     }
+    if no_stat then lighty.c = nil end
     local rc = dofile(AUTH)
     return rc or 0, lighty
 end
@@ -130,6 +144,20 @@ rc = run("/cgi-bin/user_atcommand", "session=tokD4")
 t("dev endpoint unlocked: passes", 0, rc)
 rc = run("/console/", "session=tokD4")
 t("console unlocked: passes", 0, rc)
+
+-- ---------------------------------------- setup-check shell-test fallback
+-- A build without lighty.c.stat must fall back to the shell test instead of
+-- erroring on every request. Exercise the setup boundary in both directions.
+-- Keep these last: they remove the htpasswd file.
+rc = run("/index.html", "session=tokD4", true)
+t("shell fallback: configured, valid session passes", 0, rc)
+rc, L = run("/", nil, true)
+t("shell fallback: configured, no cookie redirects to login", 302, rc)
+t("shell fallback: login location", "/login.html?next=/", L.header["Location"])
+os.remove(HTPASSWD)
+rc, L = run("/", nil, true)
+t("shell fallback: no htpasswd redirects to wizard", 302, rc)
+t("shell fallback: wizard location", "/setup.html", L.header["Location"])
 
 -- -------------------------------------------------------------- summary
 print("")
