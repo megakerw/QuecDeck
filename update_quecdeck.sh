@@ -25,6 +25,11 @@ GITTREE="${2:-main}"
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 
 STAGE_DIR="${QUECDECK_DIR}.new"
+# Staging scratch on tmpfs. Top-level so the EXIT trap can clear them: a kill
+# mid-download/extract would otherwise strand them in RAM until the next
+# update or a reboot.
+RELEASE_TARBALL=/tmp/.quecdeck-release.tar.gz
+RELEASE_EXTRACT_DIR=/tmp/.quecdeck-release-extract
 OLD_DIR="${QUECDECK_DIR}.old"
 STATUS_FILE=/tmp/quecdeck_update.status
 export HOME=/usrdata/root
@@ -78,6 +83,9 @@ _update_cleanup() {
     fi
     _write_status "$_update_status"
     _persist_log
+    # Staging is finished by every path that reaches here, so this only ever
+    # collects what a kill mid-download/extract left on tmpfs. No-op otherwise.
+    rm -rf "$RELEASE_TARBALL" "$RELEASE_EXTRACT_DIR"
     remount_ro
 }
 trap '_update_cleanup' EXIT
@@ -188,16 +196,14 @@ stage_release() {
     # per file, so a dropped connection is a single unambiguous failure to
     # retry, not a partial set of missing files.
     _tarball_url="https://codeload.github.com/$GITUSER/$REPONAME/tar.gz/$GITTREE"
-    _tarball="/tmp/.quecdeck-release.tar.gz"
-    _extract_dir="/tmp/.quecdeck-release-extract"
-    rm -rf "$_tarball" "$_extract_dir"
+    rm -rf "$RELEASE_TARBALL" "$RELEASE_EXTRACT_DIR"
 
     echo "Downloading release archive..."
     _tarball_ok=0
     _attempt=1
     while [ "$_attempt" -le 4 ]; do
-        rm -f "$_tarball"
-        if /opt/bin/wget --timeout=60 --tries=1 -q -O "$_tarball" "$_tarball_url" && [ -s "$_tarball" ]; then
+        rm -f "$RELEASE_TARBALL"
+        if /opt/bin/wget --timeout=60 --tries=1 -q -O "$RELEASE_TARBALL" "$_tarball_url" && [ -s "$RELEASE_TARBALL" ]; then
             _tarball_ok=1
             break
         fi
@@ -207,32 +213,32 @@ stage_release() {
     done
     if [ "$_tarball_ok" != "1" ]; then
         echo -e "\e[1;31mFATAL: Could not download the release archive after multiple attempts.\e[0m"
-        rm -f "$_tarball"
+        rm -f "$RELEASE_TARBALL"
         return 1
     fi
 
-    mkdir -p "$_extract_dir"
-    tar -xzf "$_tarball" -C "$_extract_dir" || {
+    mkdir -p "$RELEASE_EXTRACT_DIR"
+    tar -xzf "$RELEASE_TARBALL" -C "$RELEASE_EXTRACT_DIR" || {
         echo -e "\e[1;31mFATAL: Failed to extract the release archive.\e[0m"
-        rm -rf "$_tarball" "$_extract_dir"
+        rm -rf "$RELEASE_TARBALL" "$RELEASE_EXTRACT_DIR"
         return 1
     }
-    rm -f "$_tarball"
+    rm -f "$RELEASE_TARBALL"
 
     # GitHub wraps the archive in a single top-level directory whose exact name
     # varies by ref type; discover it rather than assume a naming pattern. If
     # find ever returns more than one dir, the embedded newline makes the -d
     # check below fail on its own, so no separate count check is needed.
-    _top_dir=$(find "$_extract_dir" -mindepth 1 -maxdepth 1 -type d)
+    _top_dir=$(find "$RELEASE_EXTRACT_DIR" -mindepth 1 -maxdepth 1 -type d)
     if [ ! -d "$_top_dir/quecdeck" ]; then
         echo -e "\e[1;31mFATAL: Unexpected release archive layout.\e[0m"
-        rm -rf "$_extract_dir"
+        rm -rf "$RELEASE_EXTRACT_DIR"
         return 1
     fi
 
     echo "Populating staged release..."
     cp -a "$_top_dir/quecdeck/." "$STAGE_DIR/"
-    rm -rf "$_extract_dir"
+    rm -rf "$RELEASE_EXTRACT_DIR"
 
     # bin/atcli is staged directly at $STAGE_DIR/atcli (no bin/ subdir) so it is
     # reachable without a PATH entry outside the root console.

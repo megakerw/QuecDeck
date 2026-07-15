@@ -176,6 +176,16 @@
   paint-order: stroke;
 }
 
+/* The pad cutouts are subpaths of the card path, so one stroke rims the
+   silhouette and every pad. Both themes: white face vs gold is 1.4:1, too
+   close to read an edge, and on light the face barely clears the card too.
+   Above 8 the stroke starts closing the smallest pads. */
+.stat-card svg.sim-icon .sim-body {
+  stroke: var(--status-color-grey);
+  stroke-width: 8;
+  paint-order: stroke;
+}
+
 .stat-card svg.ram-icon path,
 .stat-card svg.ram-icon rect,
 .stat-card svg.ram-icon line {
