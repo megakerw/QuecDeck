@@ -48,13 +48,14 @@ case "$raw_status" in
     failed:rollback_failed) status="failed" ; rollback="failed" ;;
     failed)                 status="failed" ; rollback="none"   ;;
     *)
-        # Non-terminal status ("running" or empty). Distinguish a live install
-        # from a crash via systemd: the install runs as the install_quecdeck
-        # oneshot. "failed" = it crashed before writing an outcome (a SIGKILL
-        # bypasses the cleanup trap); anything else (activating, or the brief
-        # installer-download window before the service starts) is still running.
-        # An empty/failed query defaults to running, never a false "failed".
-        if [ "$(systemctl is-active install_quecdeck 2>/dev/null)" = "failed" ]; then
+        # Non-terminal status ("running" or empty). Distinguish a live update
+        # from a crash via systemd: the download window runs as the
+        # install_quecdeck_fetch oneshot and the install as install_quecdeck.
+        # "failed" on either = it died before writing an outcome (SIGKILL or
+        # the fetch unit's TimeoutStartSec bypass the cleanup paths); anything
+        # else is still running. An empty/failed query defaults to running,
+        # never a false "failed".
+        if [ "$(systemctl is-active install_quecdeck 2>/dev/null)" = "failed" ] ||            [ "$(systemctl is-active install_quecdeck_fetch 2>/dev/null)" = "failed" ]; then
             status="failed" ; rollback="none"
         else
             status="running" ; rollback="none"

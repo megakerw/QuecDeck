@@ -103,16 +103,26 @@ function updatePage() {
       this.logDecoder = new TextDecoder('utf-8');
     },
 
+    // Scroll a log box to the bottom after the DOM update AND the next
+    // layout: the done/failed boxes are display:none until the status flips,
+    // and a scroll issued before the revealed box is laid out is a no-op
+    // (scrollHeight reads 0).
+    scrollLogBox(refName) {
+      this.$nextTick(() => {
+        requestAnimationFrame(() => {
+          const box = this.$refs[refName];
+          if (box) box.scrollTop = box.scrollHeight;
+        });
+      });
+    },
+
     appendLogChunk(b64, finalFlush) {
       if (b64) {
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         this.log += this.logDecoder.decode(bytes, { stream: true });
       }
       if (finalFlush) this.log += this.logDecoder.decode();
-      this.$nextTick(() => {
-        const box = this.$refs.logbox;
-        if (box) box.scrollTop = box.scrollHeight;
-      });
+      this.scrollLogBox('logbox');
     },
 
     ackUpdate() {
@@ -173,7 +183,7 @@ function updatePage() {
               this.updating = false;
               clearInterval(this.pollTimer);
               this.ackUpdate();
-              this.$nextTick(() => { const b = this.$refs.logboxDone; if (b) b.scrollTop = b.scrollHeight; });
+              this.scrollLogBox('logboxDone');
               this.startReloadCountdown();
             } else if (data.status === 'failed') {
               this.failed = true;
@@ -181,7 +191,7 @@ function updatePage() {
               this.updating = false;
               clearInterval(this.pollTimer);
               this.ackUpdate();
-              this.$nextTick(() => { const b = this.$refs.logboxFailed; if (b) b.scrollTop = b.scrollHeight; });
+              this.scrollLogBox('logboxFailed');
             }
           })
           .catch(() => {
@@ -219,7 +229,7 @@ function updatePage() {
             this.ackUpdate();
             this.failed = true;
             this.rollback = data.rollback || 'none';
-            this.$nextTick(() => { const b = this.$refs.logboxFailed; if (b) b.scrollTop = b.scrollHeight; });
+            this.scrollLogBox('logboxFailed');
             this.checkForUpdates();
             return;
           }

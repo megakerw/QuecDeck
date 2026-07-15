@@ -168,6 +168,14 @@
   margin-top: 6px;
 }
 
+/* The connected cloud's body is white; on the light theme's pale card it has
+   no visible edge. paint-order:stroke keeps the outline behind the fill. */
+[data-bs-theme="light"] .stat-card svg.cloud-icon .cloud-body {
+  stroke: #adb5bd;
+  stroke-width: 14;
+  paint-order: stroke;
+}
+
 .stat-card svg.ram-icon path,
 .stat-card svg.ram-icon rect,
 .stat-card svg.ram-icon line {

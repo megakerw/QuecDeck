@@ -29,6 +29,12 @@ OLD_DIR="${QUECDECK_DIR}.old"
 STATUS_FILE=/tmp/quecdeck_update.status
 export HOME=/usrdata/root
 
+# ttyd does not publish checksums, so pin the hash of the known-good binary.
+# To update: download the new release, sha256sum it, and update TTYD_HASH +
+# TTYD_VERSION. Used by stage_release (carry-forward) and install_ttyd.
+TTYD_VERSION="1.7.7"
+TTYD_HASH="8240c8438b68d3b10b0e1a4e7c914d70fca6a7606b516f40bf40adfa1044d801"
+
 remount_rw() {
     mount -o remount,rw /
 }
@@ -154,6 +160,17 @@ preflight_check() {
     _pf_free=$(df -k /usrdata 2>/dev/null | awk 'NR==2 {print $4}')
     if [ -n "$_pf_free" ] && [ "$_pf_free" -lt "$_pf_needed" ]; then
         echo "FATAL: Not enough free space on /usrdata (need ~${_pf_needed}KB, have ${_pf_free}KB). Aborting update."
+        return 1
+    fi
+
+    # The download and extraction live on /tmp (tmpfs), a separate filesystem
+    # from /usrdata: the archive and the extracted repo tree coexist briefly,
+    # so require ~2x the install size there as well.
+    _pf_tmp_needed=$(du -sk "$QUECDECK_DIR" 2>/dev/null | awk '{print int($1*2)}')
+    _pf_tmp_needed=${_pf_tmp_needed:-4000}
+    _pf_tmp_free=$(df -k /tmp 2>/dev/null | awk 'NR==2 {print $4}')
+    if [ -n "$_pf_tmp_free" ] && [ "$_pf_tmp_free" -lt "$_pf_tmp_needed" ]; then
+        echo "FATAL: Not enough free space on /tmp (need ~${_pf_tmp_needed}KB, have ${_pf_tmp_free}KB). Aborting update."
         return 1
     fi
 
@@ -333,6 +350,13 @@ stage_release() {
     [ -f "$QUECDECK_DIR/server.crt" ] && cp -f "$QUECDECK_DIR/server.crt" "$STAGE_DIR/server.crt"
     [ -f "$QUECDECK_DIR/server.key" ] && cp -f "$QUECDECK_DIR/server.key" "$STAGE_DIR/server.key"
 
+    # Carry the ttyd binary forward when it matches the pinned hash: it only
+    # changes when TTYD_HASH does, so skip the re-download on every update.
+    # A stale/corrupt binary simply fails this check and gets re-fetched.
+    if [ -f "$QUECDECK_DIR/console/ttyd" ] &&        [ "$(sha256sum "$QUECDECK_DIR/console/ttyd" | awk '{print $1}')" = "$TTYD_HASH" ]; then
+        cp -f "$QUECDECK_DIR/console/ttyd" "$STAGE_DIR/console/ttyd"
+    fi
+
     # Generate a TLS certificate if one wasn't carried forward from a previous install
     if [ ! -f "$STAGE_DIR/server.crt" ] || [ ! -f "$STAGE_DIR/server.key" ]; then
         _cert_ip="192.168.225.1"
@@ -474,6 +498,11 @@ swap_in_release() {
     cp -f "$QUECDECK_DIR/console/.profile" /usrdata/root/.profile
     chmod +x /usrdata/root/.profile
 
+    # Snapshot the live sudoers rule before rewriting it; _revert_swap restores
+    # it so a rollback doesn't leave the failed release's rules paired with the
+    # restored release's CGIs.
+    _sudoers_prev=$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)
+
     _sudoers_rule="www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /bin/systemctl is-active watchcat, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/run_update.sh"
     _sudoers_mode=$(stat -c '%a' /opt/etc/sudoers.d/www-data 2>/dev/null)
     if [ "$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)" != "$_sudoers_rule" ] || [ "$_sudoers_mode" != "440" ]; then
@@ -604,6 +633,7 @@ swap_in_release() {
                 _health_ok=1
                 break
             fi
+            echo "Probe attempt $_i failed; retrying..."
             sleep 2
         done
         [ "$_health_ok" = "1" ] && echo "lighttpd stayed up through the swap."
@@ -630,6 +660,15 @@ _revert_swap() {
     mv "$OLD_DIR" "$QUECDECK_DIR"
     cp -f "$QUECDECK_DIR/console/.profile" /usrdata/root/.profile 2>/dev/null || true
     cp -rf "$QUECDECK_DIR/systemd/"* /lib/systemd/system/ 2>/dev/null || true
+    # Put back the sudoers rule the swap may have rewritten (same temp+rename
+    # write as the forward path).
+    if [ -n "${_sudoers_prev:-}" ] && [ "$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)" != "$_sudoers_prev" ]; then
+        _sudoers_tmp=$(mktemp /opt/etc/sudoers.d/.www-data.XXXXXX) && {
+            printf '%s\n' "$_sudoers_prev" > "$_sudoers_tmp"
+            chmod 440 "$_sudoers_tmp"
+            mv "$_sudoers_tmp" /opt/etc/sudoers.d/www-data
+        }
+    fi
     # Remove unit files this (failed) release introduced that the restored
     # release knows nothing about, otherwise they'd linger as orphans.
     for _u in $_newly_introduced_units; do
@@ -665,15 +704,16 @@ _revert_swap() {
 }
 
 install_ttyd() {
-    # ttyd does not publish checksums, so pin the hash of the known-good binary here.
-    # To update: download the new release, sha256sum it, and update TTYD_HASH + the URL below.
-    TTYD_VERSION="1.7.7"
-    TTYD_HASH="8240c8438b68d3b10b0e1a4e7c914d70fca6a7606b516f40bf40adfa1044d801"
-
     echo -e "\e[1;32mInstalling ttyd...\e[0m"
     cd $QUECDECK_DIR/console || return 1
-    /opt/bin/wget --timeout=60 --tries=2 -q -O ttyd https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.armhf || { echo -e "\e[1;31mFailed to download ttyd.\e[0m"; return 1; }
-    echo "${TTYD_HASH}  ttyd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for ttyd.\e[0m"; rm -f ttyd; return 1; }
+    # Binary was carried forward by stage_release when it matched TTYD_HASH;
+    # only download when absent or the pin changed.
+    if [ "$(sha256sum ttyd 2>/dev/null | awk '{print $1}')" = "$TTYD_HASH" ]; then
+        echo "ttyd binary already current (carried forward)."
+    else
+        /opt/bin/wget --timeout=60 --tries=2 -q -O ttyd https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.armhf || { echo -e "\e[1;31mFailed to download ttyd.\e[0m"; return 1; }
+        echo "${TTYD_HASH}  ttyd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for ttyd.\e[0m"; rm -f ttyd; return 1; }
+    fi
     chmod +x ttyd
     # ttyd.bash and ttyd.service are fetched from the tag rather than the staged
     # tarball, so they miss stage_release's checksum verification. Verify them

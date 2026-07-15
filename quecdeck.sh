@@ -377,6 +377,7 @@ uninstall_quecdeck_components() {
     # ones wrote it to /lib, where a failed update could strand it. Harmless if
     # absent.
     rm -f /run/systemd/system/install_quecdeck.service /lib/systemd/system/install_quecdeck.service
+    rm -f /run/systemd/system/install_quecdeck_fetch.service
 
     # Uninstall watchcat
     systemctl stop watchcat > /dev/null 2>&1

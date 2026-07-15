@@ -27,6 +27,17 @@ automated on purpose -- it parks the device on an older release mid-run), and
 step 7. Use the manual steps below when the script is unavailable or when
 diagnosing a script failure.
 
+**Pushing working-tree scripts over installed ones** (e.g. testing a changed
+`run_update.sh` via the real web path): `adb push` drops ownership and mode,
+leaving the file `rw-rw-rw- root` -- sudo then fails with a generic error
+before the script runs, and a world-writable sudoers-listed root script is a
+privilege-escalation hole for as long as it sits there. Always follow the
+push with:
+
+```
+adb shell "chown root:root <path> && chmod 700 <path>"
+```
+
 Conventions below: `<current>` is the tag matching the installed version
 (`cat /usrdata/quecdeck/version`), `<older>` is any earlier published tag.
 Run the steps in the order given: the non-mutating checks come first, and the
