@@ -4,19 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=fff5325b" />
-    <link rel="stylesheet" href="css/styles.css?v=fff5325b" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=8d4d95cf" />
+    <link rel="stylesheet" href="css/styles.css?v=8d4d95cf" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/theme-boot.js?v=fff5325b"></script>
-    <script src="js/bootstrap.bundle.min.js?v=fff5325b"></script>
-    <script src="js/utils.js?v=fff5325b"></script>
-    <script src="js/alpinejs.min.js?v=fff5325b" defer></script>
+    <script src="js/theme-boot.js?v=8d4d95cf"></script>
+    <script src="js/bootstrap.bundle.min.js?v=8d4d95cf"></script>
+    <script src="js/utils.js?v=8d4d95cf"></script>
+    <script src="js/alpinejs.min.js?v=8d4d95cf" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="processAllInfos()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=fff5325b"></script>
+        <script src="js/nav.js?v=8d4d95cf"></script>
 
         <div class="row mt-4 mb-0 g-3">
           <div class="col-6 col-sm-4 col-lg-2">
@@ -39,13 +39,11 @@
                 <div class="stat-icon-wrap">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" height="85" width="85" class="sim-icon">
                     <!-- The chip pads are cutouts in the card path; the rect
-                         behind it shows only through them. Gold matches the RAM
-                         icon's contact fingers. White face and gold sit at
-                         1.4:1, so styles.css strokes the path to rim both the
-                         silhouette and every pad. Grey throughout when no SIM,
-                         which the same-coloured stroke leaves flat. -->
-                    <rect x="60" y="188" width="264" height="264" :style="{ fill: simStatus === 'Active' ? '#FFD700' : 'var(--status-color-grey)' }"/>
-                    <path class="sim-body" :style="{ fill: simStatus === 'Active' ? '#ffffff' : 'var(--status-color-grey)' }" d="M64 0H242.7c17 0 33.3 6.7 45.3 18.7L365.3 96c12 12 18.7 28.3 18.7 45.3V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V64C0 28.7 28.7 0 64 0zM96 192c-17.7 0-32 14.3-32 32v32h64V192H96zM64 352h80 96 80V288H240 144 64v64zM320 224c0-17.7-14.3-32-32-32H256v64h64V224zM160 192v64h64V192H160zM288 448c17.7 0 32-14.3 32-32V384H256v64h32zM160 384v64h64V384H160zM64 416c0 17.7 14.3 32 32 32h32V384H64v32z"/>
+                         behind it shows only through them. Gold (the RAM
+                         icon's finger gold) when active, muted grey otherwise.
+                         styles.css strokes the card path to rim the pads. -->
+                    <rect x="60" y="188" width="264" height="264" fill="#adb5bd" :style="{ fill: simStatus === 'Active' ? '#FFD700' : '#adb5bd' }"/>
+                    <path class="sim-body" :style="{ fill: simStatus === 'Active' ? '#052c65' : 'var(--status-color-grey)' }" d="M64 0H242.7c17 0 33.3 6.7 45.3 18.7L365.3 96c12 12 18.7 28.3 18.7 45.3V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V64C0 28.7 28.7 0 64 0zM96 192c-17.7 0-32 14.3-32 32v32h64V192H96zM64 352h80 96 80V288H240 144 64v64zM320 224c0-17.7-14.3-32-32-32H256v64h64V224zM160 192v64h64V192H160zM288 448c17.7 0 32-14.3 32-32V384H256v64h32zM160 384v64h64V384H160zM64 416c0 17.7 14.3 32 32 32h32V384H64v32z"/>
                   </svg>
                 </div>
                 <div class="stat-value" x-text="simStatus"></div>
@@ -504,8 +502,8 @@
         </div>
       </div>
     </main>
-    <script src="js/dark-mode.js?v=fff5325b"></script>
+    <script src="js/dark-mode.js?v=8d4d95cf"></script>
 
-    <script src="js/home.js?v=fff5325b"></script>
+    <script src="js/home.js?v=8d4d95cf"></script>
   </body>
 </html>

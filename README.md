@@ -136,7 +136,7 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 
 **Network exposure:** each service independently manages its own bind IP at startup (lighttpd via `lighttpd_prestart.sh`, sshd via `update_sshd_ip.sh`), so neither listens on the WAN interface even if the LAN IP changes. The firewall adds a second layer on top of this.
 
-**Privileges:** QuecDeck ships no setuid binaries. The only privileged path to the modem's serial interface (`/dev/smd11`) is the AT daemon, which systemd starts as root and which drops to www-data after opening the port; clients talk to it over a uid-checked unix socket. CGI scripts do not run as root.
+**Privileges:** QuecDeck ships no setuid binaries. The only privileged path to the modem's serial interface (`/dev/smd11`) is the AT daemon, which systemd starts as root and which drops to www-data after opening the port; clients talk to it over a uid-checked unix socket. CGI scripts do not run as root, and the web server runs as `www-data:www-data` with no supplementary groups. Root actions available to the web tier are limited to an enumerated sudoers allowlist of argument-fixed scripts.
 
 **Web application:**
 - All CGI endpoints validate the `Origin` header against the current host, blocking cross-origin requests and functioning as CSRF protection
@@ -146,7 +146,7 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 - Passwords must be at least 8 characters and are validated before any credential check is performed
 - Path traversal is rejected in depth: lighttpd is pinned to reject encoded slashes (`%2f`) and dot-segments rather than silently decode them, and the auth layer independently rejects both literal `..` and percent-encoded (`%2e`) sequences before any access-exemption check
 
-**Data at rest:** the AT response cache, session directory, and log directory are all `chmod 700`. Pre-start scripts and anything running with elevated access are `chmod 700 root:root`.
+**Data at rest:** the AT response cache, session directory, and log directory are all `chmod 700`. Password hashes are stored `root:root 600`, unreadable from the web tier: login checks pass the password over stdin to a small root helper via sudo, which answers with an exit code. Pre-start scripts and anything running with elevated access are `chmod 700 root:root`.
 
 ### Frontend
 The UI is built with [Bootstrap 5](https://getbootstrap.com/) and [Alpine.js](https://alpinejs.dev/) for reactive data binding. All assets carry a content-hashed cache-busting query parameter, maintained by a pre-commit git hook, which lets them be served with a one-year `immutable` cache lifetime: a content change produces a new URL, so updates apply immediately while repeat visits skip revalidation. HTML pages are always sent `no-store` so they never pin stale asset URLs.
