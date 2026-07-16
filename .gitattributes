@@ -17,6 +17,7 @@
 
 # CGI scripts and other text files without extensions (quecdeck/www/cgi-bin/*)
 quecdeck/www/cgi-bin/* text eol=lf
+quecdeck/quecdeckpasswd text eol=lf
 quecdeck/quecdeckdevpasswd text eol=lf
 quecdeck/console/.profile text eol=lf
 quecdeck/console/ttyd.bash text eol=lf

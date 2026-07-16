@@ -5,7 +5,6 @@ After=network.target opt.mount
 [Service]
 Type=simple
 User=www-data
-SupplementaryGroups=dialout
 ExecStart=/bin/bash /usrdata/quecdeck/script/scheduled_restart.sh
 Restart=on-failure
 RestartSec=5s

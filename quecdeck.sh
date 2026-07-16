@@ -214,11 +214,11 @@ uninstall_entware() {
 set_quecdeck_passwd(){
     mkdir -p /usrdata/root/bin
     /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
-    echo "06d795a46fe7e3696ba5927ae7f5be86909147a925f1a56c5a46dde86624fde6  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
+    echo "f92fb393702895662aa1fd7a04f6644e79ee899d67accac691cd87e81c2d6f4f  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
     chmod +x /usrdata/root/bin/quecdeckpasswd
     /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
-    echo "b0844740689a6ed2d0795b31cb44e57f7ab4dac49cc796cbdc22997beada64bc  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
+    echo "d93fe9ab90dd7c640d7843de08ed8037f456a0d3c9475ee012dfa0630b4e70c9  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
     chmod +x /usrdata/root/bin/quecdeckdevpasswd
     if [ -f /opt/etc/.htpasswd ]; then

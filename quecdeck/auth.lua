@@ -26,7 +26,7 @@ end
 
 -- Redirect to setup wizard if no admin password has been configured yet.
 -- lighty.c.stat (mod_magnet 1.4.60+; every install's Entware lighttpd is
--- newer) needs no read permission (htpasswd files are root:dialout 640) and
+-- newer) needs no read permission (htpasswd files are root:root 600) and
 -- no fork. Served from lighttpd's stat cache; ~1s staleness on setup/reset
 -- transitions is fine. The shell test keeps auth alive on a build without
 -- the API rather than 500ing every request.

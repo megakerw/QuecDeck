@@ -22,6 +22,7 @@ CHECKSUMMED_FILES=(
   quecdeck/script/lighttpd_prestart.sh
   quecdeck/script/lean_mode.sh
   quecdeck/script/write_htpasswd.sh
+  quecdeck/script/check_password.sh
   quecdeck/script/firewall.sh
   quecdeck/systemd/firewall.service
   quecdeck/systemd/lean-mode.service
@@ -32,6 +33,7 @@ CHECKSUMMED_FILES=(
   quecdeck/systemd/atcmd-daemon.service
   quecdeck/systemd/connection-logger.service
   quecdeck/console/ttyd.bash
+  quecdeck/quecdeckpasswd
   quecdeck/quecdeckdevpasswd
   quecdeck/auth.lua
   quecdeck/console/menu/start_menu.sh

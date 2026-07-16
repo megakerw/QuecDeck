@@ -45,8 +45,9 @@ log_scan_event() {
     fi
 }
 
+# is-active is a read-only query; it works unprivileged, no sudo.
 watchcat_was_running=0
-if /opt/bin/sudo /bin/systemctl is-active watchcat > /dev/null 2>&1; then
+if /bin/systemctl is-active watchcat > /dev/null 2>&1; then
     watchcat_was_running=1
     /opt/bin/sudo /bin/systemctl stop watchcat 2>/dev/null
 fi

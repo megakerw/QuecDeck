@@ -247,12 +247,12 @@ stage_release() {
     # file, instead of silently discarding whatever wasn't moved out above.
     rmdir "$STAGE_DIR/bin"
 
-    # ttyd and the dev-password setup script are intentionally not part of the
-    # staged release: install_ttyd() fetches ttyd.bash/ttyd.service itself after
-    # the swap, and quecdeckdevpasswd is a one-time console utility fetched by
-    # the initial installer (quecdeck.sh), never staged here. One list drives
-    # both this removal and the verify loop's "expected missing" exemption.
-    _STAGE_EXEMPT="console/ttyd.bash systemd/ttyd.service quecdeckdevpasswd"
+    # ttyd files are intentionally not part of the staged release:
+    # install_ttyd() fetches ttyd.bash/ttyd.service itself after the swap. One
+    # list drives both this removal and the verify loop's "expected missing"
+    # exemption. The console password tools are staged and verified like any
+    # other file; swap_in_release copies them to /usrdata/root/bin.
+    _STAGE_EXEMPT="console/ttyd.bash systemd/ttyd.service"
     for _f in $_STAGE_EXEMPT; do rm -f "$STAGE_DIR/$_f"; done
 
     printf '%s\n' "$(_tag_to_version "$GITTREE")" > "$STAGE_DIR/version"
@@ -276,16 +276,16 @@ stage_release() {
     chmod +x $STAGE_DIR/script/*
     chmod +x $STAGE_DIR/console/menu/*
     chmod +x $STAGE_DIR/console/.profile
-    # Ensure sudo-accessible scripts are root-owned (prevents www-data from replacing them)
-    chown root:root $STAGE_DIR/script/create_watchcat.sh
-    chown root:root $STAGE_DIR/script/remove_watchcat.sh
-    chown root:root $STAGE_DIR/script/create_scheduled_restart.sh
-    chown root:root $STAGE_DIR/script/remove_scheduled_restart.sh
-    chown root:root $STAGE_DIR/script/lighttpd_prestart.sh
-    chmod 700 $STAGE_DIR/script/lighttpd_prestart.sh
-    chown root:root $STAGE_DIR/script/write_htpasswd.sh
-    chown root:root $STAGE_DIR/script/run_update.sh
-    chmod 700 $STAGE_DIR/script/run_update.sh
+    # Root-only scripts (sudo targets and root-unit payloads): root:root so
+    # www-data can never replace a privileged entry point, 700 since nothing
+    # unprivileged runs or reads them. The rest of script/ stays 755: www-data
+    # sources or executes those.
+    for _s in create_watchcat.sh remove_watchcat.sh create_scheduled_restart.sh \
+              remove_scheduled_restart.sh lighttpd_prestart.sh write_htpasswd.sh \
+              check_password.sh run_update.sh firewall.sh lean_mode.sh; do
+        chown root:root "$STAGE_DIR/script/$_s"
+        chmod 700 "$STAGE_DIR/script/$_s"
+    done
 
     # An unexpectedly empty file fails checksum verification below like any
     # other mismatch (no file in the repo is legitimately zero-byte), so no
@@ -503,13 +503,27 @@ swap_in_release() {
     ln -sf "$QUECDECK_DIR/console/menu/start_menu.sh" /usrdata/root/bin/menu
     cp -f "$QUECDECK_DIR/console/.profile" /usrdata/root/.profile
     chmod +x /usrdata/root/.profile
+    # Console password tools: copies, not symlinks (a rollback must not leave
+    # dangling links), so the perms scheme they write matches this release's CGIs.
+    cp -f "$QUECDECK_DIR/quecdeckpasswd" /usrdata/root/bin/quecdeckpasswd
+    cp -f "$QUECDECK_DIR/quecdeckdevpasswd" /usrdata/root/bin/quecdeckdevpasswd
+    chmod +x /usrdata/root/bin/quecdeckpasswd /usrdata/root/bin/quecdeckdevpasswd
+
+    # Tighten existing htpasswd files to root:root 600: the web tier verifies
+    # passwords via the check_password.sh sudo helper and must not be able to
+    # read stored hashes. No rollback restore: a rollback target that predates
+    # the helper reads these as www-data and would need root:dialout 640 put
+    # back (console fix: chown root:dialout + chmod 640).
+    for _hf in /opt/etc/.htpasswd /opt/etc/.htpasswd_dev; do
+        [ -f "$_hf" ] && chown root:root "$_hf" && chmod 600 "$_hf"
+    done
 
     # Snapshot the live sudoers rule before rewriting it; _revert_swap restores
     # it so a rollback doesn't leave the failed release's rules paired with the
     # restored release's CGIs.
     _sudoers_prev=$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)
 
-    _sudoers_rule="www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /bin/systemctl is-active watchcat, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/run_update.sh"
+    _sudoers_rule="www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/check_password.sh, /usrdata/quecdeck/script/run_update.sh"
     _sudoers_mode=$(stat -c '%a' /opt/etc/sudoers.d/www-data 2>/dev/null)
     if [ "$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)" != "$_sudoers_rule" ] || [ "$_sudoers_mode" != "440" ]; then
         # On a from-scratch install, the sudo package (which would normally

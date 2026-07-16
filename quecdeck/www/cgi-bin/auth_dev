@@ -80,7 +80,7 @@ if bf_locked "$FAILURE_DIR" "$client_ip"; then
     exit 0
 fi
 
-if validate_htpasswd "/opt/etc/.htpasswd_dev" "devadmin" "$password"; then
+if validate_password dev devadmin "$password"; then
     # Success: clear failures, mark dev-unlocked (own file, temp+rename, no lock).
     bf_clear "$FAILURE_DIR" "$client_ip"
     (umask 077; printf 'dev_unlocked=1\n' > "${DEV_FILE}.tmp.$$") && mv "${DEV_FILE}.tmp.$$" "$DEV_FILE"

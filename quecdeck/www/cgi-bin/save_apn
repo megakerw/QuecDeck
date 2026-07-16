@@ -64,7 +64,7 @@ if at_response_ok "$result" && [ "$action" = "reconnect" ]; then
     (
         sleep 2
         wc_running=0
-        /opt/bin/sudo /bin/systemctl is-active watchcat >/dev/null 2>&1 && wc_running=1
+        /bin/systemctl is-active watchcat >/dev/null 2>&1 && wc_running=1
         [ "$wc_running" = "1" ] && /opt/bin/sudo /bin/systemctl stop watchcat
         atcmd_run 'AT+CFUN=0'
         sleep 10

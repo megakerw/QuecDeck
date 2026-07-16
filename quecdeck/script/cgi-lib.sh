@@ -8,11 +8,13 @@
 # Reject cross-origin requests. Doubles as CSRF protection: browsers always send
 # the Origin header on cross-origin requests (including form POSTs), so a
 # malicious page on another origin will be blocked here. Absent Origin (curl,
-# wget, same-origin navigation) is allowed. Call before emitting any HTTP headers.
+# wget, same-origin navigation) is allowed. https only: CGIs are bound to the
+# 443 socket, so no legitimate request has an http origin.
+# Call before emitting any HTTP headers.
 cgi_check_cors() {
     if [ -n "$HTTP_ORIGIN" ]; then
         case "$HTTP_ORIGIN" in
-            "https://${HTTP_HOST}"|"http://${HTTP_HOST}") ;;
+            "https://${HTTP_HOST}") ;;
             *)
                 printf "Status: 403 Forbidden\r\nContent-type: text/plain\r\n\r\nForbidden\n"
                 exit 1
@@ -112,23 +114,12 @@ write_json_config() {
     chmod 640 "$path"
 }
 
-# Verify a password against an htpasswd file (SHA-512 crypt format).
-# Usage: validate_htpasswd <htpasswd_file> <username> <password>
-validate_htpasswd() {
-    local htpasswd_file="$1" username="$2" password="$3"
-    [ -f "$htpasswd_file" ] || return 1
-    # Literal prefix match, never a grep pattern: the username may be
-    # unvalidated.
-    local line="" l
-    while IFS= read -r l || [ -n "$l" ]; do
-        case "$l" in "${username}:"*) line="$l"; break ;; esac
-    done < "$htpasswd_file"
-    [ -n "$line" ] || return 1
-    local stored_hash="${line#*:}"
-    local salt computed
-    salt=$(printf '%s' "$stored_hash" | awk -F'[$]' '{print $3}')
-    computed=$(printf '%s' "$password" | openssl passwd -6 -salt "$salt" -stdin 2>/dev/null)
-    [ "$computed" = "$stored_hash" ]
+# Verify a web password via the check_password.sh sudo helper. The htpasswd
+# files are root:root 600, unreadable from the web tier; the helper (root via
+# sudo) is the only credential-check path. Password goes over stdin, never
+# argv. Usage: validate_password <admin|dev> <username> <password>
+validate_password() {
+    printf '%s\n' "$3" | /opt/bin/sudo /usrdata/quecdeck/script/check_password.sh "$1" "$2"
 }
 
 # Append a JSON log entry to an access log file, capped at 500 lines.

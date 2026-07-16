@@ -86,6 +86,10 @@ t "cgi_client_ip sanitizes" "192.168.1.7" "$(cgi_client_ip)"
 REMOTE_ADDR=''
 t "cgi_client_ip never empty" "unknown" "$(cgi_client_ip)"
 
+# validate_htpasswd lives in the check_password.sh sudo helper (not cgi-lib:
+# the htpasswd files are root-only and CGIs go through sudo); extract it so
+# the comparison logic is still tested on the host.
+eval "$(extract_fn quecdeck/script/check_password.sh validate_htpasswd)"
 if printf 'x' | openssl passwd -6 -salt s -stdin >/dev/null 2>&1; then
     _hash=$(printf 'hunter22' | openssl passwd -6 -salt testsalt -stdin)
     _htf=$(mktemp)

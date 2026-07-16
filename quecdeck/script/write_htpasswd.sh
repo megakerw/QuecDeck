@@ -30,6 +30,10 @@ if ! printf '%s' "$LINE" | grep -qE '^[a-zA-Z0-9_-]+:\$6\$'; then
 fi
 
 mkdir -p /opt/etc
+# 077: the file must never exist with looser perms than the chmod below sets.
+umask 077
 printf '%s\n' "$LINE" > "$FILE"
-chown root:dialout "$FILE"
-chmod 640 "$FILE"
+# root:root 600: the web tier must never read stored hashes. Login checks go
+# through the check_password.sh sudo helper instead.
+chown root:root "$FILE"
+chmod 600 "$FILE"

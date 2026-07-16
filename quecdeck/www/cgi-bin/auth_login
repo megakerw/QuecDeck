@@ -42,9 +42,9 @@ if bf_locked "$FAILURE_DIR" "$client_ip"; then
     json_error "locked"; exit 0
 fi
 
-# Check credentials against admin htpasswd
+# Check credentials via the root sudo helper (htpasswd is not www-data readable)
 role=""
-if validate_htpasswd "/opt/etc/.htpasswd" "$username" "$password"; then
+if validate_password admin "$username" "$password"; then
     role="admin"
 fi
 
