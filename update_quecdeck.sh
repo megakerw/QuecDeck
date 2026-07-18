@@ -584,6 +584,9 @@ swap_in_release() {
     done
 
     systemctl daemon-reload
+    # lighttpd and the firewall are managed independently here: lighttpd.service
+    # is PartOf=firewall.service, so the firewall restart below cycles lighttpd
+    # with it automatically.
     if [ "$_need_lighttpd_restart" = "1" ]; then
         systemctl start lighttpd || { echo -e "\e[1;31mWARNING: lighttpd failed to start. Check 'systemctl status lighttpd' for details.\e[0m"; return 1; }
     fi
@@ -703,8 +706,11 @@ _revert_swap() {
     ln -sf /lib/systemd/system/connection-logger.service /lib/systemd/system/multi-user.target.wants/connection-logger.service
     systemctl daemon-reload
     # lighttpd may be missing if the swap failed mid-reinstall, so the start below may fail
+    # Restart the firewall, then lighttpd. The rolled-back lighttpd.service may
+    # predate PartOf=firewall.service, so start it explicitly rather than rely on
+    # restart propagation; ordering it after the firewall satisfies Requires=.
+    systemctl restart firewall 2>/dev/null || echo "WARNING: Firewall failed to restart."
     systemctl start lighttpd 2>/dev/null || echo "WARNING: Could not restart lighttpd. Opkg packages may need reinstalling via ADB or SSH."
-    systemctl restart firewall 2>/dev/null
     systemctl restart atcmd-daemon 2>/dev/null
     systemctl restart connection-logger 2>/dev/null
     if [ "$lean_mode_was_installed" = "1" ]; then

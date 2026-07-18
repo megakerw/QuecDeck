@@ -576,9 +576,12 @@ sshd_service() {
             remount_ro
             trap - EXIT
             systemctl daemon-reload
+            # Apply the port-22 rule before starting sshd (firewall.sh keys it off
+            # the sshd.service file) so 22 is LAN-restricted first. Restart the
+            # service, not firewall.sh directly, to stay fail-closed; this cycles
+            # lighttpd via PartOf=, sshd unaffected.
+            systemctl restart firewall || echo -e "\e[1;31mWARNING: firewall failed to restart; the web UI may be down. Check 'systemctl status firewall lighttpd'.\e[0m"
             systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start; check 'systemctl status sshd' for details.\e[0m"; }
-            # Reload firewall so port 22 LAN-only rule takes effect immediately
-            systemctl restart firewall 2>/dev/null || true
             echo ""
             echo -e "\e[1;32msshd installed.\e[0m"
             ;;
@@ -594,8 +597,10 @@ sshd_service() {
             remount_ro
             trap - EXIT
             systemctl daemon-reload
-            # Reload firewall so port 22 rule is removed immediately
-            systemctl restart firewall 2>/dev/null || true
+            # Drop the port-22 rule (sshd.service removed above, so firewall.sh
+            # rebuilds without it). Restart the service, not firewall.sh directly,
+            # to stay fail-closed; cycles lighttpd via PartOf=.
+            systemctl restart firewall || echo -e "\e[1;31mWARNING: firewall failed to restart; the web UI may be down. Check 'systemctl status firewall lighttpd'.\e[0m"
             echo ""
             echo -e "\e[1;32msshd uninstalled.\e[0m"
             ;;

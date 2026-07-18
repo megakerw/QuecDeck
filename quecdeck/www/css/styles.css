@@ -177,11 +177,14 @@
 }
 
 /* The pad cutouts are subpaths of the card path, so one stroke rims the
-   silhouette and every pad. Above 8 it starts closing the smallest pads. */
+   silhouette and every pad. Above 8 it starts closing the smallest pads.
+   The clip (defined in index.html) is the card silhouette: it cuts away the
+   outer half of the stroke so only the pad rims show. */
 .stat-card svg.sim-icon .sim-body {
   stroke: var(--status-color-grey);
   stroke-width: 8;
   paint-order: stroke;
+  clip-path: url(#sim-card-outline);
 }
 
 .stat-card svg.ram-icon path,
@@ -243,6 +246,7 @@
    Cards, inputs, and modals pick up the surface through Bootstrap's
    --bs-body-bg; must load after bootstrap.min.css to win. */
 [data-bs-theme="light"] {
+  color-scheme: light;
   --bs-body-bg: var(--sa-surface);
   --bs-body-bg-rgb: 247, 249, 253;
   --bs-body-color: #273143;
@@ -256,6 +260,7 @@
    overlay, two different shades. One token now covers both, mapped into
    --bs-body-bg the same way as the light theme. */
 [data-bs-theme="dark"] {
+  color-scheme: dark;
   --sa-bg: #0f1117;
   --sa-surface: #1b1d23;
   --bs-body-bg: var(--sa-surface);
@@ -268,8 +273,29 @@
 /* ============================================================
    BASE
    ============================================================ */
+/* Background on the root too, not just body, so the browser's canvas is already
+   dark before body lays out. With color-scheme set per theme above, this kills
+   the white flash the page showed on navigation. */
+html,
 body {
   background-color: var(--sa-bg);
+}
+
+/* Always reserve the vertical scrollbar's gutter so the centered layout doesn't
+   shift horizontally between pages that scroll (monitoring, logs) and pages that
+   don't. both-edges mirrors the reserved space on the left so content stays
+   truly centered rather than sitting a scrollbar-width off to one side. */
+html {
+  scrollbar-gutter: stable both-edges;
+}
+
+/* Default to a slightly reduced scale on mouse-driven (desktop/laptop) devices,
+   which reads more comfortably than 100%. pointer:fine keeps touch devices on
+   native scaling, so this is independent of screen size. */
+@media (pointer: fine) {
+  body {
+    zoom: 0.9;
+  }
 }
 
 /* ============================================================

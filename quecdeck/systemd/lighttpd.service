@@ -5,6 +5,13 @@ Description=Lighttpd Daemon
 # Depending on it here ensures lighttpd only starts once the network is fully stable,
 # preventing the first login request from failing due to routing not being ready.
 After=network.target opt.mount QCMAP_ConnectionManagerd.service firewall.service
+# Refuse to serve unless the firewall is up, so the UI is never reachable
+# without the LAN-only iptables rules in place.
+Requires=firewall.service
+# Propagate a firewall stop/restart to lighttpd, so a firewall restart cycles it
+# too (Requires= alone stops it but won't restart it back). Boot still relies on
+# Requires=/After=, since PartOf= does not propagate start.
+PartOf=firewall.service
 
 [Service]
 Type=simple

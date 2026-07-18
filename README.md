@@ -130,6 +130,8 @@ All modem communication goes through [atcli](https://github.com/megakerw/atcli_r
 ### Firewall
 A lightweight iptables-based firewall restricts access to ports 80, 443, and optionally 22 (SSH) to the LAN IP only, blocking WAN exposure. Custom chains (`QUECDECK`/`QUECDECK6`) survive QCMAP's automatic iptables rebuilds. IPv6 access to the admin UI is blocked by default.
 
+The web server is bound to the firewall's lifecycle: lighttpd will not start unless the firewall is up, and a firewall restart cycles the web server with it. The admin UI is therefore never served without the LAN-only rules in place, and it comes back automatically after the firewall is restarted.
+
 ### Security
 
 QuecDeck runs on a device that operates as root, so keeping the attack surface small matters.
