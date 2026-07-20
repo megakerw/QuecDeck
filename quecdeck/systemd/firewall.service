@@ -5,6 +5,13 @@ After=network.target opt.mount QCMAP_ConnectionManagerd.service
 [Service]
 Type=oneshot
 ExecStart=/bin/bash /usrdata/quecdeck/script/firewall.sh
+# Pulls lighttpd back up after self-heal, since PartOf= doesn't propagate a
+# restart. --no-block avoids deadlocking on lighttpd's After=this unit.
+# Also revives a manually-stopped lighttpd; stop the firewall instead to keep
+# the UI down deliberately. Coupling pattern for a service that must go DOWN
+# with the firewall; see sshd.service for the must-SURVIVE pattern. Keep in
+# sync with the comment there if either pattern changes.
+ExecStartPost=/bin/systemctl start lighttpd --no-block
 RemainAfterExit=yes
 Restart=on-failure
 RestartSec=10

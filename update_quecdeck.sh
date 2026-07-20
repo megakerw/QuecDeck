@@ -460,7 +460,26 @@ swap_in_release() {
         diff -q "$STAGE_DIR/systemd/lighttpd.service" "/lib/systemd/system/lighttpd.service" >/dev/null 2>&1             || _need_lighttpd_restart=1
     fi
 
-    if [ "$_need_lighttpd_restart" = "1" ]; then
+    # A firewall restart cycles lighttpd with it (lighttpd.service is
+    # PartOf=firewall.service), so it interrupts the UI just like a lighttpd
+    # restart. Computed pre-swap (staged vs live) so the message and the
+    # post-swap health probe treat it as a restart, not a stayed-up swap.
+    _need_firewall_restart=0
+    if [ "$_had_previous" = "0" ]; then
+        _need_firewall_restart=1
+    else
+        diff -q "$STAGE_DIR/script/firewall.sh" "$QUECDECK_DIR/script/firewall.sh" >/dev/null 2>&1                 || _need_firewall_restart=1
+        diff -q "$STAGE_DIR/systemd/firewall.service" "/lib/systemd/system/firewall.service" >/dev/null 2>&1       || _need_firewall_restart=1
+    fi
+
+    # Single flag for "the web UI gets cycled": drives the message here and the
+    # patient health probe after the swap. Keep both sites on this flag.
+    _ui_restart=0
+    if [ "$_need_lighttpd_restart" = "1" ] || [ "$_need_firewall_restart" = "1" ]; then
+        _ui_restart=1
+    fi
+
+    if [ "$_ui_restart" = "1" ]; then
         echo -e "\e[1;32mSwitching to new release (web UI will be briefly unavailable)...\e[0m"
     else
         echo -e "\e[1;32mSwitching to new release (web UI stays up)...\e[0m"
@@ -590,13 +609,8 @@ swap_in_release() {
     if [ "$_need_lighttpd_restart" = "1" ]; then
         systemctl start lighttpd || { echo -e "\e[1;31mWARNING: lighttpd failed to start. Check 'systemctl status lighttpd' for details.\e[0m"; return 1; }
     fi
-    _need_firewall_restart=0
-    if [ "$_had_previous" = "0" ]; then
-        _need_firewall_restart=1
-    else
-        diff -q "$QUECDECK_DIR/script/firewall.sh" "$OLD_DIR/script/firewall.sh" >/dev/null 2>&1             || _need_firewall_restart=1
-        diff -q "$QUECDECK_DIR/systemd/firewall.service" "$OLD_DIR/systemd/firewall.service" >/dev/null 2>&1             || _need_firewall_restart=1
-    fi
+    # _need_firewall_restart was computed pre-swap. If this restart fails,
+    # lighttpd stays down (Requires=) and the health probe below rolls back.
     [ "$_need_firewall_restart" = "1" ] && { systemctl restart firewall || echo "WARNING: Firewall failed to restart."; }
     systemctl restart atcmd-daemon
     # Verify the AT daemon actually serves: unit active plus one round trip
@@ -640,7 +654,9 @@ swap_in_release() {
         systemctl is-active lighttpd >/dev/null 2>&1 &&            /opt/bin/wget --timeout=10 --tries=1 -q -O /dev/null --no-check-certificate "https://$_health_ip/cgi-bin/auth_login"
     }
     _health_ok=0
-    if [ "$_need_lighttpd_restart" = "1" ]; then
+    # The patient branch covers everything that cycled lighttpd, including a
+    # firewall-only change (PartOf= propagation), via the pre-swap _ui_restart.
+    if [ "$_ui_restart" = "1" ]; then
         echo "Verifying the new site responds on $_health_ip..."
         for _i in 1 2 3 4 5 6 7 8 9 10; do
             sleep 2

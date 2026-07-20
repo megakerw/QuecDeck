@@ -6,12 +6,23 @@ After=network.target opt.mount firewall.service
 [Service]
 Type=simple
 PIDFile=/opt/var/run/sshd.pid
+# Refuse to bind port 22 unless the firewall is up (its LAN-only rules keep
+# 22 off the WAN). Gate, not Requires=: a firewall restart must not drop live
+# sessions; Restart= below retries until the firewall self-heals. Coupling
+# pattern for a service that must SURVIVE firewall restarts; see
+# firewall.service's ExecStartPost for the must-go-DOWN pattern. Keep in
+# sync with the comment there if either pattern changes.
+ExecStartPre=/bin/systemctl is-active firewall
 ExecStartPre=/bin/sh /opt/etc/ssh/update_sshd_ip.sh
 ExecStartPre=/opt/sbin/sshd -t
 ExecStart=/opt/sbin/sshd -D
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure
+# Pace the retry loop under the start-rate limiter (5 starts/10s): the
+# default 100ms RestartSec would trip it while the gate fails and park the
+# unit in start-limit-hit, never recovering when the firewall comes back.
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

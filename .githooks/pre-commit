@@ -125,10 +125,25 @@ CHECKSUMMED_FILES=(
   quecdeck/www/fonts/poppins-v23-latin-regular.woff2
 )
 
-# Check whether any checksummed file is staged
+# Hashes of these files are hardcoded in quecdeck.sh (verified further down);
+# defined here because staging any of them, or quecdeck.sh itself, must run
+# the checks too: a pinned-only commit that skipped the hook would let a stale
+# pin ship and fail integrity checks on-device.
+PINNED_FILES=(
+  installentware.sh
+  update_quecdeck.sh
+  optional/sshd/sshd.service
+  optional/sshd/update_sshd_ip.sh
+  quecdeck/quecdeckpasswd
+  quecdeck/quecdeckdevpasswd
+  quecdeck/script/lean_mode.sh
+  quecdeck/systemd/lean-mode.service
+)
+
+# Check whether any checksummed or pinned file (or quecdeck.sh) is staged
 staged=$(git diff --cached --name-only)
 needs_update=0
-for f in "${CHECKSUMMED_FILES[@]}"; do
+for f in "${CHECKSUMMED_FILES[@]}" "${PINNED_FILES[@]}" quecdeck.sh; do
   if echo "$staged" | grep -qx "$f"; then
     needs_update=1
     break
@@ -206,16 +221,7 @@ echo "Updated $CHECKSUMS_FILE"
 # Verify that hardcoded hashes in quecdeck.sh match staged file content.
 # These hashes are the trust anchor for bootstrap-critical scripts;
 # they must be updated in quecdeck.sh whenever the corresponding file changes.
-PINNED_FILES=(
-  installentware.sh
-  update_quecdeck.sh
-  optional/sshd/sshd.service
-  optional/sshd/update_sshd_ip.sh
-  quecdeck/quecdeckpasswd
-  quecdeck/quecdeckdevpasswd
-  quecdeck/script/lean_mode.sh
-  quecdeck/systemd/lean-mode.service
-)
+# PINNED_FILES is defined at the top of this hook (it also gates the checks).
 
 # Read quecdeck.sh from the index if staged, else from the working tree
 if git diff --cached --name-only | grep -qx "quecdeck.sh"; then

@@ -3,6 +3,7 @@ const html = document.querySelector('html');
 
 const setTheme = (theme) => {
   html.setAttribute('data-bs-theme', theme);
+  html.style.colorScheme = theme;   // keep in sync with theme-boot.js
   if (darkModeToggle) {
     darkModeToggle.innerHTML = theme === 'dark'
       ? '☀️ Light'

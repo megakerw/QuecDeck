@@ -559,7 +559,7 @@ sshd_service() {
             # Download and install service file and IP update script
             mkdir -p /tmp/quecdeck
             /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
-            echo "ae6b24c1f3b9f4d03987997c508e45cfa3af6cf94b63a2d0ad3148b32d0577a2  /tmp/quecdeck/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f /tmp/quecdeck/sshd.service; return; }
+            echo "12f5725cbaa915a0b98fa83180b60eb179a5235a98598183799dc570ee8b4d5c  /tmp/quecdeck/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f /tmp/quecdeck/sshd.service; return; }
             echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
             /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
             echo "dc10b79739f1d788cfcdfc805e4f84fe1f7da5df29aacc3e3f7f76f0cc1eef19  /tmp/quecdeck/update_sshd_ip.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_sshd_ip.sh.\e[0m"; rm -f /tmp/quecdeck/update_sshd_ip.sh; return; }
@@ -580,8 +580,14 @@ sshd_service() {
             # the sshd.service file) so 22 is LAN-restricted first. Restart the
             # service, not firewall.sh directly, to stay fail-closed; this cycles
             # lighttpd via PartOf=, sshd unaffected.
-            systemctl restart firewall || echo -e "\e[1;31mWARNING: firewall failed to restart; the web UI may be down. Check 'systemctl status firewall lighttpd'.\e[0m"
-            systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start; check 'systemctl status sshd' for details.\e[0m"; }
+            # sshd start is gated on the restart: without the port-22 rules,
+            # sshd would listen unrestricted (WAN included) while the UI is down.
+            if systemctl restart firewall; then
+                systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start; check 'systemctl status sshd' for details.\e[0m"; }
+            else
+                echo -e "\e[1;31mWARNING: firewall failed to restart; sshd NOT started so port 22 never listens unprotected.\e[0m"
+                echo -e "\e[1;31mCheck 'systemctl status firewall lighttpd', then 'systemctl start sshd' once the firewall is active.\e[0m"
+            fi
             echo ""
             echo -e "\e[1;32msshd installed.\e[0m"
             ;;
