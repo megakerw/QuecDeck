@@ -13,7 +13,20 @@ if ! echo "$t" | grep -qE '^[0-9]+$' || [ "$t" -lt 1000 ] || [ "$t" -gt 60000 ];
 fi
 
 if [ -n "$x" ] && [ ${#x} -le 512 ]; then
-    runcmd=$(atcmd_run "$x" "$t" | awk '{ gsub(/\x1B\[[0-9;]*[mG]/, "") }1')
+    # The command is whatever the user typed, including ones this modem never
+    # terminates (AT+CLAC), so a partial reply is shown rather than dropped.
+    # Status captured before the awk pipe, which would mask it.
+    runcmd=$(atcmd_run "$x" "$t")
+    rc=$?
+    runcmd=$(printf '%s' "$runcmd" | awk '{ gsub(/\x1B\[[0-9;]*[mG]/, "") }1')
+    # Both failures are labelled: a truncated reply reads as a complete short
+    # one, and an empty one as a command that answered nothing.
+    if [ "$rc" -ne 0 ] && [ -n "$runcmd" ]; then
+        runcmd="$runcmd
+[reply not terminated; shown as received]"
+    elif [ "$rc" -ne 0 ]; then
+        runcmd="[no reply: the command timed out, or the AT daemon is down]"
+    fi
 fi
 
 cgi_output_text

@@ -36,32 +36,38 @@ if command -v node >/dev/null 2>&1; then
         case "$f" in *.min.js) continue ;; esac
         node --check "$f" || err "syntax: $f fails node --check"
     done
+    # The SMS PDU decoder is the one piece of JS whose behaviour is worth
+    # asserting rather than just parsing: bit-level field decoding that fails
+    # as quietly wrong text rather than as an error.
+    node tools/test-sms-pdu.js >/dev/null || err "tools/test-sms-pdu.js failed (run it directly for detail)"
 else
-    echo "SKIP: node unavailable, JS syntax not checked"
+    echo "SKIP: node unavailable, JS syntax and the SMS PDU test not run"
 fi
 
 # --------------------------------------------------------- atcli guard -----
-# Runtime code (CGIs/scripts/console) must send AT commands through at-lib.sh
-# (atcmd_run/atcmd_fire), never invoke the atcli binary directly. Same scope +
-# pattern as the pre-commit hook's atcli guard; keep them in sync.
-ATCLI_INVOKE_RE='(/atcli|\$[{]?_ATCLI[}]?)([^A-Za-z0-9._/-]|$)'
+# Pattern and scope come from the shared file; this pass reads the working tree
+# (the pre-commit hook runs the same rules against the index).
+if [ ! -f tools/atcli-guard.sh ]; then
+    err "tools/atcli-guard.sh missing: the atcli guards cannot run"
+else
+. tools/atcli-guard.sh
+
 while IFS= read -r f; do
-    [ "$f" = "quecdeck/script/at-lib.sh" ] && continue
+    [ "$f" = "$ATCLI_GUARD_EXEMPT" ] && continue
     err "atcli guard: $f invokes atcli directly (use atcmd_run/atcmd_fire from at-lib.sh)"
-done < <(grep -rlE "$ATCLI_INVOKE_RE" quecdeck/www/cgi-bin quecdeck/script quecdeck/console 2>/dev/null)
+done < <(grep -rlE "$ATCLI_INVOKE_RE" $ATCLI_GUARD_DIRS 2>/dev/null)
 
 # ------------------------------------------ atcli socket path consistency ---
-# The QuecDeck socket path is hardcoded in at-lib.sh (clients), the daemon unit
-# (-s bind + ExecStopPost cleanup), and the updater health probe. They MUST
-# agree: if the daemon binds one path while clients pass another, AT goes fully
-# dark. The atcli binary's own DEFAULT_SOCKET is intentionally generic and is
-# NOT part of this set. Keep in sync with the pre-commit hook.
-_socks=$(grep -ohE '/[^ "}]*atcli\.sock' \
-    quecdeck/script/at-lib.sh \
-    quecdeck/systemd/atcmd-daemon.service \
-    update_quecdeck.sh 2>/dev/null | sort -u)
+_socks=$(grep -ohE '/[^ "}]*atcli\.sock' $ATCLI_SOCK_FILES 2>/dev/null | sort -u)
 if [ "$(printf '%s\n' "$_socks" | grep -c .)" -ne 1 ]; then
-    err "atcli socket path drift (at-lib.sh / atcmd-daemon.service / updater must agree): $(printf '%s ' $_socks)"
+    err "atcli socket path drift ($ATCLI_SOCK_FILES must agree): $(printf '%s ' $_socks)"
+fi
+for _f in $ATCLI_SOCK_REQUIRED; do
+    grep -qE '/[^ "}]*atcli\.sock' "$_f" 2>/dev/null \
+        || err "atcli socket path missing from $_f (a dropped -s or default passes the uniqueness check)"
+done
+grep -qE -- "$ATCLI_SOCK_BIND_RE" "$ATCLI_SOCK_BIND_FILE" 2>/dev/null \
+    || err "$ATCLI_SOCK_BIND_FILE has no '-s <path>' bind; the daemon would fall back to the atcli default"
 fi
 
 # ------------------------------------------------------- dev-gate guard ----

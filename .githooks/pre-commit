@@ -47,8 +47,6 @@ CHECKSUMMED_FILES=(
   quecdeck/www/sms.html
   quecdeck/www/developer.html
   quecdeck/www/js/utils.js
-  quecdeck/www/js/dark-mode.js
-  quecdeck/www/js/theme-boot.js
   quecdeck/www/js/parse-settings.js
   quecdeck/www/js/populate-bands.js
   quecdeck/www/js/login.js
@@ -258,21 +256,25 @@ if [ "$hash_errors" = "1" ]; then
   exit 1
 fi
 
-# Enforce the AT access layer: runtime code (CGIs, scripts, console) must send
-# AT commands through at-lib.sh (atcmd_run/atcmd_fire), never invoke the atcli
-# binary directly. Scoped to those dirs so the daemon-launch unit, docs, and
-# dev tools aren't swept in; at-lib.sh is the gateway itself. The pattern
-# catches the path (any /atcli), the symlink, and the $_ATCLI variable, but
-# not the $_ATCLI_SOCK socket or the atcli.sock path. Keep scope + pattern in
-# sync with the atcli guard in tools/ci-checks.sh.
-ATCLI_INVOKE_RE='(/atcli|\$[{]?_ATCLI[}]?)([^A-Za-z0-9._/-]|$)'
+# Enforce the AT access layer: runtime code must send AT commands through
+# at-lib.sh (atcmd_run/atcmd_fire), never the atcli binary. Pattern and scope
+# come from the shared file; this pass reads the index, so a staged violation
+# is caught even when the working tree is clean.
+if [ ! -f tools/atcli-guard.sh ]; then
+  echo "ERROR: tools/atcli-guard.sh missing; the atcli guards cannot run."
+  echo "Commit blocked: restore the file."
+  exit 1
+fi
+. tools/atcli-guard.sh
+
 atcli_errors=0
 while IFS= read -r f; do
-  case "$f" in
-    quecdeck/script/at-lib.sh) continue ;;
-    quecdeck/www/cgi-bin/*|quecdeck/script/*|quecdeck/console/*) ;;
-    *) continue ;;
-  esac
+  [ "$f" = "$ATCLI_GUARD_EXEMPT" ] && continue
+  in_scope=0
+  for d in $ATCLI_GUARD_DIRS; do
+    case "$f" in "$d"/*) in_scope=1 ;; esac
+  done
+  [ "$in_scope" = "1" ] || continue
   if git show ":$f" 2>/dev/null | grep -qE "$ATCLI_INVOKE_RE"; then
     echo ""
     echo "ERROR: $f invokes atcli directly."
@@ -288,22 +290,45 @@ if [ "$atcli_errors" = "1" ]; then
   exit 1
 fi
 
-# The atcli socket path is hardcoded in at-lib.sh (clients), the daemon unit
-# (-s bind + ExecStopPost cleanup), and the updater health probe, and they MUST
-# agree, or the daemon binds one path while clients hit another (total AT
-# outage). The binary's generic DEFAULT_SOCKET is not part of this set. Keep in
-# sync with tools/ci-checks.sh.
-sock_paths=$( { git show :quecdeck/script/at-lib.sh
-                git show :quecdeck/systemd/atcmd-daemon.service
-                git show :update_quecdeck.sh; } 2>/dev/null \
+# The socket path must agree everywhere it is named, or the daemon binds one
+# path while clients hit another (total AT outage). File list and rationale in
+# tools/atcli-guard.sh, sourced above.
+sock_paths=$( for f in $ATCLI_SOCK_FILES; do git show ":$f"; done 2>/dev/null \
               | grep -ohE '/[^ "}]*atcli\.sock' | sort -u )
 if [ "$(printf '%s\n' "$sock_paths" | grep -c .)" -ne 1 ]; then
   echo ""
-  echo "ERROR: atcli socket path drift. at-lib.sh, atcmd-daemon.service, and"
-  echo "  update_quecdeck.sh must all use the same socket path:"
+  echo "ERROR: atcli socket path drift. These must all use the same path:"
+  printf '    %s\n' $ATCLI_SOCK_FILES
+  echo "  found:"
   printf '    %s\n' $sock_paths
   echo ""
   echo "Commit blocked: keep the atcli socket path consistent."
+  exit 1
+fi
+
+# Uniqueness alone cannot catch a path that vanishes: drop -s from the unit and
+# the survivors still agree. Assert the files that must name it still do.
+for f in $ATCLI_SOCK_REQUIRED; do
+  if ! git show ":$f" 2>/dev/null | grep -qE '/[^ "}]*atcli\.sock'; then
+    echo ""
+    echo "ERROR: $f no longer names the atcli socket path."
+    echo "  A dropped -s (or a fallback to the binary default) passes the"
+    echo "  uniqueness check above while taking AT fully dark."
+    echo ""
+    echo "Commit blocked: restore the explicit socket path."
+    exit 1
+  fi
+done
+
+# ExecStopPost names the socket too, so the check above stays true even without
+# -s. Assert the bind flag itself.
+if ! git show ":$ATCLI_SOCK_BIND_FILE" 2>/dev/null | grep -qE -- "$ATCLI_SOCK_BIND_RE"; then
+  echo ""
+  echo "ERROR: $ATCLI_SOCK_BIND_FILE has no '-s <path>' bind."
+  echo "  The daemon would fall back to the atcli binary's generic default"
+  echo "  while every client keeps using the QuecDeck path."
+  echo ""
+  echo "Commit blocked: restore the -s bind on ExecStart."
   exit 1
 fi
 

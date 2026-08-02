@@ -614,12 +614,14 @@ swap_in_release() {
     [ "$_need_firewall_restart" = "1" ] && { systemctl restart firewall || echo "WARNING: Firewall failed to restart."; }
     systemctl restart atcmd-daemon
     # Verify the AT daemon actually serves: unit active plus one round trip
-    # (binary -> socket -> daemon -> modem). -s must match the unit's bind
-    # path; the atcli default is generic, not this socket. Warns, never rolls
-    # back: the web UI stays up either way (AT panels go empty until the
-    # daemon recovers; systemd restarts it every 5 s).
+    # (binary -> socket -> daemon -> modem). Goes through the new release's
+    # at-lib.sh, so the probe uses the same socket path and binary as the CGIs.
+    # Subshell: the sourced helpers stay out of the updater's namespace, and a
+    # missing or broken at-lib.sh fails the probe, not the install.
+    # Warns, never rolls back: the web UI stays up either way (AT panels go
+    # empty until the daemon recovers; systemd restarts it every 5 s).
     sleep 2
-    if systemctl is-active atcmd-daemon >/dev/null 2>&1 &&        "$QUECDECK_DIR/atcli" -s /tmp/quecdeck/atcli.sock -t 3000 'AT' >/dev/null 2>&1; then
+    if systemctl is-active atcmd-daemon >/dev/null 2>&1 &&        ( . "$QUECDECK_DIR/script/at-lib.sh" && atcmd_run 'AT' 3000 ) >/dev/null 2>&1; then
         echo "AT daemon serving."
     else
         echo -e "\e[1;33mWARNING: AT daemon not serving; AT data will be unavailable until it recovers.\e[0m"

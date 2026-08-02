@@ -68,7 +68,7 @@ Real-time overview of the modem's current status: signal strength, temperature, 
 - NR5G mode control (NSA/SA)
 
 ### Cell Scan
-Scan for nearby cells and display network, provider, band, frequency, PCI, and RSRP in real time. While a scan is in progress, a banner is shown across the UI and all modem data is served from cache to avoid interfering with the scan. Watchcat is temporarily disabled during the scan to prevent false reboots, and completed scans are logged in the Logs page.
+Scan for nearby cells and display network, provider, band, frequency, PCI, and RSRP. The modem reports nothing until the sweep finishes, so results appear all at once at the end rather than filling in as cells are found. While a scan is in progress, a banner is shown across the UI and all modem data is served from cache to avoid interfering with the scan. Watchcat is temporarily disabled during the scan to prevent false reboots, and completed scans are logged in the Logs page.
 
 ### Settings
 - LAN IP and DHCP range configuration
@@ -125,6 +125,7 @@ All modem communication goes through [atcli](https://github.com/megakerw/atcli_r
 - **Serialization and privilege.** Serialization happens inside atcli itself. Its daemon side (`atcli --daemon`, unit `atcmd-daemon`) opens the modem port as root, drops to www-data, and serves one command per unix-socket connection, verifying each peer's uid via `SO_PEERCRED`. atcli is not setuid: the daemon is the only privileged path to the modem.
 - **No silent fallback.** There is no automatic fallback to the port, so a plain invocation never bypasses the serializer. If the daemon is down, every caller (root and www-data alike) gets empty output until systemd restarts it within seconds, and the UI tolerates the gap. A root operator can still reach the modem directly for recovery by passing `--direct` explicitly.
 - **Sender lifecycle.** Commands whose sender has hung up are skipped instead of being sent to the modem; fire-and-forget senders (modem reboots) pass `--detach`.
+- **Reply completeness.** A reply cut short by a timeout is byte-for-byte a shorter complete one, so the exit status, not the output, is what says whether the modem finished. atcli exits 0 only when the modem terminated the reply itself; both `OK` and `ERROR` count as terminated. It exits non-zero when the modem did not, leaving whatever arrived on stdout, and non-zero with empty stdout when nothing arrived at all (timeout, or the daemon down). Callers that must not parse a truncated record check the status and drop stdout: `get_sms` refuses a short `+CMGL` listing rather than serving it as a complete inbox, `run_cell_scan` appends a `PARTIAL` marker, the developer console labels an unterminated reply, and the updater's health probe warns. A pipe masks the status, so a caller that needs it assigns first, then pipes.
 - **Caching.** Responses are cached per endpoint to reduce modem load, with TTLs tuned to how often the data actually changes: 3 seconds for signal stats and connection info, 5 seconds for network and settings data, and 1 hour for static device info like firmware version and build time. Where possible, multiple AT commands are batched into a single request to cut down on round trips.
 
 ### Firewall

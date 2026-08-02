@@ -77,17 +77,21 @@ else
     trap '_scan_exit' EXIT
 fi
 
-# Run the cell scan in the background. AT+QSCAN streams +QSCAN: URCs as cells
-# are found, then sends OK when complete. atcmd_handler.sh breaks on OK immediately.
-# Outer timeout = 215 s (180 s max scan + 35 s handler overhead).
-# The optional third AT+QSCAN parameter (firmware scan duration) is omitted;
-# on this firmware it causes some scan modes to return immediate OK with no results.
+# Run the cell scan in the background. Outer timeout = 215 s (180 s max scan +
+# 35 s handler overhead). The optional third AT+QSCAN parameter (firmware scan
+# duration) is omitted; on this firmware it causes some scan modes to return
+# immediate OK with no results.
 #
 # The scan runs in the background so we can emit keepalive newlines every second.
-# A scan can run up to 215s with long quiet stretches between +QSCAN: URCs;
-# without the newlines, a gap longer than lighttpd's max-keep-alive-idle (45s)
-# would drop the connection mid-scan. JS filters empty lines (lines[i] !== "")
-# so keepalive newlines are invisible to the parser.
+# A scan can run up to 215s with nothing to send in the meantime; without the
+# newlines, a gap longer than lighttpd's max-keep-alive-idle (45s) would drop
+# the connection mid-scan. JS filters empty lines (lines[i] !== "") so keepalive
+# newlines are invisible to the parser.
+#
+# Device-measured 2026-07-31: the modem emits no +QSCAN: lines as it finds
+# cells. Nothing arrives until the sweep is done, then the whole block lands
+# just before OK (warm full scan: 39 cells at once, ~7 s). A scan cut short is
+# therefore empty, so the marker below is the only signal the user gets.
 atcmd_run "AT+QSCAN=${scan_mode},1" 215000 > "$scan_tmp" &
 scan_pid=$!
 
@@ -96,4 +100,15 @@ while kill -0 "$scan_pid" 2>/dev/null; do
     sleep 1
 done
 
+# Reaped by the loop or not, bash keeps a known child's status for wait.
+wait "$scan_pid"
+scan_rc=$?
+
 cat "$scan_tmp"
+
+# The rows above are real, so this is a marker rather than an ERROR. It must
+# contain neither "LTE" nor "NR5G", or the row filter in scanner.js takes it
+# for a cell.
+if [ "$scan_rc" -ne 0 ]; then
+    echo "PARTIAL: scan ended before the modem finished"
+fi

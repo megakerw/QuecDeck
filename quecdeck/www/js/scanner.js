@@ -13,6 +13,7 @@ function cellScanner() {
     cellScanMode: "Unspecified",
     neighbourCellsScanMode: "Unspecified",
     isLoading: false,
+    scanPartial: false,
     resultDoneCell: false,
     resultDoneNeighbourCell: false,
 
@@ -27,6 +28,7 @@ function cellScanner() {
       this.nr5g_cells_parsed = [];
       this.lte_cells_parsed = [];
       this.tableRows = [];
+      this.scanPartial = false;
       this.resultDoneCell = false;
 
       // Map UI mode to AT+QSCAN mode argument: 1=LTE, 2=NR5G, 3=both
@@ -47,10 +49,14 @@ function cellScanner() {
           return res.text();
         })
         .then((data) => {
+          // run_cell_scan appends this when the modem never sent OK. The rows
+          // that did arrive are complete records, so they are still shown.
+          this.scanPartial = /^PARTIAL/m.test(data);
           const lines = data.split("\n");
 
-          // AT+QSCAN streams +QSCAN: URCs as cells are found, then sends OK
-          // when the scan is complete. Filter by content, not position.
+          // The modem sends the whole +QSCAN: block at the end, then OK, so a
+          // scan cut short is normally empty. Filter by content, not position:
+          // the response also carries the echoed command and keepalive blanks.
           for (let i = 0; i < lines.length; i++) {
             if (
               lines[i] !== "OK" &&
@@ -66,12 +72,8 @@ function cellScanner() {
           }
         })
         .then(() => {
-          this.parseNr5gCells();
-        })
-        .then(() => {
-          this.parseLTECells();
-        })
-        .then(() => {
+          this.nr5g_cells_parsed = this.parseCells(this.nr5g_cells);
+          this.lte_cells_parsed = this.parseCells(this.lte_cells);
           this.generateTableRow();
           this.$store.waitModal.stop();
           this.isLoading = false;
@@ -87,33 +89,26 @@ function cellScanner() {
           this.$store.errorModal.open('Cell scan failed. Please try again.');
         });
     },
-    parseNr5gCells() {
-      // Parse the NR5G cells
-      for (let i = 0; i < this.nr5g_cells.length; i++) {
-        const f = this.nr5g_cells[i].split(":")[1].split(",");
-        const [mcc, mnc, freq, pci, rsrp, band] = [f[1], f[2], f[3], f[4], f[5], f[12]];
+
+    // LTE and NR5G share the +QSCAN: field layout in every position read here.
+    // Rows come back as: provider, band, freq, pci, rsrp.
+    parseCells(lines) {
+      const rows = [];
+      for (const line of lines) {
+        // Device-measured: LTE lines carry exactly 13 fields, NR5G 16. Require
+        // only the fields this row needs (f[1]..f[5]), not f[12]: band is
+        // cosmetic, and demanding it would put the test on LTE's exact
+        // boundary, dropping a whole cell over one missing trailing field.
+        // Guard the [1] too: no colon yields undefined, and .split on that
+        // throws and loses every row.
+        const fields = line.split(":")[1];
+        const f = fields ? fields.split(",") : [];
+        if (f.length < 6) continue;
+        const [mcc, mnc, freq, pci, rsrp, band] = [f[1], f[2], f[3], f[4], f[5], f[12] || ""];
         const provider = this.convertMCCMNCtoNetworkName(mcc, mnc);
-
-        /// Append the value to lte_cells_parsed with this layout:
-        // mcc mnc, band, freq, pci, rsrp
-        this.nr5g_cells_parsed.push(
-          `${provider}, ${band}, ${freq}, ${pci}, ${rsrp}`
-        );
+        rows.push(`${provider}, ${band}, ${freq}, ${pci}, ${rsrp}`);
       }
-    },
-
-    parseLTECells() {
-      for (let i = 0; i < this.lte_cells.length; i++) {
-        const f = this.lte_cells[i].split(":")[1].split(",");
-        const [mcc, mnc, freq, pci, rsrp, band] = [f[1], f[2], f[3], f[4], f[5], f[12]];
-        const provider = this.convertMCCMNCtoNetworkName(mcc, mnc);
-
-        // Append the value to lte_cells_parsed with this layout:
-        // mcc mnc, band, freq, pci, rsrp
-        this.lte_cells_parsed.push(
-          `${provider}, ${band}, ${freq}, ${pci}, ${rsrp}`
-        );
-      }
+      return rows;
     },
 
     // Build and append a data row using DOM methods so modem data is
@@ -290,6 +285,7 @@ function cellScanner() {
       this.lte_cells_parsed = [];
       this.nr5g_cells_parsed = [];
       this.tableRows = [];
+      this.scanPartial = false;
       this.resultDoneCell = false;
 
       const tableBody = document.getElementById("cellScanTableBody");

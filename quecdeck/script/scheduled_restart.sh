@@ -59,9 +59,7 @@ while :; do
 
     if [ "$time_match" = "1" ] && [ "$day_match" = "1" ]; then
         echo "$(date): Scheduled restart triggered."
-        # Fire-and-forget: the daemon executes the reboot even after this
-        # script is gone; a plain atcmd_run whose sender exits early is
-        # skipped. Timeout only bounds the daemon's response drain.
+        # The reboot must survive this script exiting; see at-lib.sh.
         atcmd_fire 'AT+CFUN=1,1' 10000
         exit 0
     fi

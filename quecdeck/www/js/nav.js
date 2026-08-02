@@ -1,7 +1,5 @@
 (function () {
   const _script = document.currentScript;
-  const storedTheme = localStorage.getItem('theme') || 'dark';
-  const themeLabel = storedTheme === 'dark' ? '☀️ Light' : '🌙 Dark';
   const links = [
     { href: '/',                label: 'Home' },
     { href: '/network.html',    label: 'Cellular Network' },
@@ -40,7 +38,6 @@
     + '        ' + items + '\n'
     + '              </ul>\n'
     + '              <span class="navbar-text d-flex align-items-center gap-2">\n'
-    + '                <button class="btn btn-link text-reset" id="darkModeToggle">' + themeLabel + '</button>\n'
     + '                <button type="button" class="btn btn-link text-reset p-0 ms-2" id="logoutBtn" title="Log out">'
     + '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">'
     + '<path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z"/>'

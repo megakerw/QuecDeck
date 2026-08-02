@@ -22,6 +22,10 @@ quecdeck/quecdeckdevpasswd text eol=lf
 quecdeck/console/.profile text eol=lf
 quecdeck/console/ttyd.bash text eol=lf
 quecdeck/console/menu/start_menu.sh text eol=lf
+# No pattern above matches this file, so autocrlf rewrites it CRLF on a
+# Windows checkout: ci-checks.sh compares it against a freshly generated LF
+# listing, so every line differs at once, and sha256sum -c rejects CRLF lines.
+quecdeck/checksums.sha256 text eol=lf
 
 # Binary files — never touch line endings
 *.woff2     binary

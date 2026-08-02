@@ -3,20 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=cc61043a" />
-    <link rel="stylesheet" href="css/styles.css?v=cc61043a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=717e86b6" />
+    <link rel="stylesheet" href="css/styles.css?v=717e86b6" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/theme-boot.js?v=cc61043a"></script>
-    <script src="js/bootstrap.bundle.min.js?v=cc61043a"></script>
-    <script src="js/utils.js?v=cc61043a"></script>
-    <script src="js/alpinejs.min.js?v=cc61043a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=717e86b6"></script>
+    <script src="js/utils.js?v=717e86b6"></script>
+    <script src="js/alpinejs.min.js?v=717e86b6" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="logsPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=cc61043a"></script>
+        <script src="js/nav.js?v=717e86b6"></script>
 
         <div class="alert alert-warning small mt-4 mb-0" x-show="clockUnsynced" x-cloak>
           Device clock appears unsynced. Timestamps below may be inaccurate until it syncs (e.g. once connected to a cell tower).
@@ -143,7 +143,7 @@
                   </tbody>
                 </table>
               </div>
-              <div x-show="atcmdEvents.length > 0" class="small mt-auto pt-2">Last 100 lines. One "serving" line per daemon start is normal; timeouts and drops appear here. Cleared on reboot.</div>
+              <div x-show="atcmdEvents.length > 0" class="small mt-auto pt-2">Last 100 lines. A few lines per daemon start are normal, including "serving"; timeouts and drops appear here. Cleared on reboot.</div>
             </div>
           </div>
 
@@ -152,7 +152,6 @@
       </div>
     </main>
 
-    <script src="js/logs.js?v=cc61043a"></script>
-    <script src="js/dark-mode.js?v=cc61043a"></script>
+    <script src="js/logs.js?v=717e86b6"></script>
   </body>
 </html>

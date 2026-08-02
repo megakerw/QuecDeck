@@ -3,27 +3,30 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=cc61043a" />
-    <link rel="stylesheet" href="css/styles.css?v=cc61043a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=717e86b6" />
+    <link rel="stylesheet" href="css/styles.css?v=717e86b6" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/theme-boot.js?v=cc61043a"></script>
-    <script src="js/bootstrap.bundle.min.js?v=cc61043a"></script>
-    <script src="js/utils.js?v=cc61043a"></script>
-    <script src="js/alpinejs.min.js?v=cc61043a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=717e86b6"></script>
+    <script src="js/utils.js?v=717e86b6"></script>
+    <script src="js/alpinejs.min.js?v=717e86b6" defer></script>
 
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="cellScanner()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=cc61043a"></script>
+        <script src="js/nav.js?v=717e86b6"></script>
 
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
           <div class="col-12">
             <div class="panel-section">
               <div class="panel-title">Cell Scanner</div>
+              <div class="alert alert-warning small" x-show="scanPartial" x-cloak>
+                The modem did not finish the scan in time, so any results below are incomplete and are usually empty. Try again.
+              </div>
               <div class="table-responsive">
                 <table class="table">
                     <thead>
@@ -125,8 +128,7 @@
         </div>
       </div>
     </main>
-    <script src="js/dark-mode.js?v=cc61043a"></script>
-    <script src="js/network-names.js?v=cc61043a"></script>
-    <script src="js/scanner.js?v=cc61043a"></script>
+    <script src="js/network-names.js?v=717e86b6"></script>
+    <script src="js/scanner.js?v=717e86b6"></script>
   </body>
 </html>

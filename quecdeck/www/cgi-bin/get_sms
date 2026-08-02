@@ -3,6 +3,25 @@
 . /usrdata/quecdeck/script/cgi-lib.sh
 cgi_require_post
 
+# PDU mode: CMGF=0, and CMGL=4 for "all" - the text-mode spelling CMGL="ALL"
+# answers ERROR here. Only the PDU carries the User Data Header, which says
+# which parts belong to one concatenated message and in what order; text mode
+# hands over the decoded body alone. sms.js does the decoding, so no CSCS.
+# 15s: a full inbox runs large (132 parts observed), and the rc check below
+# refuses an overrun outright rather than serving it short.
+listing=$(atcmd_run 'AT+CSMS=1;+CSDH=0;+CNMI=2,1,0,0,0;+CMGF=0;+CSCA?;+CSMP=17,167,0,8;+CPMS="ME","ME","ME";+CMGL=4' 15000)
+rc=$?
+
 cgi_output_text
 
-atcmd_run 'AT+CSMS=1;+CSDH=0;+CNMI=2,1,0,0,0;+CMGF=1;+CSCA?;+CSMP=17,167,0,8;+CPMS="ME","ME","ME";+CSCS="UCS2";+CMGL="ALL"' 5000
+# A listing that stopped before OK is a well-formed shorter inbox: nothing in
+# the bytes says messages are missing, so it must not be served as complete.
+# Same for a silent timeout, where an empty body reads as an empty inbox.
+# The failure goes in the body, not an HTTP status: authFetch only rejects on
+# the login redirect, so a non-2xx would reach the parser anyway.
+if [ "$rc" -ne 0 ]; then
+    echo "ERROR: could not read the message listing from the modem"
+    exit 0
+fi
+
+printf '%s\n' "$listing"

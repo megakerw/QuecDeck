@@ -36,15 +36,19 @@ function networkSettings() {
     allBandsChecked: false,
     hotswapEnabled: false,
 
+    bandCheckboxes() {
+      return document.querySelectorAll('#bandForm input[type="checkbox"]');
+    },
+
     toggleAllBands() {
-      const checkboxes = document.querySelectorAll('#bandForm input[type="checkbox"]');
+      const checkboxes = this.bandCheckboxes();
       const allChecked = Array.from(checkboxes).every((cb) => cb.checked);
       checkboxes.forEach((cb) => { cb.checked = !allChecked; });
       this.allBandsChecked = !allChecked;
     },
 
     syncBandToggleState() {
-      const checkboxes = document.querySelectorAll('#bandForm input[type="checkbox"]');
+      const checkboxes = this.bandCheckboxes();
       this.allBandsChecked = checkboxes.length > 0 && Array.from(checkboxes).every((cb) => cb.checked);
     },
 
@@ -257,7 +261,7 @@ function networkSettings() {
     lockSelectedBands() {
       const selectedMode = document.getElementById("networkModeBand").value;
       const checkedBands = [];
-      document.querySelectorAll('#bandForm input[type="checkbox"]').forEach(cb => {
+      this.bandCheckboxes().forEach(cb => {
         if (cb.checked) checkedBands.push(cb.value);
       });
 
