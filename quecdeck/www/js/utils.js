@@ -143,9 +143,11 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
   `);
 
+  // The three <i> are the spinner's dots, sized and animated by .loader in
+  // styles.css. Removing them leaves the spinner rendering nothing, silently.
   injectOverlay('$store.waitModal.show', `
     <div class="loading-modal">
-      <div class="loader"></div>
+      <div class="loader"><i></i><i></i><i></i></div>
       <div class="loading-text d-flex flex-column">
         <h3 x-text="$store.waitModal.title"></h3>
         <p x-show="$store.waitModal.subtitle" x-text="$store.waitModal.subtitle" class="text-muted small mt-1 mb-0"></p>

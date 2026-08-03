@@ -36,7 +36,7 @@ function fetchDeviceInfo() {
     dnsIPv6Secondary: "-",
     phoneNumber: "Unknown",
     upnpEnabled: false,
-    services: null,
+    system: null,
     quecdeckVersion: '',
 
     // Fetches the device-info snapshot and parses each section under its own
@@ -124,23 +124,23 @@ function fetchDeviceInfo() {
       }
     },
 
-    fetchServiceStatus() {
-      fetchJSON("/cgi-bin/get_service_status")
-        .then((data) => { this.services = data; this.quecdeckVersion = data.quecdeck_version || ''; })
-        .catch(() => {});
-    },
-
-    fetchUpnpStatus() {
-      fetchJSON('/cgi-bin/get_upnp_status')
-        .then((data) => { this.upnpEnabled = data.upnp === true; })
+    // One request for every non-AT field on this page: service states, UPnP and
+    // the LAN IP. Kept separate from the AT snapshot so a slow modem delays
+    // only the cellular panels.
+    fetchSystemStatus() {
+      fetchJSON("/cgi-bin/get_system_status")
+        .then((data) => {
+          this.system = data;
+          this.quecdeckVersion = data.quecdeck_version || '';
+          this.upnpEnabled = data.upnp === true;
+          this.lanIp = data.lan_ip || '-';
+        })
         .catch(() => {});
     },
 
     init() {
       this.fetchATCommand();
-      fetchJSON('/cgi-bin/get_set_lanip').then(data => { this.lanIp = data.lan_ip; }).catch(() => {});
-      this.fetchUpnpStatus();
-      this.fetchServiceStatus();
+      this.fetchSystemStatus();
     },
   };
 }

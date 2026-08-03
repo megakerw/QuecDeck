@@ -5,8 +5,6 @@ cgi_check_cors
 
 cgi_output_json
 
-CONFIG_FILE="/etc/data/mobileap_cfg.xml"
-
 if [ "$REQUEST_METHOD" = "POST" ]; then
     cgi_read_post
     new_lan_ip=$(get_post_param lan_ip)
@@ -70,12 +68,22 @@ if [ "$REQUEST_METHOD" = "POST" ]; then
 
     echo "{\"ok\": true, \"lan_ip\": \"$new_lan_ip\"}"
 else
-    cur_lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' "$CONFIG_FILE" | sed 's/<APIPAddr>//;s/<\/APIPAddr>//' | tr -cd '0-9.')
-    cur_start=$(grep -o '<StartIP>[^<]*</StartIP>' "$CONFIG_FILE" | sed 's/<StartIP>//;s/<\/StartIP>//' | tr -cd '0-9.')
-    cur_end=$(grep -o '<EndIP>[^<]*</EndIP>' "$CONFIG_FILE" | sed 's/<EndIP>//;s/<\/EndIP>//' | tr -cd '0-9.')
-    [ -z "$cur_lan_ip" ] && cur_lan_ip="192.168.225.1"
-    [ -z "$cur_start" ] && cur_start="${cur_lan_ip%.*}.20"
-    [ -z "$cur_end" ] && cur_end="${cur_lan_ip%.*}.170"
+    # An unreadable LAN IP reports null rather than a placeholder. This response
+    # seeds the settings form, and the form POSTs back to the branch above,
+    # which writes to the modem: a guessed address here could be saved as real.
+    mobileap_read APIPAddr StartIP EndIP
+    mobileap_lan_ip
+    if [ -z "$mf_lan_ip" ]; then
+        echo '{"lan_ip": null, "dhcp_start": null, "dhcp_end": null}'
+        exit 0
+    fi
+    cur_lan_ip="$mf_lan_ip"
+
+    # Only derive a range once the LAN IP itself is known good.
+    cur_start="$mf_StartIP"
+    cur_end="$mf_EndIP"
+    valid_ipv4 "$cur_start" || cur_start="${cur_lan_ip%.*}.20"
+    valid_ipv4 "$cur_end" || cur_end="${cur_lan_ip%.*}.170"
 
     echo "{\"lan_ip\": \"$cur_lan_ip\", \"dhcp_start\": \"$cur_start\", \"dhcp_end\": \"$cur_end\"}"
 fi

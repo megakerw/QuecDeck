@@ -89,9 +89,8 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/toggle_ttyd
   quecdeck/www/cgi-bin/get_set_lanip
   quecdeck/www/cgi-bin/get_ippt_status
-  quecdeck/www/cgi-bin/get_upnp_status
   quecdeck/www/cgi-bin/run_cell_scan
-  quecdeck/www/cgi-bin/get_service_status
+  quecdeck/www/cgi-bin/get_system_status
   quecdeck/www/cgi-bin/get_scan_status
   quecdeck/www/cgi-bin/get_logs
   quecdeck/www/cgi-bin/get_restart_log

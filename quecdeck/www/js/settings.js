@@ -111,9 +111,11 @@ function quecdeckSettings() {
     fetchLanConfig() {
       fetchWithRetry(() => fetchJSON('/cgi-bin/get_set_lanip'))
         .then((data) => {
-          this.lanIp = data.lan_ip;
-          this.dhcpStart = data.dhcp_start;
-          this.dhcpEnd = data.dhcp_end;
+          // null means the config was unreadable. Leave the fields blank rather
+          // than showing a guess the user could save back to the modem.
+          this.lanIp = data.lan_ip || '';
+          this.dhcpStart = data.dhcp_start || '';
+          this.dhcpEnd = data.dhcp_end || '';
         })
         .catch(reportFetchError('Failed to load settings. Please refresh the page.'));
       fetchWithRetry(() => fetchJSON('/cgi-bin/get_ippt_status'))

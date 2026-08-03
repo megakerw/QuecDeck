@@ -1,6 +1,14 @@
 #!/bin/bash
 # Shared CGI helpers. Source this at the top of each CGI script:
 #   . /usrdata/quecdeck/script/cgi-lib.sh
+#
+# bash only. busybox ash accepts ${var//x/y} and $(<file) here, so a non-bash
+# caller looks fine until printf -v, which ash prints to stdout instead of
+# assigning: corrupt output rather than an error. Refuse up front.
+if [ -z "$BASH_VERSION" ]; then
+    echo "cgi-lib.sh requires bash; sourced by a non-bash shell" >&2
+    return 1 2>/dev/null || exit 1
+fi
 
 # AT access layer (atcmd_run, atcmd_fire); used by the cache helpers below.
 . /usrdata/quecdeck/script/at-lib.sh
@@ -89,12 +97,78 @@ cgi_error() {
 
 # Returns 0 if <ip> is a syntactically valid IPv4 address (four 0-255 octets).
 # Usage: valid_ipv4 "$ip" || cgi_error "Invalid IP"
+# Builtins only, no forks: get_set_lanip calls this three times per read.
 valid_ipv4() {
-    echo "$1" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
-    local o1 o2 o3 o4
-    o1=$(echo "$1" | cut -d. -f1); o2=$(echo "$1" | cut -d. -f2)
-    o3=$(echo "$1" | cut -d. -f3); o4=$(echo "$1" | cut -d. -f4)
-    [ "$o1" -le 255 ] && [ "$o2" -le 255 ] && [ "$o3" -le 255 ] && [ "$o4" -le 255 ]
+    # Reject anything that isn't digits and dots, and the dot placements that
+    # word splitting would otherwise hide: a trailing dot drops an empty field,
+    # so "1.2.3.4." would count as four octets.
+    case "$1" in
+        ''|*[!0-9.]*|.*|*.|*..*) return 1 ;;
+    esac
+    local o
+    local IFS=.
+    set -- $1
+    [ "$#" -eq 4 ] || return 1
+    for o in "$@"; do
+        # Length cap first: it bounds the value before the numeric compare, and
+        # keeps a 4-digit octet from being read as octal.
+        [ "${#o}" -le 3 ] || return 1
+        [ "$o" -le 255 ] || return 1
+    done
+}
+
+# ---------------------------------------------------------------------------
+# Modem AP config. The system scripts (lighttpd_prestart.sh, update_sshd_ip.sh,
+# firewall.sh) parse this file themselves: they are /bin/sh and do not source
+# this library. They deliberately DIVERGE on a missing or malformed LAN IP, and
+# must stay that way; mobileap_lan_ip explains why.
+# ---------------------------------------------------------------------------
+MOBILEAP_CFG=/etc/data/mobileap_cfg.xml
+
+# Read one or more tags in a SINGLE pass, setting one variable per tag:
+#   mobileap_read APIPAddr UPnP   ->   $mf_APIPAddr, $mf_UPnP
+# Absent tags are set empty; first occurrence wins. Tag names are literals
+# supplied by CGIs, never request input.
+#
+# Call it directly, NOT inside $(...): the variables would die with the subshell.
+# Keep the grep: a pure-bash parser measures 2x slower on this ~16 KB config.
+mobileap_read() {
+    local tag alt line t v seen
+    alt=""
+    for tag in "$@"; do
+        printf -v "mf_$tag" '%s' ''
+        printf -v "mfseen_$tag" '%s' ''
+        alt="${alt:+$alt|}$tag"
+    done
+    [ -f "$MOBILEAP_CFG" ] || return 0
+    # Heredoc rather than a pipe: a pipe would run the loop in a subshell and
+    # the variables set below would be lost.
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        t="${line%%>*}"; t="${t#<}"
+        v="${line#*>}"; v="${v%</*}"
+        seen="mfseen_$t"
+        [ -n "${!seen}" ] && continue
+        printf -v "mfseen_$t" '%s' 1
+        printf -v "mf_$t" '%s' "$v"
+    done <<EOF
+$(grep -oE "<($alt)>[^<]*</($alt)>" "$MOBILEAP_CFG" 2>/dev/null)
+EOF
+}
+
+# Sets $mf_lan_ip to the configured LAN IP, or empty if absent or malformed.
+# Deliberately does NOT default the way lighttpd_prestart.sh does: that fallback
+# exists so the server always binds somewhere, whereas a guess here would seed
+# the settings form, and saving it would write the guess to the modem for real.
+# Reads APIPAddr itself only if the caller has not already batched it in, so it
+# stays correct standalone while costing nothing after a mobileap_read.
+# Sets a variable rather than echoing, so no caller wraps it in $(...) either.
+mobileap_lan_ip() {
+    [ -n "${mf_APIPAddr+set}" ] || mobileap_read APIPAddr
+    mf_lan_ip=""
+    if valid_ipv4 "$mf_APIPAddr"; then
+        mf_lan_ip="$mf_APIPAddr"
+    fi
 }
 
 # Echo "true" if <value> equals <match>, else "false", for building JSON from

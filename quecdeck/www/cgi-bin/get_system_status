@@ -1,0 +1,102 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/script/cgi-lib.sh
+cgi_check_cors
+
+cgi_output_json
+
+# Watchcat: config only. Its running state comes from the systemctl batch below;
+# it is started and stopped exclusively via systemctl (create_watchcat.sh /
+# remove_watchcat.sh), so the unit state is authoritative.
+if [ -s /usrdata/quecdeck/var/watchcat.json ]; then
+    watchcat_config=$(cat /usrdata/quecdeck/var/watchcat.json)
+else
+    watchcat_config='{"enabled":false}'
+fi
+
+# Scheduled restart: read config
+if [ -s /usrdata/quecdeck/var/scheduled_restart.json ]; then
+    sched_config=$(cat /usrdata/quecdeck/var/scheduled_restart.json)
+else
+    sched_config='{"enabled":false,"type":"daily","day":1,"hour":3,"minute":0}'
+fi
+
+# Service states in one systemctl call. is-active takes multiple units and
+# prints one state per line in argument order; each invocation is a ~24 ms D-Bus
+# round trip to PID 1, so one call beats one per unit.
+# The list is fixed (not filtered by what is installed) so the line count is
+# constant and the guard below can trust it.
+SERVICE_UNITS="ttyd atcmd-daemon connection-logger lean-mode firewall sshd watchcat"
+unit_states=()
+while IFS= read -r state; do
+    unit_states+=("$state")
+done <<< "$(systemctl is-active $SERVICE_UNITS 2>/dev/null)"
+
+# A systemctl that omits a line for an unknown unit would shift every mapping
+# and report the wrong service as active. Re-query one at a time rather than
+# serve a silently wrong answer. Expected count is derived from the list above,
+# so adding a unit cannot leave a stale literal behind.
+set -- $SERVICE_UNITS
+if [ "${#unit_states[@]}" -ne "$#" ]; then
+    unit_states=()
+    for unit in $SERVICE_UNITS; do
+        unit_states+=("$(systemctl is-active "$unit" 2>/dev/null)")
+    done
+fi
+
+# Bind each state to a variable named after its unit (dashes to underscores), so
+# the mapping survives reordering SERVICE_UNITS. The count guard above catches a
+# missing line but not a reorder, which would otherwise silently report one
+# service's state under another's name.
+i=0
+for unit in $SERVICE_UNITS; do
+    printf -v "state_${unit//-/_}" '%s' "${unit_states[$i]}"
+    i=$((i+1))
+done
+
+[ "$state_ttyd" = "active" ] && ttyd_running="true" || ttyd_running="false"
+[ "$state_atcmd_daemon" = "active" ] && atcmd_running="true" || atcmd_running="false"
+[ "$state_connection_logger" = "active" ] && connlog_running="true" || connlog_running="false"
+[ "$state_watchcat" = "active" ] && watchcat_running="true" || watchcat_running="false"
+
+# Lean mode (optional, null if not enabled via install menu)
+if [ -L /lib/systemd/system/multi-user.target.wants/lean-mode.service ]; then
+    [ "$state_lean_mode" = "active" ] && lean_active="true" || lean_active="false"
+    lean_mode_json="{\"active\":$lean_active}"
+else
+    lean_mode_json="null"
+fi
+
+# Firewall (optional, null if not installed)
+if [ -f /lib/systemd/system/firewall.service ]; then
+    [ "$state_firewall" = "active" ] && fw_active="true" || fw_active="false"
+    firewall_json="{\"active\":$fw_active}"
+else
+    firewall_json="null"
+fi
+
+# SSHD (optional install, null if not installed)
+if [ -f /lib/systemd/system/sshd.service ]; then
+    [ "$state_sshd" = "active" ] && sshd_active="true" || sshd_active="false"
+    sshd_json="{\"running\":$sshd_active}"
+else
+    sshd_json="null"
+fi
+
+# UPnP and LAN IP from the AP config. Bundled here so the device-info page gets
+# all of its non-AT state in one request; AT-backed data stays in its own
+# endpoint, where a stalled modem can't hold this panel up.
+mobileap_read UPnP APIPAddr
+case "$mf_UPnP" in
+    1|true|TRUE|yes|YES|enable|ENABLE) upnp_enabled="true" ;;
+    *) upnp_enabled="false" ;;
+esac
+# null, not a placeholder address: the page renders "-" for unknown.
+mobileap_lan_ip
+[ -n "$mf_lan_ip" ] && lan_ip_json="\"$mf_lan_ip\"" || lan_ip_json="null"
+
+quecdeck_version=$(cat /usrdata/quecdeck/version 2>/dev/null | tr -d '[:space:]')
+[ -z "$quecdeck_version" ] && quecdeck_version="unknown"
+
+printf '{"watchcat":{"running":%s,"config":%s},"scheduled_restart":%s,"ttyd":{"running":%s},"atcmd_daemon":{"running":%s},"connection_logger":{"running":%s},"lean_mode":%s,"firewall":%s,"sshd":%s,"upnp":%s,"lan_ip":%s,"quecdeck_version":"%s"}\n' \
+    "$watchcat_running" "$watchcat_config" "$sched_config" "$ttyd_running" "$atcmd_running" "$connlog_running" "$lean_mode_json" "$firewall_json" "$sshd_json" "$upnp_enabled" "$lan_ip_json" "$quecdeck_version"

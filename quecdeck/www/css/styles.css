@@ -91,51 +91,70 @@
   font-family: "Poppins", sans-serif;
 }
 
+/* Wait-modal spinner: three dots pulsing in sequence. Markup is three <i>
+   children (see the waitModal overlay in utils.js). Flex, not inline-block:
+   an inline-block would sit on the text baseline and add descender space below
+   the dots.
+   The band is taller than the dots so the spinner keeps some vertical presence,
+   with align-items centring them in it. Height belongs here rather than on
+   .loading-modal padding, which the confirm and error dialogs share.
+   Bottom margin is deliberately under the modal's 1.5rem top padding: the gap
+   above the dots ends at a hard edge, the gap below ends at the heading, whose
+   line box adds half-leading and an ascender-to-cap gap above the glyphs. Equal
+   values would read unequal. */
 .loader {
-  width: 64px;
-  height: 64px;
-  border: 3px dotted var(--bs-body-color);
-  border-style: solid solid dotted dotted;
-  border-radius: 50%;
-  display: inline-block;
-  position: relative;
-  box-sizing: border-box;
-  animation: rotation 2s linear infinite;
-  margin-bottom: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  margin: 0 auto 1rem;
 }
 
-.loader::after {
-  content: "";
-  box-sizing: border-box;
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  margin: auto;
-  border: 3px dotted #0b5ed7;
-  border-style: solid solid dotted;
-  width: 24px;
-  height: 24px;
+.loader i {
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  animation: rotationBack 1s linear infinite;
-  transform-origin: center center;
+  background: #0b5ed7;
+  animation: dotPulse 1.3s ease-in-out infinite;
 }
 
-@keyframes rotation {
-  0% {
-    transform: rotate(0deg);
-  }
+.loader i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.loader i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+/* transform and opacity only, so this composites on the GPU rather than
+   repainting while the page sits idle through a reboot wait. */
+@keyframes dotPulse {
+  0%,
   100% {
-    transform: rotate(360deg);
+    transform: scale(0.5);
+    opacity: 0.3;
+  }
+  45% {
+    transform: scale(1);
+    opacity: 1;
   }
 }
-@keyframes rotationBack {
-  0% {
-    transform: rotate(0deg);
+
+/* A spinner still has to read as "working" under reduced motion, so the pulse
+   stays and only the size change is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .loader i {
+    animation-name: dotFade;
   }
-  100% {
-    transform: rotate(-360deg);
+  @keyframes dotFade {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    45% {
+      opacity: 1;
+    }
   }
 }
 
