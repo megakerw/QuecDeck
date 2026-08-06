@@ -227,26 +227,65 @@ case "$(atcmd_run 'AT+CSQ' 3000)" in
            "$(atcmd_run 'AT+CSQ' 3000 | tr '\n' '|')" ;;
 esac
 
+# ---- atcli's too-long exit code ----------------------------------------------
+# at-lib keeps a copy of this number (_AT_E_TOOLONG) to decide when to
+# synthesize its body line, and the host suite can only assert that copy against
+# itself: it stubs atcli with the very code it is checking. The real client can
+# settle it, because _atcmd_report returns atcli's status untouched, so the rc
+# below is atcli's own. The literal 65 here is deliberate; asserting against
+# $_AT_E_TOOLONG alone would be the same circular test.
+at_long="AT+CGMM"; i=0
+while [ "$i" -lt 90 ]; do at_long="$at_long;+CGMM"; i=$((i + 1)); done   # 547 chars
+# stderr silenced only to keep this report readable: at-lib deliberately writes
+# the refusal to both streams, and the body copy is what is asserted below.
+at_out=$(atcmd_run "$at_long" 2000 2>/dev/null); at_rc=$?
+if [ "$at_rc" -eq 65 ]; then
+    ok "atcli exits 65 for a command past CMD_MAX"
+else
+    bad "atcli exits 65 for a command past CMD_MAX" "rc=$at_rc"
+fi
+# The two below read the INSTALLED at-lib, which can predate the repo: this is
+# a dev tool run against whatever is deployed. Skip rather than fail there, and
+# never let an unset variable abort the rest of the run under set -u.
+if [ -z "${_AT_E_TOOLONG:-}" ]; then
+    skp "at-lib's _AT_E_TOOLONG matches atcli (installed at-lib predates it)"
+    skp "at-lib puts the refusal in the body (installed at-lib predates it)"
+else
+    if [ "$at_rc" -eq "$_AT_E_TOOLONG" ]; then
+        ok "at-lib's _AT_E_TOOLONG matches atcli"
+    else
+        bad "at-lib's _AT_E_TOOLONG matches atcli" "at-lib=$_AT_E_TOOLONG atcli=$at_rc"
+    fi
+    case $at_out in
+        *"ERROR: AT command too long"*) ok "at-lib puts the refusal in the body" ;;
+        *) bad "at-lib puts the refusal in the body" "$(printf '%s' "$at_out" | tr '\n' '|')" ;;
+    esac
+fi
+# The daemon must not have seen it: atcli refuses before connecting, so this is
+# also what stops the malformed counter from being a test of the chunking.
+unset at_long at_out at_rc
+
 # ---- log rate limiting -------------------------------------------------------
 # The daemon's log is an unrotated file on tmpfs here, trimmed only at unit
 # start, so a caller looping bad requests must not be able to write a line per
-# request and fill /tmp. Driving that path needs no extra tooling: a command
-# past CMD_MAX (512) is refused by the daemon, and atcli sends it happily.
+# request and fill /tmp. Driven with an EMPTY command: it trips the daemon's
+# is_empty() || len > CMD_MAX branch, the same one an oversized command hits,
+# but an oversized one does not get there: atcli refuses it before it
+# connects, so it would never be counted and this would assert nothing.
 if [ -f "$ATLOG" ]; then
     log0=$(wc -l < "$ATLOG")
     mal0=$(counter malformed); mal0=${mal0:-0}
-    BIG=$(head -c 600 /dev/zero | tr '\0' C)
     i=0
     while [ "$i" -lt 25 ]; do
-        atcmd_run "AT+$BIG" 2000 >/dev/null 2>&1
+        atcmd_run "" 2000 >/dev/null 2>&1
         i=$((i + 1))
     done
     mal_d=$(( $(counter malformed) - mal0 ))
     log_d=$(( $(wc -l < "$ATLOG") - log0 ))
     if [ "$mal_d" -eq 25 ]; then
-        ok "25 oversized commands all refused and counted"
+        ok "25 malformed commands all refused and counted"
     else
-        bad "25 oversized commands all refused and counted" "malformed +$mal_d"
+        bad "25 malformed commands all refused and counted" "malformed +$mal_d"
     fi
     # At most one: log_worthy logs the first and every hundredth, and the counter
     # has usually moved off 1 by the time this runs.

@@ -143,6 +143,10 @@ mobileap_read() {
     [ -f "$MOBILEAP_CFG" ] || return 0
     # Heredoc rather than a pipe: a pipe would run the loop in a subshell and
     # the variables set below would be lost.
+    #
+    # Keep the grep: a pure-bash scan of this 462-line file measured 1.6x to
+    # 5.1x slower. A fork beats ~40 lines of bash line-processing; the threshold
+    # and the numbers are in tools/device-costs.md.
     while IFS= read -r line; do
         [ -n "$line" ] || continue
         t="${line%%>*}"; t="${t#<}"
@@ -286,14 +290,19 @@ bf_clear() {
 #
 # Read CGIs call cache_get_or_fetch: response is served from a file if fresh,
 # otherwise fetched live, cached atomically via temp+mv, and returned.
-# Write CGIs call cache_refresh on directly affected files (so the next page
-# render sees immediate results) and cache_invalidate on secondary files.
+# Write CGIs call cache_invalidate on every file their change affects; the next
+# read fetches live. They do not warm the cache: only a read knows what the
+# modem settled on.
 # During an active cell scan (qscan.active flag), cached data is served
 # unconditionally so AT commands are not sent to a busy modem.
 #
 # Validation: responses are only cached if the last non-empty line is exactly
 # "OK". ERROR/CME/CMS responses and empty results are rejected; stale cache
 # is served instead. Retry policy is documented at cache_get_or_fetch.
+#
+# File format: first line is the write time in epoch CENTIseconds, rest is the
+# AT payload. Age comes from that header, not the mtime, so the read path never
+# forks stat(1). Always go through cache_write and cache_read.
 # ---------------------------------------------------------------------------
 _CACHE_DIR=/tmp/quecdeck/cache
 
@@ -305,20 +314,85 @@ _CACHE_SETTINGS="$_CACHE_DIR/settings"
 _CACHE_NETWORK="$_CACHE_DIR/network"
 _CACHE_MODEM_CONN="$_CACHE_DIR/modem_conn"
 
-# Returns 0 if cache file exists and is younger than ttl seconds.
+# Sets $_NOW_CS (epoch centiseconds) and $_NOW (epoch seconds) from /proc/uptime
+# and /proc/stat's btime. Assigns rather than echoes: a command substitution
+# would restore the fork this exists to avoid. $EPOCHSECONDS is bash 5.0, device
+# is 3.2.57, and date(1) costs ~3.6x this (tools/device-costs.md). btime is
+# re-read per call, not memoized, so a clock step is seen.
+#
+# Compare ages in _NOW_CS, never _NOW. btime is device-verified constant (75
+# reads, one value), so it cancels in a subtraction, leaving uptime's own
+# centiseconds: ages exact to 10 ms. Floored seconds carry +-1 s, which on a 2 s
+# TTL flips hits to misses. $_NOW is for whole-second callers, here delete_sms.
+#
+# Requires 64-bit shell arithmetic: _NOW_CS is ~1.8e11 (38 bits). Verified on
+# armv7l/3.2.57; a 32-bit shell would wrap it silently. The date(1) fallback is
+# for a host without procfs, which neither the device nor Git Bash is.
+_epoch_now() {
+    local u= k= v= bt= frac=
+    read -r u _ < /proc/uptime 2>/dev/null
+    while read -r k v _; do
+        [ "$k" = btime ] && { bt=$v; break; }
+    done < /proc/stat 2>/dev/null
+    if [ -n "$u" ] && [ -n "$bt" ]; then
+        # 10# because the kernel prints "%02lu": "08" is an invalid octal
+        # literal to bash arithmetic, not the number 8.
+        case $u in *.*) frac=${u#*.} ;; *) frac=00 ;; esac
+        _NOW_CS=$(( bt * 100 + ${u%.*} * 100 + 10#$frac ))
+        _NOW=$(( _NOW_CS / 100 ))
+    else
+        _NOW=$(date +%s)
+        _NOW_CS=$(( _NOW * 100 ))
+    fi
+}
+
+# Loads a cache file in one open, no fork, into $_CACHE_TS (header,
+# centiseconds) and $_CACHE_PAYLOAD. Returns 1 for a missing, empty or
+# headerless file.
+#
+# Invariant: both globals are set if and only if this returns 0. A caller using
+# the previous file's values after a failed load would print one resource's AT
+# reply as another's, and get_dashboard loads two files per process.
+#
+# read -d '' is a builtin where $(<f) costs a subshell, ~4x dearer
+# (tools/device-costs.md). It differs only in keeping trailing newlines
+# (cache_write writes none) and stopping at a NUL (an AT reply is text), and it
+# returns 1 at EOF with the variable filled, so its status is ignored.
+_cache_load() {
+    local all= hdr=
+    _CACHE_TS=
+    _CACHE_PAYLOAD=
+    [ -f "$1" ] || return 1
+    IFS= read -r -d '' all < "$1" 2>/dev/null
+    case $all in *$'\n'*) ;; *) return 1 ;; esac
+    hdr=${all%%$'\n'*}
+    # Non-numeric header: unusable file (truncated write, or written before the
+    # header existed). Must fail here, because the arithmetic in _cache_ts_fresh
+    # is a bash syntax error on a non-numeric operand, not a wrong number.
+    case $hdr in ''|*[!0-9]*) return 1 ;; esac
+    _CACHE_TS=$hdr
+    _CACHE_PAYLOAD=${all#*$'\n'}
+}
+
+# Age an already-loaded $_CACHE_TS against ttl SECONDS (the header is
+# centiseconds; callers keep working in seconds).
+_cache_ts_fresh() {
+    local age
+    _epoch_now
+    age=$(( _NOW_CS - _CACHE_TS ))
+    # Negative age = btime moved = the clock stepped backwards (NITZ re-sync
+    # after a modem reboot). Must read stale, or caches pin until reboot.
+    [ "$age" -ge 0 ] && [ "$age" -lt $(( $1 * 100 )) ]
+}
+
+# Returns 0 if the cache file exists and is younger than ttl seconds. Header,
+# not stat(1)'s mtime, which costs ~8x more (tools/device-costs.md).
+#
+# Use only when the answer alone is wanted; pairing it with cache_read reads the
+# file twice. To also serve the payload, call _cache_load once and test with
+# _cache_ts_fresh, as cache_get_or_fetch does. Leaves both globals populated.
 cache_is_fresh() {
-    local f="$1" ttl="$2" mtime age now
-    [ -f "$f" ] || return 1
-    mtime=$(stat -c %Y "$f" 2>/dev/null) || return 1
-    # $EPOCHSECONDS (bash 5+) avoids a date(1) fork on the hot cache-hit path;
-    # falls back to date(1) on older bash where it's empty (else age goes
-    # negative and stale cache is served forever).
-    now=${EPOCHSECONDS:-$(date +%s)}
-    age=$(( now - mtime ))
-    # Negative age = mtime in the future = the clock stepped backwards
-    # (NITZ re-sync after a modem reboot does this). Must read as stale,
-    # or every cache pins "fresh" until reboot.
-    [ "$age" -ge 0 ] && [ "$age" -lt "$ttl" ]
+    _cache_load "$1" && _cache_ts_fresh "$2"
 }
 
 # Returns 0 if an AT response is valid (last non-empty line is exactly OK).
@@ -344,7 +418,10 @@ at_result() {
         printf '%s\n' "$reply"
         return
     fi
-    err=$(printf '%s' "$reply" | grep -iE 'ERROR' | head -1 | tr -d '\r')
+    # No \r strip: at-lib guarantees CR-free replies (atcli strips at source),
+    # device-probed 2026-08-05 across query, chained, ERROR and PDU-mode output.
+    # Re-adding one would be a fourth process on this path for nothing.
+    err=$(printf '%s' "$reply" | grep -iE 'ERROR' | head -1)
     printf '%s\n' "${err:-ERROR: no response from the modem}"
 }
 
@@ -353,11 +430,46 @@ at_result() {
 # Cache dir is 700 so only its owner can enter, but files inside are 644 so that
 # root (debug) and www-data (CGI) can both read them regardless of which user
 # created the file. The directory's 700 is the security boundary.
+#
+# Both forks here are deliberate and were measured before being kept: mv is the
+# atomic replace that stops a reader seeing a torn file, and the chmod is what
+# makes the cache readable to root for debugging. Together they are most of this
+# function's 7750 us and about a quarter of a cache miss (tools/device-costs.md).
+# Keeping root-readability was an explicit call, not an oversight.
 cache_write() {
     local f="$1" content="$2" tmp
     tmp="${f}.tmp.$$"
-    mkdir -p "$_CACHE_DIR" && chmod 700 "$_CACHE_DIR"
-    printf '%s' "$content" > "$tmp" && chmod 644 "$tmp" && mv "$tmp" "$f"
+    # Guarded because the dir exists for every write after the first since boot,
+    # and mkdir+chmod are two forks on the miss path, which is every dashboard
+    # poll. -m sets the mode at creation; it is not re-asserted per write.
+    #
+    # Safe only because the PARENT /tmp/quecdeck is 0700 www-data, created by
+    # the atcmd-daemon unit's ExecStartPre and asserted by
+    # tools/device-test-atclid.sh. Creating this dir first therefore already
+    # requires being www-data or root. If that parent mode ever loosens, this
+    # guard has to go back to asserting the mode.
+    #
+    # Note -m applies to the FINAL component only: were /tmp/quecdeck absent,
+    # mkdir -p would create it at the umask default, not 0700. It is never
+    # absent in practice because the unit creates it before any CGI can run,
+    # which is the same dependency as above.
+    [ -d "$_CACHE_DIR" ] || mkdir -p -m 700 "$_CACHE_DIR"
+    _epoch_now
+    if printf '%s\n%s' "$_NOW_CS" "$content" > "$tmp" \
+        && chmod 644 "$tmp" && mv "$tmp" "$f"; then
+        return 0
+    fi
+    # Keep: the likeliest failure is a full /tmp, where the half-written temp
+    # holds the space that ran out.
+    rm -f "$tmp"
+    return 1
+}
+
+# Emit a cache file's payload. Emits nothing and returns 1 for a file with no
+# header, so a caller that skips the freshness check (the scan path) cannot
+# print a timestamp as modem data.
+cache_read() {
+    _cache_load "$1" && printf '%s' "$_CACHE_PAYLOAD"
 }
 
 # Remove one or more cache files to force a live fetch on next read.
@@ -365,59 +477,63 @@ cache_invalidate() {
     rm -f "$@"
 }
 
-# Run an AT command unconditionally, cache the result silently.
-# Used by write CGIs to warm the cache after changing modem settings.
-# Accepts the same required-pattern varargs as cache_get_or_fetch.
-cache_refresh() {
-    local f="$1" at_cmd="$2" at_timeout="${3:-3000}"
-    local result
-    result=$(atcmd_run "$at_cmd" "$at_timeout")
-    at_response_ok "$result" && cache_write "$f" "$result"
-}
-
 # Serve from cache if fresh; otherwise run AT command, cache, and serve.
 # Serves existing cache (without refreshing) during an active cell scan.
 #
 # No per-file locking: concurrent misses each submit an AT command; the daemon
-# serialises them. Duplicate cost is ~5 ms, cheaper than an empty result.
+# serialises them. The duplicate round trip is cheaper than an empty result;
+# AT batch costs are in tools/device-costs.md.
 cache_get_or_fetch() {
     local f="$1" ttl="$2" at_cmd="$3" at_timeout="${4:-3000}"
-    local result
+    local result cached=0
+    # One load serves the scan path and the freshness check. The fallback after
+    # a failed fetch deliberately re-reads instead; see there.
+    _cache_load "$f" && cached=1
     if [ -f /tmp/quecdeck/qscan.active ]; then
         # Treat as stale if older than 5 minutes (max scan is 215 s), so a
         # flag this old means the scan process was killed without cleanup.
         if find /tmp/quecdeck/qscan.active -mmin +5 2>/dev/null | grep -q .; then
             rm -f /tmp/quecdeck/qscan.active
         else
-            # $(<f) is safe here: cache files carry no trailing newline.
-            [ -f "$f" ] && printf '%s' "$(<"$f")"
+            [ "$cached" -eq 1 ] && printf '%s' "$_CACHE_PAYLOAD"
             return
         fi
     fi
-    if cache_is_fresh "$f" "$ttl"; then
-        printf '%s' "$(<"$f")"
+    if [ "$cached" -eq 1 ] && _cache_ts_fresh "$ttl"; then
+        printf '%s' "$_CACHE_PAYLOAD"
         return
     fi
-    # Ensure cache dir exists (tmpfs is empty after boot).
-    # 700: cache files contain sensitive modem data (IPs, APN, cell info).
-    mkdir -p "$_CACHE_DIR" && chmod 700 "$_CACHE_DIR"
-    # Retry once if the modem returned a non-empty response that didn't end with
-    # OK: those are transient errors where a second attempt may succeed.
-    # Empty results (timeout) are not retried to avoid stacking timeout delays.
-    local attempt=0
+    # No mkdir here: cache_write is the only writer and creates the dir itself.
+    # Retry once when the reply was cut short, since a second attempt may
+    # complete. Two cases are not retried, both because a retry cannot help:
+    # an empty result (timeout, and retrying stacks the delay), and a reply the
+    # modem terminated itself. atcli exits 0 only on a terminator, so rc 0 with
+    # a body that is not OK means the modem's answer *is* an error (no SIM,
+    # unsupported command) - final, and asking again costs the serialized port
+    # another round trip for the same reply. Only the exit status separates that
+    # from a truncated reply; the body alone cannot.
+    #
+    # An atcli too-long refusal (rc 65, non-empty body) would also take the
+    # retry path, which cannot help. Unreachable here: every command below is a
+    # fixed literal far under CMD_MAX.
+    local attempt=0 rc=0 ok=0
     result=""
     while [ $attempt -lt 2 ]; do
-        result=$(atcmd_run "$at_cmd" "$at_timeout")
-        at_response_ok "$result" && break
+        result=$(atcmd_run "$at_cmd" "$at_timeout"); rc=$?
+        if at_response_ok "$result"; then ok=1; break; fi
+        [ "$rc" -eq 0 ] && break
         [ -z "$result" ] && break
         attempt=$((attempt + 1))
     done
-    if at_response_ok "$result"; then
+    if [ "$ok" -eq 1 ]; then
         cache_write "$f" "$result"
         printf '%s' "$result"
     else
-        # All attempts failed. Serve stale cache rather than bad data.
-        [ -f "$f" ] && printf '%s' "$(<"$f")"
+        # All attempts failed. Serve stale cache rather than bad data, but
+        # RE-READ it: there is no locking and a failing fetch holds the port for
+        # up to two timeouts, so a concurrent CGI may have written a newer
+        # payload than the one loaded at the top of this function.
+        cache_read "$f"
     fi
 }
 
@@ -428,17 +544,26 @@ cache_get_or_fetch() {
 # ---------------------------------------------------------------------------
 
 # Modem statistics: temperature, serving cell, CA info, signal, traffic
-# counters, SIM slot/status, operator. Cached 3 s under _CACHE_MODEM_ALL,
+# counters, SIM slot/status, operator. Cached 2 s under _CACHE_MODEM_ALL,
 # 2 s AT timeout.
+#
+# TTL must stay below the dashboard poll floor (home.js clamps refreshRate to
+# 3), never equal it: a poll reads ~290 cs, so ttl 3 would call it fresh and
+# re-render the previous snapshot at an effective 6 s. This cache dedupes
+# readers in one tick, it does not skip polls.
+#
+# Measured 2026-08-05: at a 3 s cadence every poll is a miss, ~24 AT commands
+# per 11 polls.
 modem_stats_fetch() {
-    cache_get_or_fetch "$_CACHE_MODEM_ALL" 3 \
+    cache_get_or_fetch "$_CACHE_MODEM_ALL" 2 \
         'AT+QTEMP;+QENG="servingcell";+QCAINFO;+CSQ;+QGDNRCNT?;+QGDCNT?;+QUIMSLOT?;+QSPN;+QSIMSTAT?' 2000
 }
 
 # Connection info: WWAN IP(s) and APN. Connection-dependent, so it may fail with
-# no active bearer; callers fall back gracefully. Cached 3 s, 2 s AT timeout.
+# no active bearer; callers fall back gracefully. Cached 2 s, 2 s AT timeout.
+# Same dashboard-poll constraint as modem_stats_fetch; see there.
 modem_conn_fetch() {
-    cache_get_or_fetch "$_CACHE_MODEM_CONN" 3 'AT+QMAP="WWANIP";+CGCONTRDP' 2000
+    cache_get_or_fetch "$_CACHE_MODEM_CONN" 2 'AT+QMAP="WWANIP";+CGCONTRDP' 2000
 }
 
 # Device identity: manufacturer, model, firmware, IMEI, build time. Effectively
@@ -448,10 +573,10 @@ device_info_fetch() {
 }
 
 # SIM identity: IMSI, ICCID, phone number. SIM-dependent, so it errors with no
-# SIM; callers handle absent fields gracefully. Cached 3 s (matching
-# modem_conn so the two short-lived batches refresh together), 2 s AT timeout.
+# SIM; callers handle absent fields gracefully. Cached 2 s (matching modem_conn
+# so the short-lived batches stay on one TTL), 2 s AT timeout.
 device_sim_fetch() {
-    cache_get_or_fetch "$_CACHE_DEVICE_SIM" 3 'AT+CIMI;+ICCID;+CNUM' 2000
+    cache_get_or_fetch "$_CACHE_DEVICE_SIM" 2 'AT+CIMI;+ICCID;+CNUM' 2000
 }
 
 # Host stats as JSON: load average, RAM, uptime. Reads /proc and `uptime`

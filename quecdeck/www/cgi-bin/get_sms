@@ -9,17 +9,36 @@ cgi_require_post
 # hands over the decoded body alone. sms.js does the decoding, so no CSCS.
 # 15s: a full inbox runs large (132 parts observed), and the rc check below
 # refuses an overrun outright rather than serving it short.
-listing=$(atcmd_run 'AT+CSMS=1;+CSDH=0;+CNMI=2,1,0,0,0;+CMGF=0;+CSCA?;+CSMP=17,167,0,8;+CPMS="ME","ME","ME";+CMGL=4' 15000)
+# +CSCA? and +CSMP dropped: a query nothing reads, and text-mode SEND parameters
+# with no send path (tools/device-costs.md for what the chain costs). CNMI
+# stays, it decides whether an arriving message is stored at all.
+# A listing that stopped before OK is a well-formed shorter inbox: nothing in
+# the bytes says messages are missing, so it must not be served as complete.
+# Same for a silent timeout, where an empty body reads as an empty inbox.
+# rc catches both, since the daemon stopped calling an unsolicited terminator
+# complete. The body check still holds if an older atcli is rolled back, and
+# matches every other read path.
+#
+# Two independent guards, both mutation-checked in tools/run-tests.sh: dropping
+# either one fails a test.
+#   rc     - a reply the modem never terminated, or nothing at all.
+#   the OK - a reply that arrived complete but does not end in OK.
+# Top-level so the suite can extract and drive it.
+# Usage: listing_complete "$listing" "$rc"
+listing_complete() {
+    local listing="$1" rc="$2"
+    [ "$rc" -eq 0 ] || return 1
+    at_response_ok "$listing"
+}
+
+listing=$(atcmd_run 'AT+CSMS=1;+CSDH=0;+CNMI=2,1,0,0,0;+CMGF=0;+CPMS="ME","ME","ME";+CMGL=4' 15000)
 rc=$?
 
 cgi_output_text
 
-# A listing that stopped before OK is a well-formed shorter inbox: nothing in
-# the bytes says messages are missing, so it must not be served as complete.
-# Same for a silent timeout, where an empty body reads as an empty inbox.
 # The failure goes in the body, not an HTTP status: authFetch only rejects on
 # the login redirect, so a non-2xx would reach the parser anyway.
-if [ "$rc" -ne 0 ]; then
+if ! listing_complete "$listing" "$rc"; then
     echo "ERROR: could not read the message listing from the modem"
     exit 0
 fi

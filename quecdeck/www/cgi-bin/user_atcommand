@@ -12,20 +12,35 @@ if ! echo "$t" | grep -qE '^[0-9]+$' || [ "$t" -lt 1000 ] || [ "$t" -gt 60000 ];
     t=5000
 fi
 
-if [ -n "$x" ] && [ ${#x} -le 512 ]; then
+runcmd=""
+if [ -n "$x" ]; then
+    # No length check here: atcli refuses an over-CMD_MAX command itself and
+    # at-lib puts the reason in the body. A copy of 512 would be a third home
+    # for a limit that has one.
+    #
     # The command is whatever the user typed, including ones this modem never
     # terminates (AT+CLAC), so a partial reply is shown rather than dropped.
-    # Status captured before the awk pipe, which would mask it.
+    #
+    # No escape-sequence filter: atcli emits none (device-probed 2026-08-05),
+    # and an escape byte is inert in the HTML text this lands in.
     runcmd=$(atcmd_run "$x" "$t")
     rc=$?
-    runcmd=$(printf '%s' "$runcmd" | awk '{ gsub(/\x1B\[[0-9;]*[mG]/, "") }1')
-    # Both failures are labelled: a truncated reply reads as a complete short
-    # one, and an empty one as a command that answered nothing.
-    if [ "$rc" -ne 0 ] && [ -n "$runcmd" ]; then
+    # Each failure is labelled. Too-long is left alone: at-lib already named it,
+    # and the truncation note below would misdescribe a command never sent.
+    # at-lib names ANY rc 65 as too-long, so if atcli ever reuses 65 for
+    # something else the console states a confidently wrong reason; the device
+    # test asserts too-long implies 65, not the converse.
+    if [ "$rc" -eq "$_AT_E_TOOLONG" ]; then
+        :
+    elif [ "$rc" -ne 0 ] && [ -n "$runcmd" ]; then
         runcmd="$runcmd
 [reply not terminated; shown as received]"
     elif [ "$rc" -ne 0 ]; then
-        runcmd="[no reply: the command timed out, or the AT daemon is down]"
+        # "refused" is listed first because this branch also catches an
+        # over-length command if atcli's exit code ever drifts from
+        # _AT_E_TOOLONG, and such a command never reached the modem. The note
+        # must not assert that it did. device-test-atclid.sh guards the drift.
+        runcmd="[no reply: the command was refused, timed out, or the AT daemon is down]"
     fi
 fi
 

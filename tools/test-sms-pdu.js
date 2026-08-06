@@ -12,8 +12,9 @@ const path = require('path');
 // outside it, unlike the function declaration. The parse path touches no DOM.
 // Renamed on the way out, or they collide with eval's own declarations.
 const src = fs.readFileSync(path.join(__dirname, '..', 'quecdeck', 'www', 'js', 'sms.js'), 'utf8');
-const { fetchSMS: makeSMS, SMS_GSM7_BASIC: gsm7Table } =
-  eval(`${src}\n;({ fetchSMS, SMS_GSM7_BASIC })`);
+const { fetchSMS: makeSMS, SMS_GSM7_BASIC: gsm7Table,
+        deleteFailureText: failureText } =
+  eval(`${src}\n;({ fetchSMS, SMS_GSM7_BASIC, deleteFailureText })`);
 
 // Shared prefix for every fixture below:
 //   00        no SMSC address supplied
@@ -178,6 +179,39 @@ check('a reserved alphabet is rejected', reserved.messages.length === 0,
   JSON.stringify(reserved.messages.map(m => m.text)));
 check('a reserved alphabet is reported', reservedLog.some(m => /reserved alphabet/.test(m)),
   JSON.stringify(reservedLog));
+
+// ---- deleteFailureText -------------------------------------------------
+// cgi-bin/delete_sms answers with a COUNTED failure, and the whole point of
+// surfacing it is that "3 of 40" tells the user the scale. A fixed string
+// would hide it, which is what this used to do.
+const dft = msg => failureText(new Error(msg));
+
+check('a counted failure keeps its numbers',
+  dft('ERROR: 3 of 40 message parts could not be deleted') ===
+    '3 of 40 message parts could not be deleted. The list below has been refreshed.',
+  dft('ERROR: 3 of 40 message parts could not be deleted'));
+
+check('the time-budget wording survives',
+  dft('ERROR: hit the 45s time budget with 88 of 128 message parts left') ===
+    'Hit the 45s time budget with 88 of 128 message parts left. The list below has been refreshed.',
+  dft('ERROR: hit the 45s time budget with 88 of 128 message parts left'));
+
+// at_result hands back the modem's own line for a write that failed.
+check("a modem error line is shown as-is",
+  dft('+CMS ERROR: 500').startsWith('+CMS ERROR: 500'),
+  dft('+CMS ERROR: 500'));
+
+// A rejection with no CGI body at all (network drop, abort) has nothing to
+// count, so it must fall back rather than print "undefined" at the user.
+check('a body-less rejection falls back',
+  failureText(new Error('Failed to fetch')) === 'The messages could not be deleted.',
+  failureText(new Error('Failed to fetch')));
+check('a null rejection falls back',
+  failureText(null) === 'The messages could not be deleted.',
+  String(failureText(null)));
+check('an empty message falls back',
+  failureText(new Error('')) === 'The messages could not be deleted.',
+  failureText(new Error('')));
 
 console.log(`\nfailures: ${failures}`);
 process.exit(failures ? 1 : 0);

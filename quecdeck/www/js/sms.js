@@ -14,6 +14,23 @@ const SMS_GSM7_EXTENDED = {
   0x3C: "[", 0x3D: "~", 0x3E: "]", 0x40: "|", 0x65: "€"
 };
 
+// The delete CGI answers with a counted failure ("ERROR: 3 of 40 message parts
+// could not be deleted", or the time-budget wording), and postForm carries that
+// body in err.message. Show it, with the ERROR: prefix stripped and a hint that
+// the refreshed list is authoritative. Falls back to a generic line if the
+// rejection came from somewhere without a body, e.g. a network drop.
+function deleteFailureText(err) {
+  var body = (err && err.message ? String(err.message) : '').trim();
+  if (!body || body.indexOf('ERROR') === -1) {
+    return 'The messages could not be deleted.';
+  }
+  // "shows what is left" would read as "...parts left. ...what is left" against
+  // the time-budget wording, which already says it.
+  return body.replace(/^ERROR:\s*/, '').replace(/^./, function (c) {
+    return c.toUpperCase();
+  }) + '. The list below has been refreshed.';
+}
+
 function fetchSMS() {
   return {
     isLoading: false,
@@ -315,33 +332,44 @@ function fetchSMS() {
       return date.toLocaleString([], { hour12: false });
     },
 
+    // Always by index, even when everything is selected. A "delete all" call
+    // would erase the whole store, including messages that arrived while the
+    // page was open; these indices are exactly what the user saw.
     deleteSelectedSMS() {
       if (this.selectedMessages.length === 0) return;
       if (this.messages.length === 0) return;
 
-      const isAllSelected = this.selectedMessages.length === this.messages.length;
+      const indicesToDelete = [];
+      this.selectedMessages.forEach(index => {
+        indicesToDelete.push(...this.messages[index].indices);
+      });
+      if (indicesToDelete.length === 0) return;
 
-      if (isAllSelected) {
-        this.deleteAllSMS();
-      } else {
-        const indicesToDelete = [];
-        this.selectedMessages.forEach(index => {
-          indicesToDelete.push(...this.messages[index].indices);
-        });
-        if (indicesToDelete.length === 0) return;
-
-        authFetch("/cgi-bin/delete_sms", { method: "POST", body: new URLSearchParams({ indices: indicesToDelete.join(',') }) })
-          .finally(() => {
-            this.selectedMessages = [];
-            this.requestSMS();
-          });
-      }
-    },
-
-    deleteAllSMS() {
-      authFetch("/cgi-bin/delete_sms", { method: "POST", body: new URLSearchParams({ action: "all" }) })
+      // postForm rejects on ERROR in the body (the CGI convention), which is
+      // what separates a delete that erased nothing from one that worked.
+      // A session that expires mid-delete rejects with SessionExpiredError
+      // while authFetch is already redirecting to login. Reporting a delete
+      // failure there is wrong, and refreshing against a dead session is
+      // pointless, so the flag skips both. Same guard as js/network.js.
+      // isLoading drives the spinner AND disables the button. A delete of many
+      // parts can run for seconds, and without this the page looks idle, so a
+      // second click re-POSTs every index and queues behind the first on the
+      // serialized AT port.
+      this.isLoading = true;
+      let expired = false;
+      postForm("/cgi-bin/delete_sms", { indices: indicesToDelete.join(',') })
+        .catch((err) => {
+          if (isSessionExpired(err)) { expired = true; return; }
+          // postForm rejects with the CGI's own body, which counts the parts
+          // that still hold a message or were left when the budget expired.
+          // Surfacing it is the point: a fixed string would hide the scale.
+          this.$store.errorModal.open(deleteFailureText(err));
+        })
         .finally(() => {
-          this.init();
+          this.isLoading = false;
+          if (expired) return;
+          this.selectedMessages = [];
+          this.requestSMS();
         });
     },
 

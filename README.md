@@ -79,7 +79,7 @@ Scan for nearby cells and display network, provider, band, frequency, PCI, and R
 - **Scheduled Restart:** schedule daily or weekly reboots at a specified time
 
 ### SMS
-View, read, and delete SMS messages directly from the modem's inbox, newest first.
+View, read, and delete SMS messages directly from the modem's inbox, newest first. A long message is stored as several parts, so deleting one can issue many delete commands; they are sent one at a time under an overall time limit, and if any parts are left behind the page reports how many rather than showing a success that did not happen.
 
 ### Device Information
 - **Device & SIM:** manufacturer, model, firmware version, build time, IMEI, phone number, IMSI, and ICCID
@@ -119,14 +119,14 @@ QuecDeck started as a fork of [Simple Admin](https://github.com/iamromulan/quect
 - Sessions are managed via secure cookies, with a 15-minute lockout after 5 failed login attempts. Both passwords require a minimum of 8 characters.
 
 ### AT Command Layer
-All modem communication goes through [atcli](https://github.com/megakerw/atcli_rust) (a fork of [atcli_rust](https://github.com/1alessandro1/atcli_rust)), a Rust-based AT command CLI that emits clean newline-terminated output (modem `\r` framing is stripped at the source).
+All modem communication goes through [atcli](https://github.com/megakerw/atcli_rust) (a fork of [atcli_rust](https://github.com/1alessandro1/atcli_rust)), a Rust-based AT command CLI that emits clean newline-terminated output (modem `\r` framing is stripped at the source). That is a contract the shell side relies on rather than a convenience: nothing downstream re-strips carriage returns, so replies are parsed as they arrive.
 
 - **Single gateway.** Shell code never invokes atcli directly; every caller goes through `script/at-lib.sh`, enforced by a pre-commit check.
 - **Serialization and privilege.** Serialization happens inside atcli itself. Its daemon side (`atcli --daemon`, unit `atcmd-daemon`) opens the modem port as root, drops to www-data, and serves one command per unix-socket connection, verifying each peer's uid via `SO_PEERCRED`. atcli is not setuid: the daemon is the only privileged path to the modem.
 - **No silent fallback.** There is no automatic fallback to the port, so a plain invocation never bypasses the serializer. If the daemon is down, every caller (root and www-data alike) gets empty output until systemd restarts it within seconds, and the UI tolerates the gap. A root operator can still reach the modem directly for recovery by passing `--direct` explicitly.
 - **Sender lifecycle.** Commands whose sender has hung up are skipped instead of being sent to the modem; fire-and-forget senders (modem reboots) pass `--detach`.
 - **Reply completeness.** A reply cut short by a timeout is byte-for-byte a shorter complete one, so the exit status, not the output, is what says whether the modem finished. atcli exits 0 only when the modem terminated the reply itself; both `OK` and `ERROR` count as terminated. It exits non-zero when the modem did not, leaving whatever arrived on stdout, and non-zero with empty stdout when nothing arrived at all (timeout, or the daemon down). Callers that must not parse a truncated record check the status and drop stdout: `get_sms` refuses a short `+CMGL` listing rather than serving it as a complete inbox, `run_cell_scan` appends a `PARTIAL` marker, the developer console labels an unterminated reply, and the updater's health probe warns. A pipe masks the status, so a caller that needs it assigns first, then pipes.
-- **Caching.** Responses are cached per endpoint to reduce modem load, with TTLs tuned to how often the data actually changes: 3 seconds for signal stats and connection info, 5 seconds for network and settings data, and 1 hour for static device info like firmware version and build time. Where possible, multiple AT commands are batched into a single request to cut down on round trips.
+- **Caching.** Responses are cached per endpoint to reduce modem load, with TTLs tuned to how often the data actually changes: 2 seconds for signal stats, connection and SIM info, 5 seconds for network and settings data, and 1 hour for static device info like firmware version and build time. Where possible, multiple AT commands are batched into a single request to cut down on round trips.
 
 ### Firewall
 A lightweight iptables-based firewall restricts access to ports 80, 443, and optionally 22 (SSH) to the LAN IP only, blocking WAN exposure. Custom chains (`QUECDECK`/`QUECDECK6`) survive QCMAP's automatic iptables rebuilds. IPv6 access to the admin UI is blocked by default.

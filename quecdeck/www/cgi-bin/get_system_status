@@ -8,22 +8,29 @@ cgi_output_json
 # Watchcat: config only. Its running state comes from the systemctl batch below;
 # it is started and stopped exclusively via systemctl (create_watchcat.sh /
 # remove_watchcat.sh), so the unit state is authoritative.
+# read -d '' rather than $(cat): a builtin against a subshell plus an exec
+# (tools/device-costs.md). It keeps the trailing newline write_json_config
+# writes, hence the strip.
 if [ -s /usrdata/quecdeck/var/watchcat.json ]; then
-    watchcat_config=$(cat /usrdata/quecdeck/var/watchcat.json)
+    IFS= read -r -d '' watchcat_config < /usrdata/quecdeck/var/watchcat.json
+    watchcat_config=${watchcat_config%$'\n'}
 else
     watchcat_config='{"enabled":false}'
 fi
 
 # Scheduled restart: read config
 if [ -s /usrdata/quecdeck/var/scheduled_restart.json ]; then
-    sched_config=$(cat /usrdata/quecdeck/var/scheduled_restart.json)
+    IFS= read -r -d '' sched_config < /usrdata/quecdeck/var/scheduled_restart.json
+    sched_config=${sched_config%$'\n'}
 else
     sched_config='{"enabled":false,"type":"daily","day":1,"hour":3,"minute":0}'
 fi
 
 # Service states in one systemctl call. is-active takes multiple units and
-# prints one state per line in argument order; each invocation is a ~24 ms D-Bus
-# round trip to PID 1, so one call beats one per unit.
+# prints one state per line in argument order; each invocation is a D-Bus round
+# trip to PID 1 and dominates this endpoint, so one call beats one per unit.
+# Cost in tools/device-costs.md; the premise is checked by
+# tools/device-test-system-status.sh.
 # The list is fixed (not filtered by what is installed) so the line count is
 # constant and the guard below can trust it.
 SERVICE_UNITS="ttyd atcmd-daemon connection-logger lean-mode firewall sshd watchcat"
@@ -95,7 +102,13 @@ esac
 mobileap_lan_ip
 [ -n "$mf_lan_ip" ] && lan_ip_json="\"$mf_lan_ip\"" || lan_ip_json="null"
 
-quecdeck_version=$(cat /usrdata/quecdeck/version 2>/dev/null | tr -d '[:space:]')
+# read with the default IFS already trims, so this replaces cat plus tr: a
+# subshell and two execs (tools/device-costs.md).
+quecdeck_version=""
+[ -s /usrdata/quecdeck/version ] && read -r quecdeck_version < /usrdata/quecdeck/version
+# read trims spaces and tabs but NOT a carriage return, and this lands inside a
+# JSON string: one CR would break the whole endpoint, not just this field.
+quecdeck_version=${quecdeck_version%$'\r'}
 [ -z "$quecdeck_version" ] && quecdeck_version="unknown"
 
 printf '{"watchcat":{"running":%s,"config":%s},"scheduled_restart":%s,"ttyd":{"running":%s},"atcmd_daemon":{"running":%s},"connection_logger":{"running":%s},"lean_mode":%s,"firewall":%s,"sshd":%s,"upnp":%s,"lan_ip":%s,"quecdeck_version":"%s"}\n' \

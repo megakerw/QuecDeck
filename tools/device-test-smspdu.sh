@@ -33,7 +33,7 @@ note() { echo "NOTE: $1"; }
 # ------------------------------------------------------- the AT chain -----
 # The exact command cgi-bin/get_sms sends, same timeout: a bare CMGL would miss
 # an earlier command leaving the modem in a state CMGL then trips over.
-CHAIN='AT+CSMS=1;+CSDH=0;+CNMI=2,1,0,0,0;+CMGF=0;+CSCA?;+CSMP=17,167,0,8;+CPMS="ME","ME","ME";+CMGL=4'
+CHAIN='AT+CSMS=1;+CSDH=0;+CNMI=2,1,0,0,0;+CMGF=0;+CPMS="ME","ME","ME";+CMGL=4'
 
 echo "--- the get_sms command chain"
 raw=$(atcmd_run "$CHAIN" 5000) || { bad "atcmd_run failed outright"; raw=""; }
