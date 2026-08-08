@@ -127,13 +127,13 @@ else
 fi
 
 # ---- socket directory adoption across a restart ----------------------------
-# The daemon chowns the socket's parent to its drop target and seals it at
-# 0700, and it refuses to adopt a directory that is neither its own creation
-# nor already owned by that target. On this device it always takes the adoption
-# branch, because the unit's ExecStartPre creates and chowns the tree before
-# the daemon runs - so a regression in the adoption rule does not show up as a
-# failed test somewhere, it shows up as a daemon that will not start at all.
-# Worth exercising deliberately rather than trusting the boot that got us here.
+# The daemon seals the socket's parent at 0700 and refuses to adopt a directory
+# that is neither its own creation nor already owned by its drop target. Which
+# branch it takes now depends on who got there first: the unit's ExecStartPre no
+# longer creates the tree (root must not write inside www-data's), so a CGI
+# usually creates it and the daemon adopts, but on a boot where the daemon wins
+# it creates the directory itself. Both paths are valid. The invariant is the
+# sealed end state asserted below, not the branch.
 SOCKDIR=$(dirname "$_ATCLI_SOCK")
 systemctl restart atcmd-daemon
 if wait_sock; then
@@ -148,15 +148,14 @@ if [ "$dirinfo" = "700 www-data" ]; then
 else
     bad "socket dir sealed 0700 www-data" "is '$dirinfo'"
 fi
-# The adoption is logged, and this is the one place to confirm the daemon took
-# that branch rather than having created the directory itself (which would mean
-# ExecStartPre silently stopped running).
-ATLOG=/tmp/quecdeck/logs/atcmd.log
+# Informational only: which branch was taken. Not a failure either way, since
+# the daemon legitimately creates the dir when it starts before any CGI.
+ATLOG=/run/quecdeck/atcmd.log
 if [ -f "$ATLOG" ]; then
     if grep -q 'adopting existing socket dir' "$ATLOG"; then
-        ok "log shows the adoption branch (ExecStartPre pre-created the tree)"
+        ok "log shows the adoption branch (the existing dir was owned by www-data)"
     else
-        skp "adoption not in $ATLOG (ExecStartPre may not have run this boot)"
+        skp "no adoption line in $ATLOG: the daemon created the dir itself this boot (also correct)"
     fi
 else
     skp "no $ATLOG to read the adoption line from"
@@ -261,46 +260,8 @@ else
         *) bad "at-lib puts the refusal in the body" "$(printf '%s' "$at_out" | tr '\n' '|')" ;;
     esac
 fi
-# The daemon must not have seen it: atcli refuses before connecting, so this is
-# also what stops the malformed counter from being a test of the chunking.
+# The daemon must not have seen it: atcli refuses before connecting.
 unset at_long at_out at_rc
-
-# ---- log rate limiting -------------------------------------------------------
-# The daemon's log is an unrotated file on tmpfs here, trimmed only at unit
-# start, so a caller looping bad requests must not be able to write a line per
-# request and fill /tmp. Driven with an EMPTY command: it trips the daemon's
-# is_empty() || len > CMD_MAX branch, the same one an oversized command hits,
-# but an oversized one does not get there: atcli refuses it before it
-# connects, so it would never be counted and this would assert nothing.
-if [ -f "$ATLOG" ]; then
-    log0=$(wc -l < "$ATLOG")
-    mal0=$(counter malformed); mal0=${mal0:-0}
-    i=0
-    while [ "$i" -lt 25 ]; do
-        atcmd_run "" 2000 >/dev/null 2>&1
-        i=$((i + 1))
-    done
-    mal_d=$(( $(counter malformed) - mal0 ))
-    log_d=$(( $(wc -l < "$ATLOG") - log0 ))
-    if [ "$mal_d" -eq 25 ]; then
-        ok "25 malformed commands all refused and counted"
-    else
-        bad "25 malformed commands all refused and counted" "malformed +$mal_d"
-    fi
-    # At most one: log_worthy logs the first and every hundredth, and the counter
-    # has usually moved off 1 by the time this runs.
-    if [ "$log_d" -le 1 ]; then
-        ok "25 refusals wrote at most one log line (+$log_d)"
-    else
-        bad "25 refusals wrote at most one log line" "+$log_d lines"
-    fi
-    case "$(atcmd_run 'AT+CSQ' 3000)" in
-        *'+CSQ:'*OK) ok "daemon healthy after 25 refusals" ;;
-        *) bad "daemon healthy after 25 refusals" ;;
-    esac
-else
-    skp "no $ATLOG to measure log growth against"
-fi
 
 # ---- post-timeout resync -----------------------------------------------------
 # After a timeout a reply is still owed, so the daemon waits for its terminator

@@ -4,8 +4,13 @@
 cgi_check_cors
 cgi_output_json
 
-LOG=/tmp/install_quecdeck.log
-STATUS_FILE=/tmp/quecdeck_update.status
+LOG=/run/quecdeck/install.log
+STATUS_FILE=/run/quecdeck/update.status
+
+# No fallback to the pre-split /tmp paths, even across the update that moves
+# them: the incoming update_quecdeck.sh creates install.log during bootstrap,
+# before the www swap puts this CGI live. A fallback would also be unclearable,
+# since --clear-status only knows the /run path.
 
 offset=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^offset=' | cut -d= -f2)
 case "$offset" in
@@ -19,8 +24,9 @@ fi
 
 ack=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^ack=' | cut -d= -f2)
 if [ "$ack" = "1" ]; then
-    # The status file is root-owned in sticky /tmp, so www-data cannot unlink it
-    # here; run_update.sh clears it (terminal states only) as root via sudo.
+    # The status file is root-owned in root-owned /run/quecdeck, so www-data
+    # cannot unlink it here. The run_update.sh helper clears terminal states as
+    # root via sudo.
     /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --clear-status >/dev/null 2>&1
     printf '{"ok":true}\n'
     exit 0
@@ -38,7 +44,7 @@ fi
 raw_status=$(cat "$STATUS_FILE" 2>/dev/null)
 version=""
 case "$raw_status" in
-    # On "done" the swapped-in version file is the installed version; report
+# On "done", the swapped-in version file is the installed version. Report
     # it so the UI doesn't have to infer it. Sanitized for JSON embedding.
     done)
         status="done" ; rollback="none"
@@ -52,7 +58,7 @@ case "$raw_status" in
         # from a crash via systemd: the download window runs as the
         # install_quecdeck_fetch oneshot and the install as install_quecdeck.
         # "failed" on either = it died before writing an outcome (SIGKILL or
-        # the fetch unit's TimeoutStartSec bypass the cleanup paths); anything
+# the fetch unit's TimeoutStartSec bypasses the cleanup paths). Anything
         # else is still running. An empty/failed query defaults to running,
         # never a false "failed".
         if [ "$(systemctl is-active install_quecdeck 2>/dev/null)" = "failed" ] ||            [ "$(systemctl is-active install_quecdeck_fetch 2>/dev/null)" = "failed" ]; then

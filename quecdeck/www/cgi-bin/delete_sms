@@ -5,11 +5,11 @@
 # Delete a space- or comma-separated slot list, ONE COMMAND PER SLOT. Echoes OK,
 # or an ERROR naming how many parts STILL HOLD A MESSAGE, or were left
 # unattempted when the budget expired. A slot that was already empty counts as
-# done. Top-level so tools/run-tests.sh can extract it and drive it with a
+# done. Top-level so tests/host/run-tests.sh can extract it and drive it with a
 # stubbed atcmd_run.
 #
 # Never chained. Chaining measured 21 ms/slot against 20 ms for a single slot,
-# i.e. no gain: the flash write dominates and batching the round trips buys
+# There is no gain because the flash write dominates and batching the round trips buys
 # nothing (tools/device-costs.md). What it did buy was two caps to stay under
 # (the daemon's CMD_MAX of 512 and a modem-side limit near 80 commands), a
 # chunk size to tune, abort-at-first-error semantics, and a retry loop that
@@ -25,7 +25,7 @@ delete_sms_indices() {
     #
     # get_sms deliberately sets all three, and that asymmetry is intended: it
     # lists from ME, so it pins <mem3> to ME as well to guarantee arriving
-    # messages land where the page can see them. Reading owns that choice; a
+# messages land where the page can see them. The read path owns that choice. A
     # delete does not.
     local at_pfx='AT+CPMS="ME"'
     local failed=0 total=0 idx reply deadline expired=0
@@ -42,7 +42,7 @@ delete_sms_indices() {
     _epoch_now
     deadline=$(( _NOW + budget ))
 
-    # Unquoted on purpose, for the word splitting. valid_slot_list has already
+# Unquoted on purpose, for the word splitting. The valid_slot_list function has already
     # limited this to digits and commas, so globbing has nothing to match.
     for idx in ${1//,/ }; do
         total=$((total + 1))
@@ -82,7 +82,7 @@ delete_sms_indices() {
 
 # Slot lists arrive from the page and go straight into an AT command line, so
 # this is the boundary that keeps everything else out. A function so the suite
-# can extract and drive it; equivalent to ^[0-9]+(,[0-9]+)*$ without the fork.
+# can extract and drive it. This is equivalent to ^[0-9]+(,[0-9]+)*$ without the fork.
 valid_slot_list() {
     case $1 in ''|*[!0-9,]*) return 1 ;; esac
     case $1 in ,*|*,,*|*,) return 1 ;; esac

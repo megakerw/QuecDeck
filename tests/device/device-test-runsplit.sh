@@ -1,0 +1,328 @@
+#!/bin/sh
+# Runtime assertion of the ownership rule that tests/host/tmpwrite-guard.sh enforces
+# in source form. The guard reads code, while this checks the live filesystem.
+#
+# THE RULE: a directory's owner is the only uid that writes inside it.
+#
+#   /run/quecdeck     root:root  root writes, www-data reads
+#   /tmp/quecdeck     www-data   www-data writes, root stays out
+#   /usrdata/root     root:root  root's private home
+#
+# The guard cannot check any of this: a mode is a runtime fact, not a source
+# pattern. Every mode bug in this codebase came from the same cause -- relying
+# on the ambient umask for a security-relevant mode -- and none of them were
+# visible to a source scan. Hence this file.
+#
+# Run as ROOT on a CONFIGURED device (setup complete):
+#
+#     sh device-test-runsplit.sh [/tmp/test_update.sh]
+#
+# Passing the candidate updater also exercises its real root-home migration
+# function against an isolated fixture. It never points that test at /usrdata.
+#
+# Self-cleaning: it writes only throwaway probes, and the one update it triggers
+# uses a non-existent tag that aborts before anything is staged.
+
+SUDO=/opt/bin/sudo
+RUN_UPDATE=/usrdata/quecdeck/script/run_update.sh
+RUNDIR=/run/quecdeck
+WEBDIR=/tmp/quecdeck
+OLD_LOG=/tmp/install_quecdeck.log
+OLD_STATUS=/tmp/quecdeck_update.status
+PROBE=qdsplit-probe
+CANDIDATE_UPDATER=${1:-}
+HARDEN_FIXTURE=/run/qdsplit-root-home
+HARDEN_OUTSIDE=/run/qdsplit-outside
+
+pass=0; fail=0; warn=0
+ok()   { echo "  PASS: $1"; pass=$((pass+1)); }
+bad()  { echo "  FAIL: $1"; fail=$((fail+1)); }
+note() { echo "  NOTE: $1"; warn=$((warn+1)); }
+
+cleanup() {
+    rm -f "$OLD_LOG" "$OLD_STATUS" /tmp/qdsplit-decoy 2>/dev/null
+    for _d in "$RUNDIR" "$WEBDIR" /usrdata/root /usrdata/root/bin; do
+        rm -f "$_d/$PROBE" 2>/dev/null
+    done
+    "$SUDO" "$RUN_UPDATE" --clear-status >/dev/null 2>&1
+    # Clear BOTH layouts unconditionally. "running" is not a terminal state, so
+    # --clear-status will not remove it. A half-cleaned status leaves the UI
+    # stuck on an update banner it can never dismiss.
+    rm -f "$RUNDIR/update.status" "$OLD_STATUS" 2>/dev/null
+    systemctl reset-failed install_quecdeck_fetch >/dev/null 2>&1
+    systemctl reset-failed install_quecdeck >/dev/null 2>&1
+    rm -rf "$HARDEN_FIXTURE" "$HARDEN_OUTSIDE" 2>/dev/null
+}
+trap cleanup EXIT INT TERM
+
+echo "=================================================================="
+echo " QuecDeck ownership-rule check"
+echo "=================================================================="
+[ "$(id -u)" = "0" ] || { echo "FATAL: run as root."; exit 1; }
+[ -x "$SUDO" ] || { echo "FATAL: $SUDO missing -- is QuecDeck installed?"; exit 1; }
+id www-data >/dev/null 2>&1 || { echo "FATAL: www-data user missing."; exit 1; }
+
+# The mutating sections assume the split is DEPLOYED. Against an older install
+# they would report failures that only mean "not deployed", and section C would
+# wedge the UI on a non-terminal "running" status written to the old path.
+DEPLOYED=0
+grep -q '/run/quecdeck' "$RUN_UPDATE" 2>/dev/null && DEPLOYED=1
+# The unit files live on the read-only rootfs and can lag the /usrdata scripts,
+# so section D is gated separately: with an old unit still trimming inside
+# www-data's tree, D would report a regression that only means "not deployed".
+UNIT_DEPLOYED=0
+grep -q '/run/quecdeck' /lib/systemd/system/atcmd-daemon.service 2>/dev/null && UNIT_DEPLOYED=1
+[ "$DEPLOYED" = "0" ] && {
+    echo ""
+    echo "  !! Installed run_update.sh does not use /run/quecdeck: the split is"
+    echo "     NOT deployed. Running read-only checks only; C and D are skipped"
+    echo "     to avoid a misleading verdict."
+}
+
+echo ""
+echo "[Facts]"
+for s in protected_symlinks protected_regular; do
+    echo "  fs.$s = $(cat /proc/sys/fs/$s 2>/dev/null || echo unknown)"
+done
+
+# ---- A: the ownership rule, as a table -----------------------------------
+# One check, applied uniformly. Written three times by hand it drifted: an
+# earlier version accepted mode 775 for a root-owned boundary dir, which is
+# group-writable and defeats the entire point.
+#
+# check_dir <path> <expected-owner> <deny|own>
+#   deny = www-data must NOT be able to create a name here (root's trees)
+#   own  = www-data owns it, so a write probe would trivially pass. The mode
+#          check still has to hold, because "owner only" cuts both ways.
+check_dir() {
+    _p="$1"; _want_owner="$2"; _probe="$3"
+    if [ ! -d "$_p" ]; then
+        note "$_p absent"
+        return
+    fi
+    _owner=$(ls -ld "$_p" | awk '{print $3}')
+    _mode=$(stat -c %a "$_p" 2>/dev/null)
+    [ "$_owner" = "$_want_owner" ] && ok "$_p owned by $_owner" \
+        || bad "$_p owned by '$_owner', expected $_want_owner"
+
+    # The invariant, stated once: nobody but the owner may write. Group and
+    # other write bits are what turn any of these into a plantable directory.
+    case "$_mode" in
+        *[2367]) bad "$_p mode $_mode: OTHER can write. Any uid can plant a name the owner will later open." ;;
+        *[2367]?) bad "$_p mode $_mode: GROUP can write. Any group member can plant a name the owner will later open." ;;
+        *) ok "$_p mode $_mode (owner-only write)" ;;
+    esac
+
+    # DAC bits can mislead, so prove the restriction with a write attempt.
+    if [ "$_probe" = "deny" ]; then
+        if $SUDO -u www-data sh -c "echo x > $_p/$PROBE" 2>/dev/null; then
+            bad "www-data WROTE into $_p despite the mode above"
+            rm -f "$_p/$PROBE"
+        else
+            ok "www-data cannot write into $_p"
+        fi
+    fi
+}
+
+echo ""
+echo "[A] directory ownership rule"
+check_dir "$RUNDIR"           root     deny
+check_dir "$WEBDIR"           www-data own
+# Root's home is the one place this is PERSISTENT: /usrdata survives reboots
+# and updates, so a writable root home turns a momentary www-data compromise
+# into a permanent root backdoor (rewrite .profile, or a helper root runs).
+check_dir /usrdata/root       root     deny
+check_dir /usrdata/root/bin   root     deny
+
+# Root writing into www-data's tree is the bug class the split removed. The
+# atcli socket is www-data-owned because atcli drops privileges before binding.
+if [ -d "$WEBDIR" ]; then
+    _rootowned=$(find "$WEBDIR" -user root 2>/dev/null | head -5)
+    [ -n "$_rootowned" ] \
+        && bad "root-owned entries inside www-data's tree: $(printf '%s ' $_rootowned)" \
+        || ok "no root-owned entries under $WEBDIR"
+fi
+
+# ---- A2: the creators produce the right mode on a FRESH tree --------------
+# Section A only proves the current state. These directories may have been
+# created long ago and would still pass if every creator were broken. This
+# exercises the real shipped
+# functions against a throwaway parent, which is what actually tests the fix.
+# Non-destructive: nothing touches the live /tmp/quecdeck.
+echo ""
+echo "[A2] www-data creators seal a fresh parent (not just the existing one)"
+FRESH=/tmp/qdfresh
+$SUDO -u www-data rm -rf "$FRESH" 2>/dev/null; rm -rf "$FRESH" 2>/dev/null
+# cache_write and _bf_file are the two shipped creators. Run them as www-data
+# with their target redirected, so a missing umask shows up as a loose parent.
+$SUDO -u www-data bash -c "
+    . /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null
+    _CACHE_DIR=$FRESH/cache
+    cache_write \"\$_CACHE_DIR/probe\" 'x' >/dev/null 2>&1
+    _bf_file $FRESH/auth_failures 10.0.0.1 >/dev/null 2>&1
+" >/dev/null 2>&1
+if [ -d "$FRESH" ]; then
+    for _d in "$FRESH" "$FRESH/cache" "$FRESH/auth_failures"; do
+        [ -d "$_d" ] || continue
+        _fm=$(stat -c %a "$_d" 2>/dev/null)
+        case "$_fm" in
+            *[2367]|*[2367]?)
+                if [ "$DEPLOYED" = "0" ]; then
+                    note "fresh $_d came out $_fm: the installed build still uses 'mkdir -p -m', which seals the leaf but not the parent. Expected until the split is deployed."
+                else
+                    bad "fresh $_d came out $_fm: a creator is missing its umask (mkdir -m seals the FINAL component only, so the parent takes the ambient umask)"
+                fi ;;
+            *) ok "fresh $_d created $_fm (owner-only write)" ;;
+        esac
+    done
+else
+    note "creators did not run; cgi-lib.sh may not be installed at the expected path"
+fi
+rm -rf "$FRESH" 2>/dev/null
+
+# ---- C: the old paths are dead -------------------------------------------
+echo ""
+echo "[C] pre-split paths are no longer used"
+if [ "$DEPLOYED" = "0" ]; then
+    note "skipped: split not deployed on this device"
+else
+rm -f "$OLD_LOG" "$OLD_STATUS"
+# Squat both old paths as www-data. Before the split this wedged updates
+# permanently: fs.protected_regular denied root its own write, the fetch unit
+# never started, and the status stuck at "running" with nothing to clear it.
+$SUDO -u www-data sh -c "echo SQUATTED > $OLD_LOG" 2>/dev/null
+$SUDO -u www-data sh -c "echo SQUATTED > $OLD_STATUS" 2>/dev/null
+echo "  squatted both pre-split paths as www-data"
+
+_missing_tag="v999999999.$(date +%s).$$"
+$SUDO -u www-data "$SUDO" "$RUN_UPDATE" "$_missing_tag" >/tmp/qdsplit-out 2>&1
+_rc=$?
+grep -qi "permission denied" /tmp/qdsplit-out \
+    && { bad "run_update.sh hit a permission error with the old paths squatted:"; sed 's/^/      /' /tmp/qdsplit-out; } \
+    || ok "run_update.sh ran clean with both old paths squatted (rc=$_rc)"
+rm -f /tmp/qdsplit-out
+sleep 2
+[ -f "$RUNDIR/install.log" ] \
+    && ok "the run wrote $RUNDIR/install.log, not the squatted /tmp path" \
+    || bad "no $RUNDIR/install.log after a trigger -- is the update still using /tmp?"
+[ "$(cat "$OLD_LOG" 2>/dev/null)" = "SQUATTED" ] \
+    && ok "the squatted $OLD_LOG was left untouched" \
+    || bad "$OLD_LOG changed: something still writes the pre-split path"
+
+# Poll rather than sample once. With no data session the fetch sits in
+# wget --timeout=30 --tries=2 for up to a minute, so a single early read would
+# see "running" and misreport the wedge. The wedge is specifically "running
+# with NO unit alive to finish it", so test that, not the bare string.
+_st=""; _i=0
+while [ "$_i" -lt 45 ]; do
+    _st=$(cat "$RUNDIR/update.status" 2>/dev/null)
+    case "$_st" in failed*|done) break ;; esac
+    _fetch=$(systemctl is-active install_quecdeck_fetch 2>/dev/null)
+    _inst=$(systemctl is-active install_quecdeck 2>/dev/null)
+    case "$_fetch$_inst" in *activating*|*active*) ;; *) [ "$_i" -gt 3 ] && break ;; esac
+    _i=$((_i + 1)); sleep 2
+done
+case "$_st" in
+    failed*|done) ok "status reached a terminal state ('$_st') in ~$((_i * 2))s" ;;
+    running)
+        case "$_fetch$_inst" in
+            *activating*|*active*) note "still 'running' with a live unit: a slow or offline fetch, not a wedge" ;;
+            *) bad "status 'running' with NO unit alive: the wedge is back" ;;
+        esac ;;
+    "") bad "no status file written -- run_update.sh could not write $RUNDIR" ;;
+    *)  note "unexpected status '$_st'" ;;
+esac
+fi
+
+# ---- C2: www-data can still READ what root writes ------------------------
+# After C, so the log it asserts on actually exists: run before it, this could
+# only ever emit notes.
+echo ""
+echo "[C2] www-data can read root's runtime files (the UI depends on it)"
+for f in "$RUNDIR/atcmd.log" "$RUNDIR/install.log"; do
+    if [ -f "$f" ]; then
+        $SUDO -u www-data sh -c "cat $f" >/dev/null 2>&1 \
+            && ok "www-data reads $(basename "$f") ($(ls -l "$f" | awk '{print $1, $3}'))" \
+            || bad "www-data CANNOT read $f -- the UI log view will be empty"
+    else
+        note "$f not present yet"
+    fi
+done
+
+# ---- D: root must not write through www-data's tree ----------------------
+echo ""
+echo "[D] root does not follow a link planted in www-data's tree"
+if [ "$UNIT_DEPLOYED" = "0" ]; then
+    note "skipped: atcmd-daemon.service on the rootfs still writes the pre-split path; restarting would only re-prove the old bug"
+elif [ -d "$WEBDIR" ]; then
+    printf 'CANARY\n' > /tmp/qdsplit-decoy; chmod 600 /tmp/qdsplit-decoy
+    # atcmd.log.tmp is the name the OLD atcmd-daemon trim wrote through.
+    if $SUDO -u www-data sh -c "mkdir -p $WEBDIR/logs && ln -sf /tmp/qdsplit-decoy $WEBDIR/logs/atcmd.log.tmp" 2>/dev/null; then
+        systemctl restart atcmd-daemon >/dev/null 2>&1
+        sleep 3
+        [ "$(cat /tmp/qdsplit-decoy 2>/dev/null)" = "CANARY" ] \
+            && ok "decoy intact after an atcmd-daemon restart (the trim no longer writes into $WEBDIR)" \
+            || bad "the daemon restart wrote through a www-data symlink: root still trims inside $WEBDIR"
+        rm -f "$WEBDIR/logs/atcmd.log.tmp" 2>/dev/null
+        echo "  atcmd-daemon: $(systemctl is-active atcmd-daemon 2>/dev/null)"
+    else
+        note "could not plant the test link; section D not exercised"
+    fi
+else
+    note "$WEBDIR absent; section D not exercised"
+fi
+
+# ---- E: one-time root-home migration ------------------------------------
+echo ""
+echo "[E] candidate updater safely migrates a legacy root home"
+if [ -z "$CANDIDATE_UPDATER" ]; then
+    note "skipped: pass a candidate update_quecdeck.sh to test its migration function"
+elif [ ! -f "$CANDIDATE_UPDATER" ]; then
+    bad "candidate updater not found: $CANDIDATE_UPDATER"
+else
+    rm -rf "$HARDEN_FIXTURE" "$HARDEN_OUTSIDE"
+    mkdir -p "$HARDEN_FIXTURE" "$HARDEN_OUTSIDE/bin-target"
+    printf 'BIN-CANARY\n' > "$HARDEN_OUTSIDE/bin-target/canary"
+    printf 'PROFILE-CANARY\n' > "$HARDEN_OUTSIDE/profile-target"
+    chmod 777 "$HARDEN_FIXTURE"
+    ln -s "$HARDEN_OUTSIDE/bin-target" "$HARDEN_FIXTURE/bin"
+    ln -s "$HARDEN_OUTSIDE/profile-target" "$HARDEN_FIXTURE/.profile"
+
+    _fn=$(sed -n '/^harden_root_home() {/,/^}/p' "$CANDIDATE_UPDATER")
+    if [ -z "$_fn" ]; then
+        bad "candidate updater has no extractable harden_root_home function"
+    else
+        eval "$_fn"
+        if harden_root_home "$HARDEN_FIXTURE"; then
+            [ "$(cat "$HARDEN_OUTSIDE/bin-target/canary" 2>/dev/null)" = "BIN-CANARY" ] && \
+                [ "$(cat "$HARDEN_OUTSIDE/profile-target" 2>/dev/null)" = "PROFILE-CANARY" ] \
+                && ok "migration did not follow either planted symlink" \
+                || bad "migration changed a target outside the fixture"
+            [ ! -L "$HARDEN_FIXTURE/bin" ] && [ -d "$HARDEN_FIXTURE/bin" ] && \
+                [ "$(stat -c %a "$HARDEN_FIXTURE/bin" 2>/dev/null)" = "755" ] \
+                && ok "legacy bin replaced by a real 0755 directory" \
+                || bad "replacement bin is not a real 0755 directory"
+            [ ! -L "$HARDEN_FIXTURE/.quecdeck-home-hardened" ] && \
+                [ "$(stat -c '%U %a' "$HARDEN_FIXTURE/.quecdeck-home-hardened" 2>/dev/null)" = "root 600" ] && \
+                [ "$(cat "$HARDEN_FIXTURE/.quecdeck-home-hardened" 2>/dev/null)" = "1" ] \
+                && ok "trusted root:600 migration marker created" \
+                || bad "migration marker owner, mode, type, or content is wrong"
+            _before=$(find "$HARDEN_FIXTURE" -maxdepth 1 -name 'bin.pre-quecdeck-hardening.*' | wc -l)
+            harden_root_home "$HARDEN_FIXTURE" >/dev/null 2>&1
+            _after=$(find "$HARDEN_FIXTURE" -maxdepth 1 -name 'bin.pre-quecdeck-hardening.*' | wc -l)
+            [ "$_before" = "1" ] && [ "$_after" = "1" ] \
+                && ok "second run is idempotent and keeps one quarantine" \
+                || bad "second run repeated or lost the quarantine ($_before -> $_after)"
+        else
+            bad "candidate harden_root_home rejected the isolated legacy fixture"
+        fi
+    fi
+fi
+
+echo ""
+echo "=================================================================="
+echo " Results: $pass passed, $fail failed, $warn notes"
+[ "$fail" -eq 0 ] \
+    && echo " VERDICT: the ownership rule holds on this device." \
+    || echo " VERDICT: a property FAILED. Each FAIL line names what broke."
+echo "=================================================================="

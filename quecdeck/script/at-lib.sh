@@ -1,29 +1,29 @@
 #!/bin/bash
-# AT command access layer. Only this file may invoke atcli; the pre-commit
+# AT command access layer. Only this file may invoke atcli. The pre-commit
 # hook rejects atcli calls anywhere else. Source it with:
 #   . /usrdata/quecdeck/script/at-lib.sh
 #
 # atcli serializes all commands through its own daemon side (atcli --daemon,
 # unit atcmd-daemon): connection-per-command over a unix socket. Responses
-# arrive \r-stripped; empty output means timeout OR the daemon is down. A
+# arrive with \r stripped. Empty output means timeout or the daemon is down. A
 # waiting sender that dies while queued is skipped by the daemon (socket
-# hangup detection). atcli is NOT setuid and does NOT auto-fall-back to the
+# hangup detection). The atcli binary is not setuid and does not automatically fall back to the
 # port: when the daemon is down every caller (root and www-data alike) gets
 # empty output until systemd restarts it (within ~5 s). The direct-port path
 # is root-only and must be requested explicitly with --direct (break-glass).
 #
 # atcmd_run <cmd> [timeout_ms]  - send, wait for the response on stdout.
-#     Prints whatever arrived; the exit status is the failure signal. Non-zero
-#     with no output is a timeout or a down daemon; non-zero WITH output is a
+#     Prints whatever arrived. The exit status is the failure signal. Non-zero
+#     with no output is a timeout or a down daemon. Non-zero with output is a
 #     reply the modem began and never terminated (no OK/ERROR within the
 #     timeout), which the bytes themselves cannot show.
 #     Whether a partial reply is usable depends on the command, so that call
 #     belongs at the call site. A pipe masks the status ($? is the last
 #     stage), so a caller that needs it must assign first, then pipe.
-#     Root callers use it too; root reaches the socket (device-verified
-#     via tools/device-test-sockpairs.sh).
+#     Root callers use it too. Root reaches the socket (device-verified
+#     via tests/device/device-test-atclid.sh, which exercises the live daemon).
 # atcmd_fire <cmd> [timeout_ms] - fire-and-forget: the daemon executes even
-#     after the caller is gone. REQUIRED for modem reboots (CFUN=1,1); a
+#     after the caller is gone. This is required for modem reboots (CFUN=1,1). A
 #     plain atcmd_run whose sender exits early is skipped, not executed.
 #     timeout_ms bounds only how long --detach waits to drain the response,
 #     not whether or when the command executes.
@@ -34,7 +34,7 @@
 # look for ERROR in the body, and without this a refusal reads as "no response
 # from the modem", blaming a modem that was never asked.
 
-# Default-assigned so host tests can override them; CGI environments can't
+# Default-assigned so host tests can override them. CGI environments cannot
 # (request headers only surface as HTTP_* variables). _ATCLI_SOCK is also
 # the daemon-up probe for pollers: [ -S "$_ATCLI_SOCK" ].
 : "${_ATCLI:=/usrdata/quecdeck/atcli}"
@@ -46,7 +46,7 @@
 # atcli's, the cost is just the body line below going missing and the caller
 # seeing the generic "no response from the modem". Degraded, not wrong.
 #
-# Verified against the real client by tools/device-test-atclid.sh, which is the
+# Verified against the real client by tests/device/device-test-atclid.sh, which is the
 # only place that can: the host suite stubs atcli with this same code, so it
 # asserts the constant against itself and cannot detect drift.
 : "${_AT_E_TOOLONG:=65}"

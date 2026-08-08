@@ -1,6 +1,6 @@
 #!/bin/bash
 # Watchcat ping watchdog. Reads config from watchcat.json at startup.
-# Run as www-data by systemd; config is written by watchcat_maker CGI.
+# systemd runs this as www-data. The watchcat_maker CGI writes its configuration.
 
 . /usrdata/quecdeck/script/json-lib.sh
 . /usrdata/quecdeck/script/at-lib.sh
@@ -48,12 +48,14 @@ successes=0
 log_restart() {
     local reason="$1" detail="$2"
     # json-lib.sh's parser can't handle embedded quotes/backslashes, and a raw
-    # newline would split the JSONL entry; strip them here for every caller.
+    # A newline would split the JSONL entry, so strip newlines for every caller.
     reason=$(printf '%s' "$reason" | tr -d '"\\' | tr '\n\r' '  ')
     detail=$(printf '%s' "$detail" | tr -d '"\\' | tr '\n\r' '  ')
-    mkdir -p "$(dirname "$RESTART_LOG")"
+    # umask, not a bare mkdir: this can be the first creator of the var dir, so
+    # the mode must not come from whatever umask the unit inherited.
+    [ -d "$(dirname "$RESTART_LOG")" ] || ( umask 077; mkdir -p "$(dirname "$RESTART_LOG")" )
     # Store wall ts, uptime AND boot_id: the wall clock may never sync, and
-    # uptime is only meaningful within its own boot. get_restart_log picks
+    # uptime is only meaningful within its own boot. The get_restart_log function picks
     # whichever source is trustworthy at read time.
     printf '{"ts":%d,"uptime":%d,"boot_id":"%s","reason":"%s","detail":"%s"}\n' \
         "$(date +%s)" "$(get_uptime)" "$BOOT_ID" "$reason" "$detail" >> "$RESTART_LOG"
@@ -176,7 +178,7 @@ while :; do
             sync
             sleep 2
             echo "uptime $(get_uptime)s: $detail"
-            # The reboot must survive this script exiting; see at-lib.sh.
+            # The reboot must survive this script exiting. See at-lib.sh.
             atcmd_fire 'AT+CFUN=1,1' 10000
             exit 0
         fi

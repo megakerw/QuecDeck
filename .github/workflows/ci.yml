@@ -12,12 +12,12 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Test suite
-        run: bash tools/run-tests.sh --slow
+        run: bash tests/host/run-tests.sh --slow
 
       - name: auth.lua tests
         run: |
           sudo apt-get install -y -qq lua5.1
-          sudo bash tools/host-test-authlua.sh
+          sudo bash tests/host/host-test-authlua.sh
 
       - name: Repository integrity checks
-        run: bash tools/ci-checks.sh
+        run: bash tests/host/ci-checks.sh

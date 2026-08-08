@@ -24,7 +24,7 @@
 # Linux, not just the modem, so it would end the run rather than cycle it.
 #
 # atcli's own harness covers what the daemon DOES with such a line (AT+URCEND
-# in tools/host-test-atclid.sh, against a fake modem). Only the device can say
+# in the atcli repository's host harness, against a fake modem). Only the device can say
 # whether one ever arrives.
 
 set -u
@@ -96,7 +96,7 @@ CATPID=""
 systemctl start "$UNIT" >/dev/null 2>&1
 
 # The modem frames with CRLF; strip the \r so the anchors below mean what they
-# look like. atcli does the same before matching.
+# look like. The atcli client does the same before matching.
 strip() { tr -d '\r' < "$CAP"; }
 
 # Sanity gate first. A capture with none of our own OKs in it means the

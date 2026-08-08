@@ -2,7 +2,7 @@
 # Shared CGI helpers. Source this at the top of each CGI script:
 #   . /usrdata/quecdeck/script/cgi-lib.sh
 #
-# bash only. busybox ash accepts ${var//x/y} and $(<file) here, so a non-bash
+# bash only. BusyBox ash accepts ${var//x/y} and $(<file) here, so a non-bash
 # caller looks fine until printf -v, which ash prints to stdout instead of
 # assigning: corrupt output rather than an error. Refuse up front.
 if [ -z "$BASH_VERSION" ]; then
@@ -10,13 +10,13 @@ if [ -z "$BASH_VERSION" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
-# AT access layer (atcmd_run, atcmd_fire); used by the cache helpers below.
+# AT access layer (atcmd_run, atcmd_fire), used by the cache helpers below.
 . /usrdata/quecdeck/script/at-lib.sh
 
 # Reject cross-origin requests. Doubles as CSRF protection: browsers always send
 # the Origin header on cross-origin requests (including form POSTs), so a
 # malicious page on another origin will be blocked here. Absent Origin (curl,
-# wget, same-origin navigation) is allowed. https only: CGIs are bound to the
+# wget, same-origin navigation) is allowed. HTTPS only: CGIs are bound to the
 # 443 socket, so no legitimate request has an http origin.
 # Call before emitting any HTTP headers.
 cgi_check_cors() {
@@ -121,13 +121,13 @@ valid_ipv4() {
 # Modem AP config. The system scripts (lighttpd_prestart.sh, update_sshd_ip.sh,
 # firewall.sh) parse this file themselves: they are /bin/sh and do not source
 # this library. They deliberately DIVERGE on a missing or malformed LAN IP, and
-# must stay that way; mobileap_lan_ip explains why.
+# must stay that way. The mobileap_lan_ip function explains why.
 # ---------------------------------------------------------------------------
 MOBILEAP_CFG=/etc/data/mobileap_cfg.xml
 
 # Read one or more tags in a SINGLE pass, setting one variable per tag:
 #   mobileap_read APIPAddr UPnP   ->   $mf_APIPAddr, $mf_UPnP
-# Absent tags are set empty; first occurrence wins. Tag names are literals
+# Absent tags are set empty. The first occurrence wins. Tag names are literals
 # supplied by CGIs, never request input.
 #
 # Call it directly, NOT inside $(...): the variables would die with the subshell.
@@ -145,7 +145,7 @@ mobileap_read() {
     # the variables set below would be lost.
     #
     # Keep the grep: a pure-bash scan of this 462-line file measured 1.6x to
-    # 5.1x slower. A fork beats ~40 lines of bash line-processing; the threshold
+    # 5.1x slower. A fork beats about 40 lines of bash processing. The threshold
     # and the numbers are in tools/device-costs.md.
     while IFS= read -r line; do
         [ -n "$line" ] || continue
@@ -193,7 +193,7 @@ write_json_config() {
 }
 
 # Verify a web password via the check_password.sh sudo helper. The htpasswd
-# files are root:root 600, unreadable from the web tier; the helper (root via
+# files are root:root 600 and unreadable from the web tier. The helper (root via
 # sudo) is the only credential-check path. Password goes over stdin, never
 # argv. Usage: validate_password <admin|dev> <username> <password>
 validate_password() {
@@ -204,7 +204,10 @@ validate_password() {
 # Usage: log_access_event <log_file> <json_string>
 log_access_event() {
     local log_file="$1" entry="$2"
-    mkdir -p "$(dirname "$log_file")" && chmod 700 "$(dirname "$log_file")"
+    local log_dir; log_dir=$(dirname "$log_file")
+    # umask so the /tmp/quecdeck parent is sealed too, not just the leaf: no
+    # root unit pre-creates it any more. Guarded to stay fork-free once created.
+    [ -d "$log_dir" ] || { ( umask 077; mkdir -p "$log_dir" ); chmod 700 "$log_dir"; }
     printf '%s\n' "$entry" >> "$log_file"
     local count
     count=$(wc -l < "$log_file" 2>/dev/null || echo 0)
@@ -235,11 +238,12 @@ cgi_wan_ip() {
 }
 
 # Map a client IP to its failure-record path under <dir>, ensuring <dir> exists
-# 0700. Opportunistically prunes records older than a day (~1% of calls);
+# 0700. Records older than a day are pruned on about 1% of calls.
 # lockouts last 15 min, so a day-old record is always expired.
 _bf_file() {
     local dir="$1" ip="$2"
-    mkdir -p "$dir" && chmod 700 "$dir"
+    # The umask seals the /tmp/quecdeck parent as well as the leaf. See cache_write.
+    [ -d "$dir" ] || { ( umask 077; mkdir -p "$dir" ); chmod 700 "$dir"; }
     [ $(( RANDOM % 100 )) -eq 0 ] && find "$dir" -maxdepth 1 -type f -mtime +1 -delete 2>/dev/null
     printf '%s/%s' "$dir" "${ip//:/_}"
 }
@@ -261,9 +265,10 @@ bf_fail() {
     local f count now
     f=$(_bf_file "$1" "$2")
     sleep 1
-    # flock the record: parallel failures must not undercount. All writers
-    # are www-data CGIs (no SELinux cross-domain risk). BusyBox flock has
-    # no -w; degrades to unlocked where flock is absent (dev machine).
+    # flock the record: parallel failures must not undercount. All writers are
+    # www-data CGIs, so uid is the only boundary in play. BusyBox flock has no
+    # BusyBox flock has no -w. Development environments without flock use the
+    # unlocked fallback.
     exec 9>>"$f"
     command -v flock >/dev/null 2>&1 && flock -x 9
     count=$(grep '^count=' "$f" | cut -d= -f2)
@@ -290,14 +295,14 @@ bf_clear() {
 #
 # Read CGIs call cache_get_or_fetch: response is served from a file if fresh,
 # otherwise fetched live, cached atomically via temp+mv, and returned.
-# Write CGIs call cache_invalidate on every file their change affects; the next
+# Write CGIs call cache_invalidate on every file their change affects. The next
 # read fetches live. They do not warm the cache: only a read knows what the
 # modem settled on.
 # During an active cell scan (qscan.active flag), cached data is served
 # unconditionally so AT commands are not sent to a busy modem.
 #
 # Validation: responses are only cached if the last non-empty line is exactly
-# "OK". ERROR/CME/CMS responses and empty results are rejected; stale cache
+# "OK". ERROR/CME/CMS responses and empty results are rejected. Stale cache
 # is served instead. Retry policy is documented at cache_get_or_fetch.
 #
 # File format: first line is the write time in epoch CENTIseconds, rest is the
@@ -317,16 +322,16 @@ _CACHE_MODEM_CONN="$_CACHE_DIR/modem_conn"
 # Sets $_NOW_CS (epoch centiseconds) and $_NOW (epoch seconds) from /proc/uptime
 # and /proc/stat's btime. Assigns rather than echoes: a command substitution
 # would restore the fork this exists to avoid. $EPOCHSECONDS is bash 5.0, device
-# is 3.2.57, and date(1) costs ~3.6x this (tools/device-costs.md). btime is
+# is 3.2.57, and date(1) costs ~3.6x this (tools/device-costs.md). The btime field is
 # re-read per call, not memoized, so a clock step is seen.
 #
-# Compare ages in _NOW_CS, never _NOW. btime is device-verified constant (75
+# Compare ages in _NOW_CS, never _NOW. The btime field is device-verified constant (75
 # reads, one value), so it cancels in a subtraction, leaving uptime's own
 # centiseconds: ages exact to 10 ms. Floored seconds carry +-1 s, which on a 2 s
 # TTL flips hits to misses. $_NOW is for whole-second callers, here delete_sms.
 #
 # Requires 64-bit shell arithmetic: _NOW_CS is ~1.8e11 (38 bits). Verified on
-# armv7l/3.2.57; a 32-bit shell would wrap it silently. The date(1) fallback is
+# armv7l/3.2.57. A 32-bit shell would wrap it silently. The date(1) fallback is
 # for a host without procfs, which neither the device nor Git Bash is.
 _epoch_now() {
     local u= k= v= bt= frac=
@@ -375,7 +380,7 @@ _cache_load() {
 }
 
 # Age an already-loaded $_CACHE_TS against ttl SECONDS (the header is
-# centiseconds; callers keep working in seconds).
+# centiseconds while callers continue working in seconds).
 _cache_ts_fresh() {
     local age
     _epoch_now
@@ -388,7 +393,7 @@ _cache_ts_fresh() {
 # Returns 0 if the cache file exists and is younger than ttl seconds. Header,
 # not stat(1)'s mtime, which costs ~8x more (tools/device-costs.md).
 #
-# Use only when the answer alone is wanted; pairing it with cache_read reads the
+# Use only when the answer alone is wanted. Pairing it with cache_read reads the
 # file twice. To also serve the payload, call _cache_load once and test with
 # _cache_ts_fresh, as cache_get_or_fetch does. Leaves both globals populated.
 cache_is_fresh() {
@@ -396,7 +401,7 @@ cache_is_fresh() {
 }
 
 # Returns 0 if an AT response is valid (last non-empty line is exactly OK).
-# Runs on every fetch; trailing blank/padded lines must not mask the OK.
+# Runs on every fetch. Trailing blank or padded lines must not mask the OK.
 at_response_ok() {
     local s="$1"
     while :; do
@@ -406,7 +411,7 @@ at_response_ok() {
 }
 
 # Turn a write command's AT reply into a result the frontend can positively
-# ack: the reply passes through on success (ends in OK); otherwise it becomes a
+# ack: the reply passes through on success when it ends in OK. Otherwise it becomes a
 # line CONTAINING "ERROR" (the modem's own error line, or a synthesized one for
 # an empty/timed-out reply). So an empty reply - e.g. the daemon restarting -
 # reads as failure instead of false success. Callers that must tolerate a
@@ -440,20 +445,11 @@ cache_write() {
     local f="$1" content="$2" tmp
     tmp="${f}.tmp.$$"
     # Guarded because the dir exists for every write after the first since boot,
-    # and mkdir+chmod are two forks on the miss path, which is every dashboard
-    # poll. -m sets the mode at creation; it is not re-asserted per write.
-    #
-    # Safe only because the PARENT /tmp/quecdeck is 0700 www-data, created by
-    # the atcmd-daemon unit's ExecStartPre and asserted by
-    # tools/device-test-atclid.sh. Creating this dir first therefore already
-    # requires being www-data or root. If that parent mode ever loosens, this
-    # guard has to go back to asserting the mode.
-    #
-    # Note -m applies to the FINAL component only: were /tmp/quecdeck absent,
-    # mkdir -p would create it at the umask default, not 0700. It is never
-    # absent in practice because the unit creates it before any CGI can run,
-    # which is the same dependency as above.
-    [ -d "$_CACHE_DIR" ] || mkdir -p -m 700 "$_CACHE_DIR"
+    # and mkdir is a fork on the miss path, which is every dashboard poll.
+    # umask, not -m: -m seals the FINAL component only, and no root unit
+    # pre-creates the /tmp/quecdeck parent any more, so the first www-data path
+    # to arrive owns sealing it. Asserted by tests/device/device-test-runsplit.sh.
+    [ -d "$_CACHE_DIR" ] || ( umask 077; mkdir -p "$_CACHE_DIR" )
     _epoch_now
     if printf '%s\n%s' "$_NOW_CS" "$content" > "$tmp" \
         && chmod 644 "$tmp" && mv "$tmp" "$f"; then
@@ -477,17 +473,17 @@ cache_invalidate() {
     rm -f "$@"
 }
 
-# Serve from cache if fresh; otherwise run AT command, cache, and serve.
+# Serve from cache if fresh. Otherwise run the AT command, cache it, and serve it.
 # Serves existing cache (without refreshing) during an active cell scan.
 #
-# No per-file locking: concurrent misses each submit an AT command; the daemon
-# serialises them. The duplicate round trip is cheaper than an empty result;
+# No per-file locking: concurrent misses each submit an AT command. The daemon
+# serialises them. The duplicate round trip is cheaper than an empty result.
 # AT batch costs are in tools/device-costs.md.
 cache_get_or_fetch() {
     local f="$1" ttl="$2" at_cmd="$3" at_timeout="${4:-3000}"
     local result cached=0
     # One load serves the scan path and the freshness check. The fallback after
-    # a failed fetch deliberately re-reads instead; see there.
+    # a failed fetch deliberately re-reads instead. See that function for details.
     _cache_load "$f" && cached=1
     if [ -f /tmp/quecdeck/qscan.active ]; then
         # Treat as stale if older than 5 minutes (max scan is 215 s), so a
@@ -507,11 +503,11 @@ cache_get_or_fetch() {
     # Retry once when the reply was cut short, since a second attempt may
     # complete. Two cases are not retried, both because a retry cannot help:
     # an empty result (timeout, and retrying stacks the delay), and a reply the
-    # modem terminated itself. atcli exits 0 only on a terminator, so rc 0 with
+    # modem terminated itself. The atcli client exits 0 only on a terminator, so rc 0 with
     # a body that is not OK means the modem's answer *is* an error (no SIM,
     # unsupported command) - final, and asking again costs the serialized port
     # another round trip for the same reply. Only the exit status separates that
-    # from a truncated reply; the body alone cannot.
+    # from a truncated reply. The body alone cannot.
     #
     # An atcli too-long refusal (rc 65, non-empty body) would also take the
     # retry path, which cannot help. Unreachable here: every command below is a
@@ -560,8 +556,8 @@ modem_stats_fetch() {
 }
 
 # Connection info: WWAN IP(s) and APN. Connection-dependent, so it may fail with
-# no active bearer; callers fall back gracefully. Cached 2 s, 2 s AT timeout.
-# Same dashboard-poll constraint as modem_stats_fetch; see there.
+# no active bearer. Callers fall back gracefully. Cached for 2 seconds with a
+# 2-second AT timeout. The same dashboard-poll constraint as modem_stats_fetch applies.
 modem_conn_fetch() {
     cache_get_or_fetch "$_CACHE_MODEM_CONN" 2 'AT+QMAP="WWANIP";+CGCONTRDP' 2000
 }
@@ -573,7 +569,7 @@ device_info_fetch() {
 }
 
 # SIM identity: IMSI, ICCID, phone number. SIM-dependent, so it errors with no
-# SIM; callers handle absent fields gracefully. Cached 2 s (matching modem_conn
+# SIM. Callers handle absent fields gracefully. Cached 2 s (matching modem_conn
 # so the short-lived batches stay on one TTL), 2 s AT timeout.
 device_sim_fetch() {
     cache_get_or_fetch "$_CACHE_DEVICE_SIM" 2 'AT+CIMI;+ICCID;+CNUM' 2000
@@ -602,4 +598,3 @@ system_stats_json() {
     printf '{"load_avg":%s,"mem_total_mb":%d,"mem_used_mb":%d,"mem_percent":%d,"uptime":"%s"}' \
         "$load" "$mem_total_mb" "$mem_used_mb" "$mem_percent" "$up"
 }
-

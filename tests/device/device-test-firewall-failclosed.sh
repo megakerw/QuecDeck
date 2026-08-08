@@ -2,7 +2,7 @@
 # Fail-closed firewall verification. Exercises the failure legs that the
 # coupling test (device-test-firewall-lighttpd.sh) leaves untouched:
 #
-#   1. systemd honors Restart=on-failure on the Type=oneshot firewall unit
+#   1. The systemd manager honors Restart=on-failure on the Type=oneshot firewall unit
 #      (read-only; pre-v244 systemd silently refuses the setting).
 #   2. Duplicate INPUT jumps converge: an extra -j QUECDECK jump disappears
 #      after one firewall restart (the delete-until-absent loop).
@@ -138,7 +138,7 @@ else
     wait_state lighttpd active 20
     _j2=$(count_jumps)
     [ "$_j2" = "1" ] && ok "jump count converged to 1 after restart (was $_j1)" \
-        || bad "jump count is $_j2 after restart (expected 1) -- delete-until-absent loop not converging"
+        || bad "jump count is $_j2 after restart (expected 1) -- fail-safe convergence did not complete"
 fi
 systemctl reset-failed firewall lighttpd >/dev/null 2>&1
 

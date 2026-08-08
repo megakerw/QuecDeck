@@ -1,6 +1,6 @@
 // Unit test for the SMS PDU decoder in quecdeck/www/js/sms.js.
-//   node tools/test-sms-pdu.js
-// Run by tools/ci-checks.sh where node exists. It loads the shipped file, so
+//   node tests/host/test-sms-pdu.js
+// Run by tests/host/ci-checks.sh where node exists. It loads the shipped file, so
 // what is tested is what is served.
 //
 // Fixtures are hand-built, not captured: a capture would carry real messages,
@@ -11,7 +11,7 @@ const path = require('path');
 // eval returns the bindings explicitly: a `const` inside eval is not visible
 // outside it, unlike the function declaration. The parse path touches no DOM.
 // Renamed on the way out, or they collide with eval's own declarations.
-const src = fs.readFileSync(path.join(__dirname, '..', 'quecdeck', 'www', 'js', 'sms.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '..', '..', 'quecdeck', 'www', 'js', 'sms.js'), 'utf8');
 const { fetchSMS: makeSMS, SMS_GSM7_BASIC: gsm7Table,
         deleteFailureText: failureText } =
   eval(`${src}\n;({ fetchSMS, SMS_GSM7_BASIC, deleteFailureText })`);

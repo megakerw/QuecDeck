@@ -5,8 +5,8 @@ cgi_check_cors
 
 cgi_output_json
 
-# Watchcat: config only. Its running state comes from the systemctl batch below;
-# it is started and stopped exclusively via systemctl (create_watchcat.sh /
+# Watchcat: config only. Its running state comes from the systemctl batch below.
+# It is started and stopped exclusively via systemctl (create_watchcat.sh /
 # remove_watchcat.sh), so the unit state is authoritative.
 # read -d '' rather than $(cat): a builtin against a subshell plus an exec
 # (tools/device-costs.md). It keeps the trailing newline write_json_config
@@ -26,11 +26,11 @@ else
     sched_config='{"enabled":false,"type":"daily","day":1,"hour":3,"minute":0}'
 fi
 
-# Service states in one systemctl call. is-active takes multiple units and
-# prints one state per line in argument order; each invocation is a D-Bus round
+# Service states in one systemctl call. The is-active command takes multiple units and
+# prints one state per line in argument order. Each invocation is a D-Bus round
 # trip to PID 1 and dominates this endpoint, so one call beats one per unit.
-# Cost in tools/device-costs.md; the premise is checked by
-# tools/device-test-system-status.sh.
+# The cost is recorded in tools/device-costs.md. The premise is checked by
+# tests/device/device-test-system-status.sh.
 # The list is fixed (not filtered by what is installed) so the line count is
 # constant and the guard below can trust it.
 SERVICE_UNITS="ttyd atcmd-daemon connection-logger lean-mode firewall sshd watchcat"
@@ -91,7 +91,7 @@ else
 fi
 
 # UPnP and LAN IP from the AP config. Bundled here so the device-info page gets
-# all of its non-AT state in one request; AT-backed data stays in its own
+# all of its non-AT state in one request. AT-backed data stays in its own
 # endpoint, where a stalled modem can't hold this panel up.
 mobileap_read UPnP APIPAddr
 case "$mf_UPnP" in

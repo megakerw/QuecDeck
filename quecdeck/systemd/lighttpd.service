@@ -1,9 +1,8 @@
 [Unit]
 Description=Lighttpd Daemon
-# firewall.service is listed last intentionally. It waits 15 seconds on boot
-# for QCMAP to finish its async network/routing setup before applying iptables rules.
-# Depending on it here ensures lighttpd only starts once the network is fully stable,
-# preventing the first login request from failing due to routing not being ready.
+# firewall.service orders after the firmware connection chain and applies its
+# policy only after the boot settling boundary. Depending on it here keeps the
+# UI down until that protected state is ready.
 After=network.target opt.mount QCMAP_ConnectionManagerd.service firewall.service
 # Refuse to serve unless the firewall is up, so the UI is never reachable
 # without the LAN-only iptables rules in place.
@@ -19,11 +18,6 @@ Type=simple
 # directly. A PIDFile here (the shared opkg path) would let systemd adopt a
 # foreign lighttpd, e.g. Entware's, as the main process and mask a bind failure.
 ExecStartPre=/bin/sh /usrdata/quecdeck/script/lighttpd_prestart.sh
-ExecStartPre=/bin/rm -rf /tmp/quecdeck/auth_failures
-ExecStartPre=/bin/mkdir -p /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
-ExecStartPre=/bin/chown www-data /tmp/quecdeck /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
-ExecStartPre=/bin/chmod 700 /tmp/quecdeck
-ExecStartPre=/bin/chmod 700 /tmp/quecdeck/sessions /tmp/quecdeck/auth_failures
 ExecStartPre=/opt/sbin/lighttpd -tt -f /usrdata/quecdeck/lighttpd.conf
 ExecStart=/opt/sbin/lighttpd -D -f /usrdata/quecdeck/lighttpd.conf
 ExecReload=/bin/kill -USR1 $MAINPID

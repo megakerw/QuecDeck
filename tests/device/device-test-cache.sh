@@ -9,7 +9,7 @@
 # see a brief gap; device-test-atclid.sh does the same).
 #
 # Covers what the host suite cannot:
-#   1. bash 3.2.57 and busybox actually run the constructs (read -d '',
+#   1. Bash 3.2.57 and BusyBox actually run the constructs (read -d '',
 #      ${var%%$'\n'*} patterns, mkdir -p -m, 64-bit arithmetic on the header).
 #   2. The centisecond clock agrees with date(1) and is monotonic.
 #   3. Freshness boundaries at the resolution the dashboard actually lands on.
@@ -136,7 +136,7 @@ else
 fi
 
 # ---- concurrent readers ------------------------------------------------------
-# cache_get_or_fetch takes no lock by design. mv(2) is atomic within a
+# cache_get_or_fetch takes no lock by design. The mv(2) operation is atomic within a
 # filesystem, so a reader sees the old file or the new one, never a splice.
 # This hammers that: writers churn while readers assert every read is a
 # complete payload.

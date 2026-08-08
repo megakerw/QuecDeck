@@ -6,7 +6,9 @@ cgi_output_json
 
 CONN_LOG="/tmp/quecdeck/logs/connection_events.jsonl"
 ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
-ATCMD_LOG="/tmp/quecdeck/logs/atcmd.log"
+# Root writes this log, so it lives in the root-owned runtime tree. Mode 0644
+# allows www-data to read it.
+ATCMD_LOG="/run/quecdeck/atcmd.log"
 LIMIT=100
 
 jsonl_to_array() {

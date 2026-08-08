@@ -27,8 +27,8 @@ TERM_ONLY=0
 [ "$OLDER" = "term-only" ] && { TERM_ONLY=1; OLDER=""; }
 [ "${3:-}" = "term-only" ] && TERM_ONLY=1
 UPDATER=/tmp/test_update.sh
-LOG=/tmp/install_quecdeck.log
-STATUS=/tmp/quecdeck_update.status
+LOG=/run/quecdeck/install.log
+STATUS=/run/quecdeck/update.status
 PLOG=/usrdata/quecdeck_last_update.log
 ACCESS=/tmp/quecdeck/logs/access_events.jsonl
 pass=0; fail=0; warn=0
@@ -39,6 +39,26 @@ note() { echo "  WARN: $1"; warn=$((warn+1)); }
 
 rootfs_state() {
     mount | awk '$3=="/"||$0 ~ / \/ / {print}' | grep -oE '[(,]r[ow]' | head -1 | tr -d '(,'
+}
+
+probe_site() {
+    systemctl is-active lighttpd >/dev/null 2>&1 || return 1
+    _ps_pid=$(systemctl show -p MainPID --value lighttpd 2>/dev/null)
+    case "$_ps_pid" in ''|0|*[!0-9]*) return 1 ;; esac
+    _ps_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
+    printf '%s' "$_ps_ip" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+    _ps_hex=$(printf '%s\n' "$_ps_ip" | awk -F. '{printf "%02X%02X%02X%02X", $4, $3, $2, $1}')
+    _ps_inode=$(awk -v endpoint="$_ps_hex:01BB" '$2 == endpoint && $4 == "0A" { print $10; exit }' /proc/net/tcp)
+    [ -n "$_ps_inode" ] || return 1
+    _ps_owns=0
+    for _ps_fd in /proc/"$_ps_pid"/fd/*; do
+        [ "$(readlink "$_ps_fd" 2>/dev/null)" = "socket:[$_ps_inode]" ] && { _ps_owns=1; break; }
+    done
+    [ "$_ps_owns" = "1" ] || return 1
+    _ps_out=$(su www-data -s /bin/bash -c \
+        'REQUEST_METHOD=GET /usrdata/quecdeck/www/cgi-bin/auth_login' 2>/dev/null) || return 1
+    printf '%s\n' "$_ps_out" | grep -q '^Status: 303 See Other' &&
+        printf '%s\n' "$_ps_out" | grep -q '^Location: /'
 }
 
 reset_state() {
@@ -97,10 +117,10 @@ if [ "$TERM_ONLY" = "0" ]; then
 
 # ---- Test 1: health probe in isolation, no side effects ----------------
 echo ""
-echo "[Test 1] Health probe standalone against $IP"
+echo "[Test 1] Local web-stack health probe"
 _acc_before=$(wc -l < "$ACCESS" 2>/dev/null || echo 0)
-if /opt/bin/wget -q -O /dev/null --no-check-certificate "https://$IP/cgi-bin/auth_login"; then
-    ok "probe rc=0 (303 chain followed to a 200)"
+if probe_site; then
+    ok "lighttpd owns the LAN HTTPS listener; auth_login GET returns 303"
 else
     bad "probe failed (rc $?) -- the post-swap health check WILL fail; stop here"
 fi
@@ -111,7 +131,14 @@ _acc_after=$(wc -l < "$ACCESS" 2>/dev/null || echo 0)
 echo ""
 echo "[Test 2] Nonexistent tag fails cleanly"
 reset_state
-bash "$UPDATER" v9.9.9 >/dev/null 2>&1
+_missing_tag="v999999999.$(date +%s).$$"
+bash "$UPDATER" "$_missing_tag" >/dev/null 2>&1
+_missing_rc=$?
+if [ "$_missing_rc" -ne 0 ]; then
+    ok "console/bootstrap exits nonzero on preflight failure"
+else
+    bad "console/bootstrap returned success for nonexistent tag"
+fi
 st=$(wait_terminal 120)
 [ "$st" = "failed" ] && ok "status 'failed'" || bad "status '$st' (expected failed)"
 grep -q "FATAL: Could not download release files" "$LOG" 2>/dev/null && ok "preflight FATAL logged" || bad "expected preflight FATAL not in log"
@@ -147,13 +174,15 @@ echo ""
 echo "[Test 4] Full reinstall of $CURRENT (takes a few minutes)"
 reset_state
 bash "$UPDATER" "$CURRENT" >/dev/null 2>&1
+_success_rc=$?
+[ "$_success_rc" -eq 0 ] && ok "console/bootstrap exits zero on success" || bad "successful reinstall returned rc $_success_rc"
 st=$(wait_terminal 900)
 [ "$st" = "done" ] && ok "status 'done'" || bad "status '$st' (expected done)"
 grep -q "All checksums verified OK." "$LOG" && ok "staged checksums verified" || bad "checksum-verified marker missing"
 grep -q "Switch complete." "$LOG" && ok "swap completed" || bad "'Switch complete.' missing"
 if grep -q "lighttpd stayed up through the swap" "$LOG"; then
-    ok "content-only run took the stays-up branch (CGI probe passed)"
-elif grep -q "Verifying the new site responds" "$LOG"; then
+    ok "content-only run took the stays-up branch (web-stack probe passed)"
+elif grep -q "Verifying the new web stack" "$LOG"; then
     note "restart branch ran (conf/unit/pkg change or opkg upgrade) -- health check still passed"
 else
     bad "no health-check marker in log"
@@ -167,7 +196,7 @@ cmp -s "$PLOG" "$LOG" && ok "persisted log updated for this run" || bad "persist
 for _s in lighttpd atcmd-daemon firewall; do
     systemctl is-active "$_s" >/dev/null 2>&1 && ok "$_s active" || bad "$_s NOT active"
 done
-/opt/bin/wget -q -O /dev/null --no-check-certificate "https://$IP/cgi-bin/auth_login" && ok "site serving post-install" || bad "site NOT serving post-install"
+probe_site && ok "web stack healthy post-install" || bad "web stack NOT healthy post-install"
 
 fi # end of tests 1-4
 
@@ -197,10 +226,11 @@ while [ "$_attempt" -le 3 ]; do
     done
     systemctl stop install_quecdeck 2>/dev/null
     wait "$_bg_pid" 2>/dev/null
+    _attempt_rc=$?
     _bg_pid=""
     st=$(wait_terminal 120)
     case "$st" in
-        failed:rollback_ok) _t5_result="rolled_back"; break ;;
+        failed:rollback_ok) _t5_result="rolled_back"; _rollback_rc=$_attempt_rc; break ;;
         done)   echo "  (attempt $_attempt: stop landed after completion; retrying)" ;;
         failed) echo "  (attempt $_attempt: stop landed before the swap; retrying)" ;;
         *)      _t5_result="broken:$st"; break ;;
@@ -209,6 +239,7 @@ while [ "$_attempt" -le 3 ]; do
 done
 if [ "$_t5_result" = "rolled_back" ]; then
     ok "status 'failed:rollback_ok'"
+    [ "${_rollback_rc:-0}" -ne 0 ] && ok "console/bootstrap exits nonzero after successful rollback" || bad "rollback outcome returned success"
     grep -q "Install interrupted mid-swap; attempting rollback." "$LOG" && ok "trap rollback path ran (not the main-flow one)" || note "rollback ran via the main flow (stop landed after swap returned); trap path untested"
     grep -q "Rollback complete. Previous version restored." "$LOG" && ok "rollback completed" || bad "rollback-complete marker missing"
 elif [ -z "$_t5_result" ]; then
@@ -221,7 +252,7 @@ fi
 for _s in lighttpd atcmd-daemon firewall; do
     systemctl is-active "$_s" >/dev/null 2>&1 && ok "$_s active" || bad "$_s NOT active"
 done
-/opt/bin/wget -q -O /dev/null --no-check-certificate "https://$IP/cgi-bin/auth_login" && ok "site serving after rollback test" || bad "site NOT serving after rollback test"
+probe_site && ok "web stack healthy after rollback test" || bad "web stack NOT healthy after rollback test"
 
 # If the rollback test left the previous content in place, the device content
 # may predate $CURRENT's tree; re-assert with one final clean reinstall.
@@ -230,6 +261,8 @@ if [ "$_t5_result" = "rolled_back" ]; then
     echo "[Restore] Clean reinstall of $CURRENT after the rollback test"
     reset_state
     bash "$UPDATER" "$CURRENT" >/dev/null 2>&1
+    _restore_rc=$?
+    [ "$_restore_rc" -eq 0 ] && ok "restore reinstall exits zero" || bad "restore reinstall returned rc $_restore_rc"
     st=$(wait_terminal 900)
     [ "$st" = "done" ] && ok "device restored to a clean $CURRENT install" || bad "restore install ended '$st' -- fix before release"
 fi

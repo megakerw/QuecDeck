@@ -108,9 +108,9 @@ QuecDeck started as a fork of [Simple Admin](https://github.com/iamromulan/quect
 ### Approach
 
 - **Fewer features, done well.** QuecDeck covers the basics: signal monitoring, band locking, network config, a handful of utilities. New functionality is only added when it fits that scope and can be implemented cleanly.
-- **Minimize attack surface.** The web server and SSH bind only to the LAN IP, the firewall blocks WAN access, and the only component with elevated privileges is the AT daemon that needs them. Everything else runs with the minimum access required.
-- **Destructive features behind a separate auth wall.** Things that can cause real damage (like the AT terminal and the web console) require a separate developer password on top of the standard admin login.
-- **Minimal write footprint.** QuecDeck writes only to `/usrdata` (persistent config and binaries) and `/tmp` (runtime state). The root filesystem is never written to after install, and everything can be removed cleanly.
+- **Minimize attack surface.** The web server and SSH bind only to the LAN IP, the firewall blocks WAN access, and the web application runs as `www-data`. Operations that genuinely require root are confined to systemd services and an enumerated sudoers allowlist.
+- **Destructive features behind a separate auth wall.** Things that can cause real damage (like the AT terminal and the web console) require a separate developer password on top of the standard admin login. This is an application-level feature gate, not a sandbox against compromise of the web-server account. See **Threat model and limitations** below.
+- **Minimal write footprint.** Persistent files live under `/usrdata`, root-owned runtime files under `/run/quecdeck`, and web-owned runtime files under `/tmp/quecdeck`. Installation, updates, and service enablement briefly remount the root filesystem writable. Normal operation does not.
 
 ### Web Server
 [Lighttpd](https://www.lighttpd.net/) serves the frontend and CGI backend on port 443 (HTTPS), with port 80 redirecting to HTTPS.
@@ -122,14 +122,14 @@ QuecDeck started as a fork of [Simple Admin](https://github.com/iamromulan/quect
 All modem communication goes through [atcli](https://github.com/megakerw/atcli_rust) (a fork of [atcli_rust](https://github.com/1alessandro1/atcli_rust)), a Rust-based AT command CLI that emits clean newline-terminated output (modem `\r` framing is stripped at the source). That is a contract the shell side relies on rather than a convenience: nothing downstream re-strips carriage returns, so replies are parsed as they arrive.
 
 - **Single gateway.** Shell code never invokes atcli directly; every caller goes through `script/at-lib.sh`, enforced by a pre-commit check.
-- **Serialization and privilege.** Serialization happens inside atcli itself. Its daemon side (`atcli --daemon`, unit `atcmd-daemon`) opens the modem port as root, drops to www-data, and serves one command per unix-socket connection, verifying each peer's uid via `SO_PEERCRED`. atcli is not setuid: the daemon is the only privileged path to the modem.
+- **Serialization and privilege.** Serialization happens inside atcli itself. Its daemon side (`atcli --daemon`, unit `atcmd-daemon`) opens the modem port as root, drops to www-data, and serves one command per unix-socket connection, verifying each peer's uid via `SO_PEERCRED`. The atcli binary is not setuid: the daemon is the only privileged path to the modem.
 - **No silent fallback.** There is no automatic fallback to the port, so a plain invocation never bypasses the serializer. If the daemon is down, every caller (root and www-data alike) gets empty output until systemd restarts it within seconds, and the UI tolerates the gap. A root operator can still reach the modem directly for recovery by passing `--direct` explicitly.
 - **Sender lifecycle.** Commands whose sender has hung up are skipped instead of being sent to the modem; fire-and-forget senders (modem reboots) pass `--detach`.
-- **Reply completeness.** A reply cut short by a timeout is byte-for-byte a shorter complete one, so the exit status, not the output, is what says whether the modem finished. atcli exits 0 only when the modem terminated the reply itself; both `OK` and `ERROR` count as terminated. It exits non-zero when the modem did not, leaving whatever arrived on stdout, and non-zero with empty stdout when nothing arrived at all (timeout, or the daemon down). Callers that must not parse a truncated record check the status and drop stdout: `get_sms` refuses a short `+CMGL` listing rather than serving it as a complete inbox, `run_cell_scan` appends a `PARTIAL` marker, the developer console labels an unterminated reply, and the updater's health probe warns. A pipe masks the status, so a caller that needs it assigns first, then pipes.
+- **Reply completeness.** A reply cut short by a timeout is byte-for-byte a shorter complete one, so the exit status, not the output, is what says whether the modem finished. The atcli client exits 0 only when the modem terminated the reply itself; both `OK` and `ERROR` count as terminated. It exits non-zero when the modem did not, leaving whatever arrived on stdout, and non-zero with empty stdout when nothing arrived at all (timeout, or the daemon down). Callers that must not parse a truncated record check the status and drop stdout: `get_sms` refuses a short `+CMGL` listing rather than serving it as a complete inbox, `run_cell_scan` appends a `PARTIAL` marker, the developer console labels an unterminated reply, and the updater's health probe warns. A pipe masks the status, so a caller that needs it assigns first, then pipes.
 - **Caching.** Responses are cached per endpoint to reduce modem load, with TTLs tuned to how often the data actually changes: 2 seconds for signal stats, connection and SIM info, 5 seconds for network and settings data, and 1 hour for static device info like firmware version and build time. Where possible, multiple AT commands are batched into a single request to cut down on round trips.
 
 ### Firewall
-A lightweight iptables-based firewall restricts access to ports 80, 443, and optionally 22 (SSH) to the LAN IP only, blocking WAN exposure. Custom chains (`QUECDECK`/`QUECDECK6`) survive QCMAP's automatic iptables rebuilds. IPv6 access to the admin UI is blocked by default.
+A lightweight iptables-based firewall restricts access to ports 80, 443, and optionally 22 (SSH) to traffic entering through the LAN bridge and targeting the configured LAN IP. IPv4 DNS follows the same policy. IPv6 DNS is limited to the bridge's non-routable `fe80::/10` link-local destination, and all other DNS destinations are dropped. This prevents QCMAP's resolver from being used through additional IPPT or future global addresses. DHCP remains firmware-managed. Both address families are mandatory and verified after application. This keeps the policy independent of QCMAP's mode-dependent WAN rule ordering. Custom chains (`QUECDECK`/`QUECDECK6`) survive QCMAP's automatic iptables rebuilds. IPv6 access to the admin UI is blocked.
 
 The web server is bound to the firewall's lifecycle: lighttpd will not start unless the firewall is up, and a firewall restart cycles the web server with it. The admin UI is therefore never served without the LAN-only rules in place, and it comes back automatically after the firewall is restarted.
 
@@ -151,6 +151,17 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 
 **Data at rest:** the AT response cache, session directory, and log directory are all `chmod 700`. Password hashes are stored `root:root 600`, unreadable from the web tier: login checks pass the password over stdin to a small root helper via sudo, which answers with an exit code. Pre-start scripts and anything running with elevated access are `chmod 700 root:root`.
 
+#### Threat model and limitations
+
+QuecDeck is intended for an owner-operated modem on a trusted local network. Its controls reduce exposure and contain ordinary web requests, but they do not turn the modem into a multi-user or hostile-tenant system.
+
+- **First-time setup assumes a trusted LAN.** Until the administrator password is created, the setup wizard is intentionally available without credentials. The first client that completes setup becomes the administrator, so initial configuration should be performed immediately and without untrusted clients on the LAN.
+- **Developer unlock is an application-level gate.** It protects destructive features from an ordinary administrator session. Session and developer-unlock files are necessarily written by `www-data`, so arbitrary code execution as that account could forge both and reach developer AT commands. The ttyd console still presents the system login prompt, but the developer gate should not be treated as containment of a compromised web process.
+- **Login throttling protects the HTTP login path.** Password hashes remain root-only, but a process already executing as `www-data` can invoke the narrowly allowed password-check helper directly and bypass the CGI's per-IP lockout. Use strong, unique admin and developer passwords rather than relying on throttling alone.
+- **Release checksums detect corruption and inconsistent files, not publisher compromise.** The release and its checksum manifest are obtained from the same GitHub repository. Verification does not protect against compromise of the publishing account or replacement of both artifacts by an authorized publisher.
+- **HTTPS uses a self-signed device certificate.** Encryption is provided after the certificate is accepted, but users should verify and trust the expected certificate rather than dismissing an unexpected certificate change, especially on an untrusted LAN.
+- **Local root, ADB, and physical access are trusted.** An attacker with any of these already controls the device and is outside the security boundary QuecDeck attempts to enforce.
+
 ### Frontend
 The UI is built with [Bootstrap 5](https://getbootstrap.com/) and [Alpine.js](https://alpinejs.dev/) for reactive data binding. All assets carry a content-hashed cache-busting query parameter, maintained by a pre-commit git hook, which lets them be served with a one-year `immutable` cache lifetime: a content change produces a new URL, so updates apply immediately while repeat visits skip revalidation. HTML pages are always sent `no-store` so they never pin stale asset URLs.
 
@@ -159,9 +170,9 @@ QuecDeck is installed via `quecdeck.sh`, which handles Entware/opkg setup, firew
 
 Updates can be triggered from the Update page in the web UI or by re-running `quecdeck.sh`. Both paths use the same update installer (`update_quecdeck.sh`), which:
 
-1. Downloads the target release and verifies SHA-256 checksums for every file against `quecdeck/checksums.sha256`.
+1. Downloads the target release and verifies SHA-256 checksums for its files against `quecdeck/checksums.sha256`. This checks integrity, not independent publisher authenticity. See the limitation above.
 2. Stages the new version alongside the running install, then moves the old install aside and swaps the new one in atomically.
-3. Runs a health check after the swap, rolling back to the previous version automatically if it fails.
+3. Verifies that lighttpd owns the configured LAN HTTPS listener and that the authentication CGI executes correctly after the swap, rolling back to the previous version automatically if either check fails.
 
 State (watchcat config, scheduled restarts, lean mode) is preserved across updates.
 
@@ -171,12 +182,12 @@ State (watchcat config, scheduled restarts, lean mode) is preserved across updat
 
 ## Development
 
-Two check suites run on every push and pull request via GitHub Actions, and can be run locally:
+The repository includes the following host and device checks. The applicable host checks run on every push and pull request through GitHub Actions:
 
-- **Test suite** (`tools/run-tests.sh`): host-side unit tests for the pure shell functions (JSON parsing, CGI helpers, watchcat backoff math) and JS structure checks. Runs on the dev machine with no device needed; pass `--slow` to include tests that sleep (login lockout). The fast set also runs from the pre-commit hook.
-- **Integration tests** (`tools/host-test-authlua.sh`): runs the real auth.lua against a stubbed lighttpd request environment. Linux-only (disposable root paths); self-skips elsewhere and runs in CI. The AT layer's integration tests live in the [atcli repo](https://github.com/megakerw/atcli_rust): daemon and client exercised end to end against a fake modem on a pty, including a large-response test.
-- **Repository integrity checks** (`tools/ci-checks.sh`): shell syntax, JS syntax, the atcli access guard and socket path consistency, the developer-page dev-gate guard, a shell dialect guard (shebangs match what sources cgi-lib/at-lib and what systemd units exec), checksum manifest and pinned bootstrap hashes, and asset version tokens. These mirror the pre-commit hook, so CI catches commits made without the hook configured. Assumes an LF checkout, so on Windows run the test suite instead.
-- **On-device scripts** (`tools/device-test-*.sh`): copied to the device manually for what host tests cannot verify: SELinux domain interactions, the daemon's privilege drop and socket permissions, and real modem timing and payload sizes. Run before tagging a release.
+- **Test suite** (`tests/host/run-tests.sh`): host-side unit tests for the pure shell functions (JSON parsing, CGI helpers, watchcat backoff math) and JS structure checks. It runs on the development machine with no device needed. Pass `--slow` to include tests that sleep, such as the login-lockout tests. The fast set also runs from the pre-commit hook.
+- **Integration tests** (`tests/host/host-test-authlua.sh`): runs the real auth.lua against a stubbed lighttpd request environment. It uses disposable root paths, so it runs only on Linux and skips itself elsewhere. The AT layer's integration tests live in the [atcli repo](https://github.com/megakerw/atcli_rust), where the daemon and client run end to end against a fake modem on a pty.
+- **Repository integrity checks** (`tests/host/ci-checks.sh`): shell syntax, JS syntax, the atcli access guard and socket path consistency, the developer-page dev-gate guard, a shell dialect guard (shebangs match what sources cgi-lib/at-lib and what systemd units exec), checksum manifest and pinned bootstrap hashes, and asset version tokens. These mirror the pre-commit hook, so CI catches commits made without the hook configured. Assumes an LF checkout, so on Windows run the test suite instead.
+- **On-device scripts** (`tests/device/device-test-*.sh`): copied to the device manually for behavior that host tests cannot verify, including firmware networking, firewall behavior, privilege dropping, socket permissions, and real modem timing. Run the relevant tests before tagging a release. Individual headers identify disruptive cases.
 
 The pre-commit hook is enabled with `git config core.hooksPath .githooks`.
 

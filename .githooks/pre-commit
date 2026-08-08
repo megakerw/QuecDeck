@@ -123,13 +123,12 @@ CHECKSUMMED_FILES=(
   quecdeck/www/fonts/poppins-v23-latin-regular.woff2
 )
 
-# Hashes of these files are hardcoded in quecdeck.sh (verified further down);
-# defined here because staging any of them, or quecdeck.sh itself, must run
+# Hashes of these files are hardcoded in quecdeck.sh and verified further down.
+# They are defined here because staging any of them, or quecdeck.sh itself, must run
 # the checks too: a pinned-only commit that skipped the hook would let a stale
 # pin ship and fail integrity checks on-device.
 PINNED_FILES=(
   installentware.sh
-  update_quecdeck.sh
   optional/sshd/sshd.service
   optional/sshd/update_sshd_ip.sh
   quecdeck/quecdeckpasswd
@@ -147,6 +146,11 @@ for f in "${CHECKSUMMED_FILES[@]}" "${PINNED_FILES[@]}" quecdeck.sh; do
     break
   fi
 done
+
+# A newly added release file is precisely what the hand-maintained checksum
+# list might omit, so any staged path under quecdeck/ must run the inventory
+# check below even when none of the already-listed files changed.
+git diff --cached --name-only | grep -q '^quecdeck/' && needs_update=1
 
 if [ "$needs_update" = "0" ]; then
   exit 0
@@ -168,8 +172,19 @@ if [ "$index_missing" = "1" ]; then
   exit 1
 fi
 
+# The updater fetches the complete quecdeck/ subtree. Require the checksum list
+# to cover that staged release tree exactly (apart from the self-referential
+# manifest), so a new CGI, root script, or unit cannot ride along unverified.
+if ! diff -u \
+    <(printf '%s\n' "${CHECKSUMMED_FILES[@]}" | grep '^quecdeck/' | sort) \
+    <(git ls-files --cached quecdeck | grep -v '^quecdeck/checksums\.sha256$' | sort); then
+  echo ""
+  echo "Commit blocked: CHECKSUMMED_FILES must cover every tracked quecdeck release file."
+  exit 1
+fi
+
 # Update ?v= cache-busting query string in HTML files.
-# Version is an 8-char hash of all staged JS+CSS content; changes whenever
+# Version is an 8-character hash of all staged JS and CSS content. It changes whenever
 # any JS or CSS file changes, causing browsers to discard the 1-year cache.
 asset_version=$(
   for f in "${CHECKSUMMED_FILES[@]}"; do
@@ -217,8 +232,8 @@ git add "$CHECKSUMS_FILE"
 echo "Updated $CHECKSUMS_FILE"
 
 # Verify that hardcoded hashes in quecdeck.sh match staged file content.
-# These hashes are the trust anchor for bootstrap-critical scripts;
-# they must be updated in quecdeck.sh whenever the corresponding file changes.
+# These hashes are the trust anchor for bootstrap-critical scripts.
+# They must be updated in quecdeck.sh whenever the corresponding file changes.
 # PINNED_FILES is defined at the top of this hook (it also gates the checks).
 
 # Read quecdeck.sh from the index if staged, else from the working tree
@@ -256,16 +271,71 @@ if [ "$hash_errors" = "1" ]; then
   exit 1
 fi
 
+# Enforce the runtime-path split: root-context code writes /run/quecdeck,
+# www-data writes /tmp/quecdeck, and neither reaches into the other's tree.
+# Reads the index, so a staged violation is caught with a clean working tree.
+tmpguard_defs=$(mktemp) || {
+  echo "ERROR: cannot create a temporary file for the staged runtime-path guard."
+  exit 1
+}
+if ! git show :tests/host/tmpwrite-guard.sh > "$tmpguard_defs" 2>/dev/null; then
+  rm -f "$tmpguard_defs"
+  echo "ERROR: tests/host/tmpwrite-guard.sh missing from the index; the runtime-path guard cannot run."
+  echo "Commit blocked: restore and stage the file."
+  exit 1
+fi
+. "$tmpguard_defs"
+rm -f "$tmpguard_defs"
+
+tmpguard_errors=0
+tmpguard_check() { # tmpguard_check <path-in-index>
+  hits=$(git show ":$1" 2>/dev/null | awk -v re="$TMPGUARD_RE" "$TMPGUARD_AWK")
+  [ -n "$hits" ] || return 0
+  echo ""
+  echo "ERROR: $1 names a world-writable path from root context:"
+  printf '%s\n' "$hits" | sed 's/^/    /'
+  tmpguard_errors=1
+}
+tmpguard_scope=$(tmpguard_root_scripts)
+if [ "$(printf '%s\n' "$tmpguard_scope" | grep -c .)" -lt 8 ]; then
+  echo "ERROR: runtime-path guard scope collapsed; refusing to pass vacuously."
+  echo "Commit blocked: check tmpguard_root_scripts in tests/host/tmpwrite-guard.sh."
+  exit 1
+fi
+while IFS= read -r f; do
+  for s in $tmpguard_scope; do
+    [ "$f" = "$s" ] && tmpguard_check "$f"
+  done
+  # Units are root-context unless they declare User=www-data, so a new unit is
+  # in scope by default.
+  case "$f" in
+    "$TMPGUARD_UNIT_DIR"/*.service)
+      git show ":$f" 2>/dev/null | grep -q '^User=www-data' || tmpguard_check "$f" ;;
+  esac
+done < <(git diff --cached --name-only)
+
+if [ "$tmpguard_errors" = "1" ]; then
+  echo ""
+  echo "Commit blocked: root-owned runtime state belongs in /run/quecdeck."
+  echo "  /run/quecdeck is root-owned, so www-data cannot plant a name there."
+  echo "  /tmp/quecdeck belongs to www-data; root must not write inside it."
+  echo "  If the line is genuinely safe, declare it: '# tmpguard-ok: <reason>'"
+  echo "  on the line, or on the line above for systemd units (a trailing"
+  echo "  comment on a unit directive would become part of the command)."
+  echo "  See tests/host/tmpwrite-guard.sh for the four bugs this rule prevents."
+  exit 1
+fi
+
 # Enforce the AT access layer: runtime code must send AT commands through
 # at-lib.sh (atcmd_run/atcmd_fire), never the atcli binary. Pattern and scope
-# come from the shared file; this pass reads the index, so a staged violation
+# come from the shared file. This pass reads the index, so a staged violation
 # is caught even when the working tree is clean.
-if [ ! -f tools/atcli-guard.sh ]; then
-  echo "ERROR: tools/atcli-guard.sh missing; the atcli guards cannot run."
+if [ ! -f tests/host/atcli-guard.sh ]; then
+  echo "ERROR: tests/host/atcli-guard.sh missing; the atcli guards cannot run."
   echo "Commit blocked: restore the file."
   exit 1
 fi
-. tools/atcli-guard.sh
+. tests/host/atcli-guard.sh
 
 atcli_errors=0
 while IFS= read -r f; do
@@ -292,7 +362,7 @@ fi
 
 # The socket path must agree everywhere it is named, or the daemon binds one
 # path while clients hit another (total AT outage). File list and rationale in
-# tools/atcli-guard.sh, sourced above.
+# The definitions come from tests/host/atcli-guard.sh, sourced above.
 sock_paths=$( for f in $ATCLI_SOCK_FILES; do git show ":$f"; done 2>/dev/null \
               | grep -ohE '/[^ "}]*atcli\.sock' | sort -u )
 if [ "$(printf '%s\n' "$sock_paths" | grep -c .)" -ne 1 ]; then
@@ -400,11 +470,11 @@ if [ "$devgate_errors" = "1" ]; then
 fi
 
 # Host-side test suite (pure shell functions + JS structure). Runs against
-# the working tree; the fast set skips tests that sleep.
-if ! bash tools/run-tests.sh > /tmp/quecdeck_test_output 2>&1; then
+# the working tree. The fast set skips tests that sleep.
+if ! bash tests/host/run-tests.sh > /tmp/quecdeck_test_output 2>&1; then
   cat /tmp/quecdeck_test_output
   echo ""
-  echo "Commit blocked: test suite failed (tools/run-tests.sh)."
+  echo "Commit blocked: test suite failed (tests/host/run-tests.sh)."
   rm -f /tmp/quecdeck_test_output
   exit 1
 fi

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Host-side test suite for the pure shell functions and JS structure.
 # Runs on the dev machine (Git Bash), no device needed:
-#   tools/run-tests.sh          # fast set (used by the pre-commit hook)
-#   tools/run-tests.sh --slow   # adds tests that sleep (brute-force lockout)
+#   tests/host/run-tests.sh          # fast set (used by the pre-commit hook)
+#   tests/host/run-tests.sh --slow   # adds tests that sleep (brute-force lockout)
 #
 # Device-coupled code (systemd paths, real AT traffic) is exercised on-device
 # only, and the AT daemon in the atcli repo's own harness; this suite covers the
@@ -15,7 +15,7 @@
 # bug: it could not represent deleting the same slot twice.
 
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 SLOW=0
 [ "${1:-}" = "--slow" ] && SLOW=1
@@ -126,7 +126,7 @@ STUB_ARGS=""; atcmd_fire 'AT+CSQ' 1500 >/dev/null 2>&1
 t "atcmd_fire detaches and forwards" "1" \
     "$(printf '%s' "$STUB_ARGS" | grep -c -- '--detach.*-t 1500')"
 
-# The socket must be pinned on every call. atcli's own default moved to
+# The socket must be pinned on every call. The atcli default moved to
 # /tmp/atcli.sock at one point; a call that dropped -s would silently talk to
 # the wrong path (or nothing) rather than fail loudly here.
 STUB_ARGS=""; atcmd_run 'AT+CSQ' >/dev/null 2>&1
@@ -135,11 +135,11 @@ STUB_ARGS=""; atcmd_fire 'AT+CSQ' >/dev/null 2>&1
 t "atcmd_fire pins the socket" "1" "$(printf '%s' "$STUB_ARGS" | grep -c -- "-s $_ATCLI_SOCK")"
 
 # atcli refuses an over-length command itself and says so only on stderr, which
-# no page can read. at-lib turns that status into a body line.
+# no page can read. The at-lib layer turns that status into a body line.
 #
 # This drives the path with the same 65 the code compares against, so it tests
 # the MAPPING and cannot detect the constant drifting from atcli's real exit
-# code. Only tools/device-test-atclid.sh can, by reading the status the real
+# code. Only tests/device/device-test-atclid.sh can, by reading the status the real
 # client returns; see the note at _AT_E_TOOLONG.
 STUB_OUT=""; STUB_RC=65
 _at_long=$(atcmd_run 'AT+LONG' 2>/dev/null); _at_long_rc=$?
@@ -192,7 +192,7 @@ t_rc "a short listing with no OK is incomplete"  "1" "$?"
 unset _long_pdu _i
 # ---------------------------------------------------------- delete_sms --
 # The per-slot loop, the 321 tolerance and the budget are the parts with edge
-# cases, and none is reachable through the CGI on a host. atcmd_run is replaced
+# cases, and none is reachable through the CGI on a host. The atcmd_run function is replaced
 # by a recorder that logs each AT line to a file (a subshell would lose a var).
 eval "$(extract_fn quecdeck/www/cgi-bin/delete_sms delete_sms_indices)"
 _AT_LOG=$(mktemp)
@@ -402,7 +402,7 @@ t "stale fallback re-reads after a concurrent write" "$(printf '+X: newer\nOK')"
 atcmd_run() { echo "$1" >> "$_FETCH_LOG"; printf '%s' "$_STUB_OUT"; return "$_STUB_RC"; }
 
 # _cache_load's globals must not survive a failed load, or one resource's reply
-# can be printed as another's. get_dashboard loads two cache files per process.
+# can be printed as another's. The get_dashboard function loads two cache files per process.
 printf 'not-a-header\npayload' > "$_CACHE_DIR/bad"
 _cache_load "$_CACHE_DIR/s" >/dev/null
 _cache_load "$_CACHE_DIR/bad" >/dev/null || :
@@ -542,14 +542,14 @@ _fresh=$(mktemp -d)/notyet
 _CACHE_DIR_KEEP2=$_CACHE_DIR; _CACHE_DIR=$_fresh
 # stderr silenced: mkdir -p -m 700 warns on Git Bash because Windows cannot
 # apply the POSIX mode. The directory is still created, and the mode itself is
-# asserted on-device by tools/device-test-cache.sh where it is meaningful.
+# asserted on-device by tests/device/device-test-cache.sh where it is meaningful.
 cache_write "$_fresh/x" "made-it" 2>/dev/null
 t "cache_write creates a missing cache dir" "yes" "$([ -d "$_fresh" ] && echo yes || echo no)"
 t "and the payload round-trips through it" "made-it" "$(cache_read "$_fresh/x")"
 _CACHE_DIR=$_CACHE_DIR_KEEP2
 rm -rf "$_fresh"; unset _fresh _CACHE_DIR_KEEP2
 
-# A header with nothing after it. cache_write cannot produce one (at_response_ok
+# A header with nothing after it. The cache_write function cannot produce one (at_response_ok
 # gates it and mv is atomic), but a truncated or hand-made file can, and an
 # empty AT reply is not a cache hit worth serving.
 _epoch_now; printf '%s\n' "$_NOW_CS" > "$_cwd/empty"
@@ -557,7 +557,7 @@ cache_is_fresh "$_cwd/empty" 60; t_rc "header with no payload reads fresh" "0" "
 t "but its payload is empty" "" "$(cache_read "$_cwd/empty")"
 
 # A failed write must not leave its temp file behind: the likeliest cause is a
-# full /tmp, where the leftover holds the space that ran out. mv is stubbed to
+# full /tmp, where the leftover holds the space that ran out. The mv command is stubbed to
 # fail because no portable filesystem trick makes only that step fail; bash
 # resolves the function before the external, so cache_write hits it unchanged.
 mv() { return 1; }
@@ -695,13 +695,437 @@ eval "$(extract_fn update_quecdeck.sh _normalize_bind)"
 # or a mere IP patch forces an unnecessary lighttpd restart during updates.
 t "normalize_bind LAN ip"    'server.bind = "0.0.0.0"'              "$(printf 'server.bind = "192.168.225.1"\n' | _normalize_bind)"
 t "normalize_bind 443 sock"  '$SERVER["socket"] == "0.0.0.0:443" {' "$(printf '$SERVER["socket"] == "192.168.8.1:443" {\n' | _normalize_bind)"
+
+# The root-owned status file is the one outcome source for both CLI and web.
+# systemctl's rc appears only in diagnostics when no valid terminal status was
+# committed. It never overrides a committed result.
+LOG_FILE=/run/quecdeck/install.log
+eval "$(extract_fn update_quecdeck.sh report_install_outcome)"
+for _status in failed failed:rollback_ok failed:rollback_failed running '' unexpected; do
+    report_install_outcome "$_status" 0 >/dev/null
+    t_rc "update outcome rejects '${_status:-missing}'" "1" "$?"
+done
+report_install_outcome done 1 >/dev/null
+t_rc "done status overrides systemctl failure" "0" "$?"
+t "bootstrap replaces stale status before systemctl" "yes" \
+  "$(_status_line=$(grep -n 'Replace any terminal status from an earlier run' update_quecdeck.sh | cut -d: -f1); _start_line=$(grep -n '^systemctl start \$SERVICE_NAME$' update_quecdeck.sh | cut -d: -f1); [ -n "$_status_line" ] && [ "$_status_line" -lt "$_start_line" ] && echo yes || echo no)"
+t "install phase returns computed outcome" "yes" \
+  "$(grep -q '^exit "\$_install_rc"$' update_quecdeck.sh && echo yes || echo no)"
+t "invalid bootstrap status is committed as failed" "yes" \
+  "$(sed -n '/^_final_status=/,$p' update_quecdeck.sh | grep -q 'echo "failed" > "${STATUS_FILE}.tmp"' && echo yes || echo no)"
+t "web fetch rejection uses terminal abort" "yes" \
+  "$(grep -q 'systemctl start --no-block install_quecdeck_fetch.*|| abort' quecdeck/script/run_update.sh && echo yes || echo no)"
+t "installer refuses failed rw remount" "yes" \
+  "$(grep -q '^if ! remount_rw; then$' update_quecdeck.sh && echo yes || echo no)"
+t "forward unit copy is rollback-gated" "yes" \
+  "$(grep -q '^    if ! cp -rf "\$QUECDECK_DIR/systemd/"\* /lib/systemd/system/; then$' update_quecdeck.sh && echo yes || echo no)"
+t "rollback requires old-tree move" "yes" \
+  "$(sed -n '/^_revert_swap() {/,/^}/p' update_quecdeck.sh | grep -q 'mv "\$OLD_DIR" "\$QUECDECK_DIR" ||' && echo yes || echo no)"
+t "rollback requires firewall recovery" "yes" \
+  "$(sed -n '/^_revert_swap() {/,/^}/p' update_quecdeck.sh | grep -q 'systemctl restart firewall.*||' && echo yes || echo no)"
+
+# Exercise the real rollback function with command failures injected at each
+# mandatory recovery boundary. Optional service failures must remain warnings.
+eval "$(extract_fn update_quecdeck.sh _revert_swap)"
+_rollback_fixture=$(mktemp -d)
+mkdir -p "$_rollback_fixture/old"
+_rollback_case() { # _rollback_case <failure-point> -> rc:completion-marker
+    (
+        _fail=$1
+        OLD_DIR="$_rollback_fixture/old"
+        QUECDECK_DIR="$_rollback_fixture/current"
+        _sudoers_prev=""
+        _newly_introduced_units=""
+        lean_mode_was_installed=0
+        watchcat_was_installed=0
+        scheduled_restart_was_installed=0
+        rm() { return 0; }
+        mv() { [ "$_fail" = move ] && return 1; return 0; }
+        cp() {
+            case "$*" in
+                *systemd*) [ "$_fail" = unit-copy ] && return 1 ;;
+            esac
+            return 0
+        }
+        chmod() { return 0; }
+        ln() { [ "$_fail" = unit-link ] && return 1; return 0; }
+        systemctl() {
+            case "$*" in
+                "daemon-reload")       [ "$_fail" = daemon-reload ] && return 1 ;;
+                "restart firewall")    [ "$_fail" = firewall ] && return 1 ;;
+                "start lighttpd")      [ "$_fail" = lighttpd ] && return 1 ;;
+                "restart atcmd-daemon"|"restart connection-logger")
+                    [ "$_fail" = optional ] && return 1 ;;
+            esac
+            return 0
+        }
+        _out=$(_revert_swap 2>&1); _rc=$?
+        _marker=$(printf '%s\n' "$_out" | grep -c 'Rollback complete')
+        printf '%s:%s\n' "$_rc" "$_marker"
+    )
+}
+for _failure in move unit-copy unit-link daemon-reload firewall lighttpd; do
+    t "rollback fails closed on $_failure" "1:0" "$(_rollback_case "$_failure")"
+done
+t "rollback tolerates optional-service failure" "0:1" "$(_rollback_case optional)"
+rm -rf "$_rollback_fixture"
+t "web updater requires initial status write" "yes" \
+  "$(grep -q '^if ! write_status running; then$' quecdeck/script/run_update.sh && echo yes || echo no)"
+t "web updater requires log preparation" "yes" \
+  "$(grep -q '^if ! : > "\$LOG" || ! chmod 644 "\$LOG"; then$' quecdeck/script/run_update.sh && echo yes || echo no)"
+t "web updater requires fetch-unit reload" "yes" \
+  "$(grep -q '^systemctl daemon-reload || abort ' quecdeck/script/run_update.sh && echo yes || echo no)"
+t "bootstrap requires install-unit reload" "yes" \
+  "$(grep -q '^systemctl daemon-reload || _bootstrap_abort ' update_quecdeck.sh && echo yes || echo no)"
+t "preflight rejects unreadable run capacity" "yes" \
+  "$(sed -n '/_pf_run_free=/,/Not enough free space on \/run/p' update_quecdeck.sh | grep -q "''|\*\[!0-9\]\*)" && echo yes || echo no)"
+t "preflight rejects unreadable usrdata capacity" "yes" \
+  "$(sed -n '/_pf_free=/,/Not enough free space on \/usrdata/p' update_quecdeck.sh | grep -q "''|\*\[!0-9\]\*)" && echo yes || echo no)"
+t "preflight reserves runtime headroom" "yes" \
+  "$(grep -q '_pf_run_needed=\$((_pf_run_needed + 1024))' update_quecdeck.sh && echo yes || echo no)"
+t "all updater status renames normalize mode" "0" \
+  "$(grep 'mv .*STATUS_FILE' update_quecdeck.sh | grep -vc 'chmod 644')"
+t "successful install requires read-only remount" "yes" \
+  "$(sed -n '/rm -f "\$SERVICE_FILE" \/lib\/systemd\/system\/install_quecdeck.service/,/exit "\$_install_rc"/p' update_quecdeck.sh | grep -q '^if ! remount_ro; then$' && echo yes || echo no)"
+t "staging aborts on unexpected bin contents" "yes" \
+  "$(sed -n '/rmdir "\$STAGE_DIR\/bin"/,/^[[:space:]]*}/p' update_quecdeck.sh | grep -q 'return 1' && echo yes || echo no)"
+t "updater rejects files absent from manifest" "yes" \
+  "$(grep -q 'find "\$STAGE_DIR".*-type f.*-type l' update_quecdeck.sh && grep -q 'diff -u "\$_manifest_inventory" "\$_stage_inventory"' update_quecdeck.sh && echo yes || echo no)"
+t "CI enforces release manifest inventory" "yes" \
+  "$(grep -q 'git ls-files quecdeck' tests/host/ci-checks.sh && grep -q 'manifest inventory does not cover exactly' tests/host/ci-checks.sh && echo yes || echo no)"
+t "pre-commit enforces staged release inventory" "yes" \
+  "$(grep -q 'git ls-files --cached quecdeck' .githooks/pre-commit && grep -q 'CHECKSUMMED_FILES must cover every tracked' .githooks/pre-commit && echo yes || echo no)"
+t "updater health probe avoids blocked loopback HTTP" "yes" \
+  "$(! sed -n '/^    _probe_site() {/,/^    }/p' update_quecdeck.sh | grep -q 'wget' && echo yes || echo no)"
+t "updater health probe exercises auth CGI as web uid" "yes" \
+  "$( _probe_src=$(sed -n '/^    _probe_site() {/,/^    }/p' update_quecdeck.sh); printf '%s\n' "$_probe_src" | grep -q 'su www-data' && printf '%s\n' "$_probe_src" | grep -q 'auth_login' && echo yes || echo no)"
+t "updater health probe requires lighttpd-owned LAN HTTPS socket" "yes" \
+  "$( _probe_src=$(sed -n '/^    _probe_site() {/,/^    }/p' update_quecdeck.sh); printf '%s\n' "$_probe_src" | grep -q 'systemctl show -p MainPID' && printf '%s\n' "$_probe_src" | grep -q '_health_hex:01BB' && printf '%s\n' "$_probe_src" | grep -q 'socket:\[\$_https_inode\]' && echo yes || echo no)"
+t "pre-commit loads runtime guard from staged index" "yes" \
+  "$(sed -n '/tmpguard_defs=$(mktemp)/,/rm -f "\$tmpguard_defs"/p' .githooks/pre-commit | grep -q 'git show :tests/host/tmpwrite-guard.sh' && echo yes || echo no)"
+t "uninstall requires writable remount first" "yes" \
+  "$(sed -n '/^uninstall_quecdeck_components() {/,/# Remove any transient update unit/p' quecdeck.sh | grep -q '^    if ! remount_rw; then$' && echo yes || echo no)"
 t "normalize_bind untouched" 'server.port = 80'                     "$(printf 'server.port = 80\n' | _normalize_bind)"
+
+# ------------------------------------------- runtime-path guard (tmpguard) --
+# The guard is the durable half of the /run/quecdeck split: source scanning is
+# all that stops a root write drifting back into /tmp. If its regexes silently
+# stop matching, nothing else notices, so assert BOTH directions against the
+# four bugs it exists to prevent. Callers feed it grep -n output, so the fixture
+# prefixes a line number.
+. tests/host/tmpwrite-guard.sh
+tmpguard_verdict() { # tmpguard_verdict <source-line> [<preceding-line>] -> flag|allow
+    # Feeds the real shared scanner, so the fixture cannot drift from what the
+    # hook and CI actually run.
+    if [ -n "$(printf '%s\n%s\n' "${2:-}" "$1" | awk -v re="$TMPGUARD_RE" "$TMPGUARD_AWK")" ]; then
+        echo flag
+    else
+        echo allow
+    fi
+}
+
+# Must flag: each line is the shape of a real bug this rule was written for.
+t "tmpguard bug1 root log in sticky tmp" "flag" \
+  "$(tmpguard_verdict 'LOG=/tmp/install_quecdeck.log')"
+t "tmpguard bug2 root trim in www-data tree" "flag" \
+  "$(tmpguard_verdict 'ExecStartPre=-/bin/bash -c '\''L=/tmp/quecdeck/logs/atcmd.log; tail -500 "$L" > "$L.tmp"'\''')"
+t "tmpguard bug3 root chown in www-data tree" "flag" \
+  "$(tmpguard_verdict 'ExecStartPre=/bin/chown www-data /tmp/quecdeck/sessions')"
+t "tmpguard bug4 root stages in www-data tree" "flag" \
+  "$(tmpguard_verdict 'wget -O /tmp/quecdeck/sshd.service "$URL"')"
+t "tmpguard flags any new fixed tmp path" "flag" \
+  "$(tmpguard_verdict 'STATUS=/tmp/some_new_thing.status')"
+t "tmpguard flags root chmod in www-data tree" "flag" \
+  "$(tmpguard_verdict 'chmod 700 /tmp/quecdeck/logs')"
+
+# Intent is declared, never inferred from what the line appears to do. An
+# earlier version exempted any line CONTAINING "rm -f", which let a compound
+# line smuggle a dangerous operation through. This test covers that regression.
+t "tmpguard flags rm compounded with chown" "flag" \
+  "$(tmpguard_verdict 'rm -f /tmp/a; chown www-data /tmp/quecdeck/sessions')"
+t "tmpguard flags rm compounded with a redirect" "flag" \
+  "$(tmpguard_verdict 'sh -c "rm -rf /tmp/a; tail -500 /tmp/quecdeck/logs/x > /tmp/quecdeck/logs/x.tmp"')"
+t "tmpguard flags an undeclared bare rm" "flag" \
+  "$(tmpguard_verdict 'ExecStartPre=/bin/rm -rf /tmp/quecdeck/auth_failures')"
+
+# The other world-writable dirs carry the same exposure as /tmp.
+t "tmpguard covers /dev/shm" "flag" "$(tmpguard_verdict 'echo x > /dev/shm/state')"
+t "tmpguard covers /var/volatile" "flag" "$(tmpguard_verdict 'echo x > /var/volatile/state')"
+
+# Bare uses reach the same directory as a full path and must not slip past.
+t "tmpguard catches cd"     "flag" "$(tmpguard_verdict 'cd /tmp && wget -O x url')"
+t "tmpguard catches TMPDIR" "flag" "$(tmpguard_verdict 'TMPDIR=/tmp mktemp')"
+t "tmpguard catches tar -C" "flag" "$(tmpguard_verdict 'tar -C /tmp -xf release.tar.gz')"
+# ...but the component must be anchored: /opt/tmp is Entware's own dir under
+# root-owned /opt and is unrelated to the world-writable /tmp.
+t "tmpguard ignores /opt/tmp"    "allow" "$(tmpguard_verdict 'chmod 1777 /opt/tmp')"
+t "tmpguard ignores /opt/tmpfoo" "allow" "$(tmpguard_verdict 'cp a /opt/tmpfiles/b')"
+
+# Must allow: comments, and an explicit reasoned marker on the line or, for
+# systemd units where a trailing comment would join the command, above it.
+t "tmpguard allows comments" "allow" \
+  "$(tmpguard_verdict '    # /tmp/quecdeck belongs to www-data')"
+t "tmpguard allows an inline marker" "allow" \
+  "$(tmpguard_verdict '_legacy="/tmp/install_quecdeck.log" # tmpguard-ok: only passed to rm')"
+t "tmpguard allows a marker on the line above" "allow" \
+  "$(tmpguard_verdict 'ExecStopPost=/bin/rm -f /tmp/quecdeck/atcli.sock' '# tmpguard-ok: rm only, no shell')"
+t "tmpguard ignores the /run tree" "allow" \
+  "$(tmpguard_verdict 'LOG=/run/quecdeck/install.log')"
+
+# Scope is DERIVED, so the failure mode to guard against is it silently
+# collapsing (a broken grep would shrink it to nothing and every scan would
+# pass vacuously). Assert it stays populated and keeps covering both sources:
+# the script that produced bug 1, and the sudoers-reachable root scripts the
+# first version of this guard omitted entirely.
+_scope=$(tmpguard_root_scripts)
+_scope_n=$(printf '%s\n' "$_scope" | grep -c .)
+t "tmpguard scope is populated" "yes" "$([ "$_scope_n" -ge 8 ] && echo yes || echo no)"
+for _want in quecdeck/script/run_update.sh quecdeck/script/write_htpasswd.sh \
+             quecdeck/script/check_password.sh quecdeck/script/lighttpd_prestart.sh \
+             quecdeck.sh; do
+    t "tmpguard scope derives $_want" "yes" \
+      "$(printf '%s\n' "$_scope" | grep -qx "$_want" && echo yes || echo no)"
+done
+# Units must be classified root-context by the ABSENCE of User=www-data, so a
+# new unit is in scope by default rather than silently exempt.
+_units_in_scope=0
+for _u in "$TMPGUARD_UNIT_DIR"/*.service; do
+    [ -f "$_u" ] || continue
+    grep -q '^User=www-data' "$_u" || _units_in_scope=$((_units_in_scope + 1))
+done
+t "tmpguard classifies some units root-context" "yes" \
+  "$([ "$_units_in_scope" -gt 0 ] && echo yes || echo no)"
+# www-data units must NOT be in scope: their /tmp/quecdeck writes are correct.
+t "tmpguard excludes www-data units" "yes" \
+  "$(grep -q '^User=www-data' "$TMPGUARD_UNIT_DIR/watchcat.service" && echo yes || echo no)"
+
+# --------------------------------------------- orphaned-unit sweep logic ---
+# The sweeps in quecdeck.sh (uninstall) and update_quecdeck.sh (dropped units)
+# DELETE systemd units, so a wrong predicate either strands a unit forever or
+# removes one the device still needs. Exercised here against a fixture tree.
+_sweep_classify() { # _sweep_classify <libdir> <shippeddir> -> "keep|orphan|foreign <name>" per line
+    for _f in "$1"/*.service; do
+        [ -f "$_f" ] || continue
+        _n=$(basename "$_f")
+        if ! grep -qE '^Exec(Start|StartPre|StartPost|Reload|Stop|StopPost)=.*/usrdata/quecdeck(/|[[:space:]]|$)' "$_f" 2>/dev/null; then
+            echo "foreign $_n"
+        elif [ -f "$2/$_n" ]; then
+            echo "keep $_n"
+        else
+            echo "orphan $_n"
+        fi
+    done
+}
+_swp=$(mktemp -d); mkdir -p "$_swp/lib" "$_swp/shipped"
+printf '[Service]\nExecStart=/usrdata/quecdeck/script/firewall.sh\n' > "$_swp/lib/firewall.service"
+: > "$_swp/shipped/firewall.service"
+printf '[Service]\nExecStart=/usrdata/quecdeck/script/gone.sh\n'     > "$_swp/lib/dropped.service"
+printf '[Service]\nExecStart=/usr/sbin/sshd\n'                       > "$_swp/lib/sshd.service"
+printf '[Service]\nExecStart=/vendor/bin/pcie\n'                     > "$_swp/lib/pcie.service"
+printf '# old path in a comment only: /usrdata/quecdeck/gone\n[Service]\nExecStart=/vendor/bin/commented\n' > "$_swp/lib/commented.service"
+_cls=$(_sweep_classify "$_swp/lib" "$_swp/shipped")
+t "sweep keeps a shipped unit"        "keep firewall.service"  "$(printf '%s\n' "$_cls" | grep ' firewall.service$')"
+t "sweep flags a dropped unit"        "orphan dropped.service" "$(printf '%s\n' "$_cls" | grep ' dropped.service$')"
+# The two that must never be touched: a stock sshd unit and a vendor unit. The
+# device carries four failed vendor units, so a loose predicate is destructive.
+t "sweep ignores stock sshd"          "foreign sshd.service"   "$(printf '%s\n' "$_cls" | grep ' sshd.service$')"
+t "sweep ignores vendor units"        "foreign pcie.service"   "$(printf '%s\n' "$_cls" | grep ' pcie.service$')"
+t "sweep ignores comment-only marker" "foreign commented.service" "$(printf '%s\n' "$_cls" | grep ' commented.service$')"
+t "sweep removes exactly one here"    "1" "$(printf '%s\n' "$_cls" | grep -c '^orphan ')"
+rm -rf "$_swp"
+
+# The fixture above can only stay honest if the shipped code uses the same
+# predicate, so assert both sweeps actually grep for the marker.
+for _src in quecdeck.sh update_quecdeck.sh; do
+    t "sweep predicate present in $_src" "yes" \
+      "$(grep -q "grep -qE '\^Exec(Start|StartPre|StartPost|Reload|Stop|StopPost)=" "$_src" && echo yes || echo no)"
+done
+
+# ------------------------------------------------ firewall ingress policy ---
+# Destination address alone is not a LAN boundary: QCMAP places its rmnet
+# drops before QUECDECK in IPPT mode but after it in routed mode. Both modes
+# were device-probed and deliver real LAN HTTPS through bridge0.
+eval "$(extract_fn quecdeck/script/firewall.sh firmware_settle_delay)"
+t "firewall waits to uptime boundary from early boot" "36" "$(firmware_settle_delay 24)"
+t "firewall has no delay at uptime boundary"          "0"  "$(firmware_settle_delay 60)"
+t "firewall has no delay after boot settles"          "0"  "$(firmware_settle_delay 125)"
+t "firewall rejects invalid uptime"                   "1"  "$(firmware_settle_delay invalid >/dev/null 2>&1; echo $?)"
+t "firewall orders after late firmware network units" "yes" \
+  "$(grep '^After=.*init_sys_mss.service.*ethernet-config.service.*ql-netd.service' quecdeck/systemd/firewall.service >/dev/null && echo yes || echo no)"
+t "firewall helper requires LAN bridge and address" "yes" \
+  "$(grep -q 'v4_rules+="-A QUECDECK -i bridge0 -d \$LAN_IP -p \$protocol --dport \$port -j ACCEPT' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall helper supplies paired catch-all DROP" "yes" \
+  "$(grep -q -- '-A QUECDECK -p \$protocol --dport \$port -j DROP' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall has no destination-only ACCEPT template" "yes" \
+  "$(! grep -q 'v4_rules+="-A QUECDECK -d \$LAN_IP .* -j ACCEPT' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall fails closed when bridge0 is absent" "yes" \
+  "$(grep -q 'if ! ip link show bridge0' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall verifies LAN address belongs to bridge0" "yes" \
+  "$(grep -q 'ip -4 addr show dev bridge0.*LAN_IP' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall protects UDP DNS through helper" "yes" \
+  "$(grep -q '^add_v4_lan_only udp 53$' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall protects TCP DNS through helper" "yes" \
+  "$(grep -q '^add_v4_lan_only tcp 53$' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall permits link-local UDP DNS through IPv6 helper" "yes" \
+  "$(grep -q 'v6_rules+="-A QUECDECK6 -i bridge0 -d fe80::/10 -p \$protocol --dport \$port -j ACCEPT' quecdeck/script/firewall.sh && grep -q '^add_v6_lan_only udp 53$' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall permits link-local TCP DNS through IPv6 helper" "yes" \
+  "$(grep -q '^add_v6_lan_only tcp 53$' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall IPv6 helper supplies catch-all DROP" "yes" \
+  "$(grep -q -- '-A QUECDECK6 -p \$protocol --dport \$port -j DROP' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall requires both IPv6 commands" "yes" \
+  "$(grep -q 'iptables iptables-restore ip6tables ip6tables-restore' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall treats IPv6 restore failure as fatal" "yes" \
+  "$(grep -q 'if ! printf.*v6_rules.*ip6tables-restore' quecdeck/script/firewall.sh && ! grep 'ip6tables-restore' quecdeck/script/firewall.sh | grep -q '|| true' && echo yes || echo no)"
+t "firewall verifies IPv6 rule count" "yes" \
+  "$(grep -q '\[ "\$actual_v6" -ne "\$expected_v6" \]' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall protects every admin TCP port through helper" "yes" \
+  "$(grep -q '^[[:space:]]*add_v4_lan_only tcp "\$port"$' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall helper updates rule-count check" "yes" \
+  "$(grep -q 'expected=\$((expected + 2))' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall leaves DHCP outside its policy" "yes" \
+  "$(! grep -q -- '--dport 67' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall never deletes jumps until absent" "yes" \
+  "$(! grep -q 'while .*tables .* -D INPUT' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall inserts jump only from zero case" "yes" \
+  "$(sed -n '/case "\$jump_count" in/,/esac/p' quecdeck/script/firewall.sh | grep -A2 '0)' | grep -q -- '-I INPUT -j "\$chain"' && echo yes || echo no)"
+t "firewall removes jump only from duplicate case" "yes" \
+  "$(sed -n '/case "\$jump_count" in/,/esac/p' quecdeck/script/firewall.sh | grep -A2 '\*)' | grep -q -- '-D INPUT -j "\$chain"' && echo yes || echo no)"
+t "firewall bounds jump convergence" "yes" \
+  "$(grep -q 'while \[ "\$jump_attempts" -lt 10 \]' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall verifies exactly one final jump" "yes" \
+  "$(grep -q '\[ "\$jump_count" -ne 1 \]' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall converges both family jumps" "2" \
+  "$(grep -c '^converge_input_jump .* QUECDECK' quecdeck/script/firewall.sh)"
+t "firewall uninstall explicitly removes owned rules" "yes" \
+  "$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh | grep -q 'firewall.sh --remove' && echo yes || echo no)"
+t "firewall helper declares remove API" "yes" \
+  "$(grep -qx 'QUECDECK_FIREWALL_REMOVE_API=1' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "uninstall checks remove API before invoking helper" "yes" \
+  "$(_fw_block=$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh); _check_line=$(printf '%s\n' "$_fw_block" | grep -n 'QUECDECK_FIREWALL_REMOVE_API=1' | cut -d: -f1); _run_line=$(printf '%s\n' "$_fw_block" | grep -n 'firewall.sh --remove' | cut -d: -f1); [ -n "$_check_line" ] && [ "$_check_line" -lt "$_run_line" ] && echo yes || echo no)"
+t "unsupported firewall helper requires reboot" "yes" \
+  "$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh | grep -q 'result_firewall="REBOOT REQUIRED"' && grep -q 'REBOOT REQUIRED: restart the modem' quecdeck.sh && echo yes || echo no)"
+t "uninstall stops UI before firewall cleanup" "yes" \
+  "$(_stop_line=$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh | grep -n 'systemctl stop lighttpd' | cut -d: -f1); _remove_line=$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh | grep -n 'firewall.sh --remove' | cut -d: -f1); [ -n "$_stop_line" ] && [ "$_stop_line" -lt "$_remove_line" ] && echo yes || echo no)"
+t "normal firewall service stop does not remove policy" "yes" \
+  "$(! grep -q '^ExecStop=.*firewall.sh --remove' quecdeck/systemd/firewall.service && echo yes || echo no)"
+
+# Execute the real convergence function against a stateful iptables mock. The
+# The source checks above catch accidental deletion of the design. These scenarios
+# prove its behavior and, critically, that a failed duplicate deletion never
+# removes the final working jump.
+eval "$(extract_fn quecdeck/script/firewall.sh converge_input_jump)"
+_jump_case() { # <initial> <fail-insert> <fail-delete> <external-churn>
+    (
+        _jumps=$1 _fail_i=$2 _fail_d=$3 _churn=$4 _ops=0 _min=$1
+        iptables() {
+            case "$*" in
+                *"-S INPUT"*)
+                    _n=0
+                    [ "$_churn" = 1 ] && _reported=0 || _reported=$_jumps
+                    echo '-P INPUT ACCEPT'
+                    while [ "$_n" -lt "$_reported" ]; do
+                        echo '-A INPUT -j QUECDECK'
+                        _n=$((_n + 1))
+                    done
+                    ;;
+                *"-I INPUT -j QUECDECK"*)
+                    [ "$_fail_i" = 1 ] && return 1
+                    _jumps=$((_jumps + 1)); _ops=$((_ops + 1))
+                    ;;
+                *"-D INPUT -j QUECDECK"*)
+                    [ "$_fail_d" = 1 ] && return 1
+                    [ "$_jumps" -gt 0 ] || return 1
+                    _jumps=$((_jumps - 1)); _ops=$((_ops + 1))
+                    [ "$_jumps" -lt "$_min" ] && _min=$_jumps
+                    ;;
+                *) return 2 ;;
+            esac
+        }
+        converge_input_jump >/dev/null 2>&1
+        _rc=$?
+        [ "$_churn" = 1 ] && _jumps=0
+        printf '%s:%s:%s:%s\n' "$_rc" "$_jumps" "$_min" "$_ops"
+    )
+}
+t "firewall jump behavior zero to one"     "0:1:0:1"  "$(_jump_case 0 0 0 0)"
+t "firewall jump behavior one is no-op"     "0:1:1:0"  "$(_jump_case 1 0 0 0)"
+t "firewall jump behavior three to one"     "0:1:1:2"  "$(_jump_case 3 0 0 0)"
+t "firewall jump insert failure is loud"    "1:0:0:0"  "$(_jump_case 0 1 0 0)"
+t "firewall duplicate failure preserves all" "1:3:3:0" "$(_jump_case 3 0 1 0)"
+t "firewall jump churn is bounded at ten"   "1:0:0:10" "$(_jump_case 0 0 0 1)"
+
+# Execute the real removal helper against a stateful mock. Foreign chains and
+# jumps are included in every fixture and must never appear in the operation log.
+eval "$(extract_fn quecdeck/script/firewall.sh remove_chain)"
+_remove_case() { # <initial-jumps> <chain-exists>
+    (
+        _jumps=$1 _chain=$2 _ops=""
+        iptables() {
+            case "$*" in
+                *"-S")
+                    echo '-P INPUT ACCEPT'
+                    echo '-N VENDOR'
+                    echo '-A INPUT -j VENDOR'
+                    _n=0
+                    while [ "$_n" -lt "$_jumps" ]; do
+                        echo '-A INPUT -j QUECDECK'
+                        _n=$((_n + 1))
+                    done
+                    [ "$_chain" = 1 ] && echo '-N QUECDECK'
+                    return 0
+                    ;;
+                *"-D INPUT -j QUECDECK") _jumps=$((_jumps - 1)); _ops="${_ops}D" ;;
+                *"-F QUECDECK") _ops="${_ops}F" ;;
+                *"-X QUECDECK") _chain=0; _ops="${_ops}X" ;;
+                *) return 2 ;;
+            esac
+        }
+        remove_chain iptables QUECDECK >/dev/null 2>&1
+        printf '%s:%s:%s:%s\n' "$?" "$_jumps" "$_chain" "$_ops"
+    )
+}
+t "firewall removal handles absent state"    "0:0:0:"    "$(_remove_case 0 0)"
+t "firewall removal deletes one owned chain" "0:0:0:DFX" "$(_remove_case 1 1)"
+t "firewall removal deletes duplicate jumps" "0:0:0:DDFX" "$(_remove_case 2 1)"
+t "device ingress regression test uses same bridge policy" "yes" \
+  "$(grep -q 'iptables -A QUECDECK -i bridge0 -d "\$LAN_IP"' tests/device/device-test-firewall-ingress.sh && echo yes || echo no)"
+
+# ------------------------------------------ root-home migration lifecycle ---
+# The legacy root bin was world-writable. These ordering assertions prevent a
+# future cleanup from putting it back in the updater's command search path or
+# running the destructive migration before a verified release and rollback
+# snapshot exist.
+t "installer PATH excludes legacy root bin" "yes" \
+  "$(grep '^export PATH=' quecdeck.sh | grep -qv '/usrdata/root/bin' && echo yes || echo no)"
+t "updater PATH excludes legacy root bin" "yes" \
+  "$(grep '^export PATH=' update_quecdeck.sh | grep -qv '/usrdata/root/bin' && echo yes || echo no)"
+_harden_line=$(grep -n '^[[:space:]]*harden_root_home ||' update_quecdeck.sh | cut -d: -f1)
+_commit_line=$(grep -n '^[[:space:]]*_swap_committed=1$' update_quecdeck.sh | tail -1 | cut -d: -f1)
+_helper_line=$(grep -n 'ln -sf "\$QUECDECK_DIR/atcli" /usrdata/root/bin/atcli' update_quecdeck.sh | head -1 | cut -d: -f1)
+t "root home hardens after rollback becomes possible" "yes" \
+  "$([ -n "$_harden_line" ] && [ "$_harden_line" -gt "$_commit_line" ] && echo yes || echo no)"
+t "root home hardens before helper writes" "yes" \
+  "$([ -n "$_harden_line" ] && [ "$_harden_line" -lt "$_helper_line" ] && echo yes || echo no)"
+t "rollback restores password helper copies" "2" \
+  "$(sed -n '/^_revert_swap() {/,/^}/p' update_quecdeck.sh | grep -c 'cp -f.*quecdeck.*passwd.*usrdata/root/bin')"
+t "uninstall clears root-home migration marker" "yes" \
+  "$(sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh | grep -q 'rm -f.*ROOT_HOME_HARDENED' && echo yes || echo no)"
+
+# Every shipped unit must carry the marker or both sweeps go blind to it and it
+# stays installed and enabled forever. The ci-checks.sh script also checks this. It is repeated
+# here because run-tests.sh is what the pre-commit hook runs, so a marker-less
+# unit is blocked at commit time rather than discovered in CI.
+for _u in quecdeck/systemd/*.service; do
+    [ -f "$_u" ] || continue
+    t "unit self-identifies: $(basename "$_u")" "yes" \
+      "$(grep -qE '^Exec(Start|StartPre|StartPost|Reload|Stop|StopPost)=.*/usrdata/quecdeck(/|[[:space:]]|$)' "$_u" && echo yes || echo no)"
+done
 
 # ---------------------------------------------------------- JS structure ----
 js_fail=0
 for f in quecdeck/www/js/*.js; do
     case "$f" in *.min.js) continue ;; esac
-    out=$(perl tools/jscheck.pl "$f")
+    out=$(perl tests/host/jscheck.pl "$f")
     if [ "${out%: OK}" != "${out%": OK"}" ] || [[ "$out" == *": OK" ]]; then
         pass=$((pass + 1))
     else

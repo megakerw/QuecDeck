@@ -7,14 +7,14 @@
 #     sh device-test-rununit.sh
 #
 # Re-run this when it might no longer hold: after a firmware or systemd update
-# (SELinux policy / systemd behaviour can change), or when bringing QuecDeck up
+# (systemd behaviour can change), or when bringing QuecDeck up
 # on a different modem than the RM520N-GL it is tested on. A failure here means
 # the updater cannot install unit changes and would need a fix before shipping.
 #
 # It checks:
 #   1. Can a HAND-WRITTEN unit in /run/systemd/system load and start under this
-#      device's SELinux? (The risk: systemd-run works via the D-Bus API, which
-#      sets the SELinux context; a plain `cat >` file may not.)
+#      device? (The risk: systemd-run works via the D-Bus API, which may not
+#      be reachable from the CGI-sudo context; a hand-written unit file is.)
 #   2. Can a service launched from such a unit remount / rw and write /lib
 #      (the installer's actual job)?
 #   3. Does `systemd-run` work for the same write, as a fallback if (1) fails?
@@ -102,7 +102,7 @@ fi
 if [ "$(cat "$SENTINEL" 2>/dev/null)" = "ran" ]; then
     ok "the unit actually executed (sentinel written)"
 else
-    bad "unit did not execute (no sentinel) -- SELinux may have blocked load/exec"
+    bad "unit did not execute (no sentinel) -- systemd refused to load or exec it"
 fi
 
 # ---- Test 4: is-active works by name for a /run unit -------------------
@@ -168,7 +168,7 @@ echo " Results: $pass passed, $fail failed, $warn warnings"
 echo "=================================================================="
 if [ "$fail" -eq 0 ]; then
     echo " VERDICT: Approach B is SAFE on this device -- a hand-written /run unit"
-    echo "          loads under SELinux and can perform the rootfs writes."
+    echo "          loads and can perform the rootfs writes."
 else
     echo " VERDICT: Approach B (hand-written /run unit) has a FAILURE above."
     echo "          If Test 3 (systemd-run) passed, use that fallback to create"

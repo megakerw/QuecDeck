@@ -15,7 +15,7 @@
 #     sh device-test-symlinkswap.sh
 #
 # Run it when evaluating A/B, and re-run when the answers might have changed:
-# after a firmware update (SELinux policy, busybox/coreutils, sudo can all
+# after a firmware update (busybox/coreutils, sudo can all
 # change), or on a different modem than the RM520N-GL it targets. A failure in
 # Test 1 or Test 3 blocks the A/B design as drafted; the verdict says what to do.
 #
@@ -29,7 +29,7 @@
 #      the link is flipped to a different release dir (www-data -> root, the
 #      updater/watchcat sudo pattern). If this fails, rules must name resolved
 #      slot paths and be rewritten at flip time.
-#   4. www-data can read a file through the symlink under SEAndroid (the
+#   4. A www-data process can read a file through the symlink (the
 #      lighttpd docroot / CGI sourcing path after a flip).
 #
 # Non-destructive: everything lives under /usrdata/.qdsymtest plus one
@@ -181,7 +181,7 @@ else
     bad "prerequisites missing ($SUDO and user www-data); cannot verify the sudo path"
 fi
 
-# ---- Test 4: www-data reads through the symlink (SELinux/DAC) ----------
+# ---- Test 4: www-data reads through the symlink (DAC) ------------------
 echo ""
 echo "[Test 4] www-data can read file content through the symlink"
 if [ -x "$SUDO" ] && id www-data >/dev/null 2>&1; then
@@ -189,7 +189,7 @@ if [ -x "$SUDO" ] && id www-data >/dev/null 2>&1; then
     if [ "$got" = "A" ] || [ "$got" = "B" ]; then
         ok "www-data read through the link (got '$got'; lighttpd docroot path is fine)"
     else
-        bad "www-data could not read through the link (SELinux label or DAC issue)"
+        bad "www-data could not read through the link (DAC: check the path modes)"
     fi
 else
     note "skipped (needs $SUDO and www-data)"

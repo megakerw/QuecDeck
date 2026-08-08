@@ -18,7 +18,10 @@ esac
 # kernel releases an flock when the holding process dies (even on SIGKILL), so
 # a crashed scan can't wedge the lock. Degrade to no guard if flock is missing
 # rather than blocking scans entirely.
-mkdir -p /tmp/quecdeck
+# umask, not a bare mkdir: this can be the first creator of /tmp/quecdeck, and
+# no root unit re-tightens that parent any more. Without it the dir persists at
+# the CGI umask (0755) and the 0644 cache files under it become world-readable.
+(umask 077; mkdir -p /tmp/quecdeck)
 if command -v flock >/dev/null 2>&1; then
     exec 9>/tmp/quecdeck/qscan.lock
     if ! flock -n 9; then
@@ -45,7 +48,7 @@ log_scan_event() {
     fi
 }
 
-# is-active is a read-only query; it works unprivileged, no sudo.
+# is-active is a read-only query that works without sudo.
 watchcat_was_running=0
 if /bin/systemctl is-active watchcat > /dev/null 2>&1; then
     watchcat_was_running=1
@@ -79,11 +82,11 @@ fi
 
 # Run the cell scan in the background. Outer timeout = 215 s (180 s max scan +
 # 35 s handler overhead). The optional third AT+QSCAN parameter (firmware scan
-# duration) is omitted; on this firmware it causes some scan modes to return
+# duration) is omitted. On this firmware it causes some scan modes to return
 # immediate OK with no results.
 #
 # The scan runs in the background so we can emit keepalive newlines every second.
-# A scan can run up to 215s with nothing to send in the meantime; without the
+# A scan can run for up to 215 seconds with nothing to send. Without the
 # newlines, a gap longer than lighttpd's max-keep-alive-idle (45s) would drop
 # the connection mid-scan. JS filters empty lines (lines[i] !== "") so keepalive
 # newlines are invisible to the parser.

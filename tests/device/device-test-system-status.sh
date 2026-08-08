@@ -19,10 +19,10 @@
 #      D-Bus round trip to PID 1 per unit was the cost.
 #   3. The real mobileap_cfg.xml matches what mobileap_read expects: each tag
 #      present exactly once, spelled as the CGI spells it.
-#   4. mobileap_lan_ip agrees with the legacy inline parse and with the rule
+#   4. The mobileap_lan_ip function agrees with the legacy inline parse and rule
 #      lighttpd_prestart.sh applies, EXCEPT that it reports nothing rather than
 #      defaulting (deliberate: its output seeds a form that writes back).
-#   5. get_system_status runs and emits the merged fields, with lan_ip
+#   5. The get_system_status CGI runs and emits the merged fields, with lan_ip
 #      matching the XML, and the retired get_upnp_status is gone.
 
 CGI=/usrdata/quecdeck/www/cgi-bin/get_system_status
@@ -177,7 +177,7 @@ fi
 # Run as www-data where possible: the CGI reads $CFG and talks to systemd as
 # that user, and a root-only pass would hide a permission problem.
 # Executed directly, NOT via `sh`: the CGI is #!/bin/bash and uses arrays and a
-# herestring, neither of which busybox ash supports. lighttpd execs it the same
+# herestring, neither of which busybox ash supports. The lighttpd process executes it the same
 # way, so `sh $CGI` would fail here while production works fine.
 if su -s /bin/sh www-data -c "true" 2>/dev/null; then
     body=$(su -s /bin/sh www-data -c "$CGI" 2>/dev/null | tail -1)

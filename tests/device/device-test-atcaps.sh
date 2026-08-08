@@ -47,9 +47,13 @@ while [ "$len" -le 525 ]; do
     cmd="AT$(head -c "$pad" /dev/zero | tr '\0' C)"
     mal0=$(counter malformed); mal0=${mal0:-0}
     reply=$(atcmd_run "$cmd" 3000)
+    rc=$?
     mal1=$(counter malformed); mal1=${mal1:-0}
     d=$(( mal1 - mal0 ))
-    if [ -n "$reply" ]; then
+    if [ "$rc" = "$_AT_E_TOOLONG" ]; then
+        verdict="REFUSED by the daemon"
+        [ "$first_refused" = "0" ] && first_refused="$len"
+    elif [ -n "$reply" ]; then
         verdict="reached the modem"
         last_ok="$len"
     elif [ "$d" -gt 0 ]; then

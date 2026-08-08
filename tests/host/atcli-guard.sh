@@ -1,5 +1,5 @@
 # Shared definitions for the two atcli guards: .githooks/pre-commit and
-# tools/ci-checks.sh. Only the pattern and the file/dir scope live here. The
+# tests/host/ci-checks.sh. Only the pattern and the file/dir scope live here. The
 # iteration deliberately does not: the hook reads the git index (what is being
 # committed), ci-checks reads the working tree, and collapsing that difference
 # would let the hook pass on unstaged content.
@@ -13,7 +13,7 @@
 ATCLI_INVOKE_RE='(/atcli|\$[{]?_ATCLI[}]?)([^A-Za-z0-9._/-]|$)'
 
 # Scoped to runtime code, so the daemon-launch unit, docs, and dev tools are not
-# swept in. at-lib.sh is the gateway itself and is exempt.
+# swept in. The at-lib.sh file is the gateway itself and is exempt.
 ATCLI_GUARD_DIRS='quecdeck/www/cgi-bin quecdeck/script quecdeck/console'
 ATCLI_GUARD_EXEMPT='quecdeck/script/at-lib.sh'
 

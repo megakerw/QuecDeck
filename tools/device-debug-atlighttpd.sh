@@ -26,18 +26,6 @@ ls -Z "$ATCLI" "$SOCK" 2>/dev/null | sed 's/^/  /' || echo "  (ls -Z unsupported
 sec "mount flags for /usrdata and /tmp (noexec/nosuid would matter)"
 mount 2>/dev/null | grep -E ' /usrdata | /tmp | / ' | sed 's/^/  /'
 
-sec "process SELinux domains"
-for name in lighttpd atcli-rs atcli; do
-    for pid in $(pidof "$name" 2>/dev/null); do
-        printf '  %s (pid %s): %s\n' "$name" "$pid" \
-            "$(cat /proc/$pid/attr/current 2>/dev/null || echo unknown)"
-    done
-done
-dpid=$(systemctl show -p MainPID --value atcmd-daemon 2>/dev/null)
-[ -n "$dpid" ] && [ "$dpid" != "0" ] && \
-    printf '  atcmd-daemon (pid %s): %s\n' "$dpid" \
-        "$(cat /proc/$dpid/attr/current 2>/dev/null || echo unknown)"
-
 sec "daemon status counters (before)"
 "$ATCLI" --status -s "$SOCK" 2>&1 | sed 's/^/  /'
 

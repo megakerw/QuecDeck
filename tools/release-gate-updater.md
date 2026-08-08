@@ -11,13 +11,13 @@ adb push update_quecdeck.sh /tmp/test_update.sh
 adb shell
 ```
 
-**Automation:** `tools/device-test-updategate.sh` runs steps 1-5 (plus the
+**Automation:** `tests/device/device-test-updategate.sh` runs steps 1-5 (plus the
 downgrade-block half of the guard) unattended and asserts every outcome,
 including landing the SIGTERM inside the swap window for step 5:
 
 ```
 adb push update_quecdeck.sh /tmp/test_update.sh
-adb push tools/device-test-updategate.sh /tmp/
+adb push tests/device/device-test-updategate.sh /tmp/
 adb shell sh /tmp/device-test-updategate.sh <current> [<older>]
 ```
 
@@ -47,33 +47,46 @@ Between runs, reset state so the next test starts clean:
 
 ```
 systemctl reset-failed install_quecdeck 2>/dev/null
-rm -f /tmp/quecdeck_update.status
+rm -f /run/quecdeck/update.status
 ```
 
 ## 1. Health probe, standalone
 
-The post-swap health check hangs entirely off this one request; prove it in
-isolation before any test that depends on it.
+The firewall intentionally rejects modem-local HTTPS through `lo`, so the
+post-swap check verifies the equivalent local invariants directly: the active
+lighttpd process must own the socket listening on the configured LAN IP and
+port 443, then the side-effect-free `auth_login` GET branch must execute as
+`www-data`. Prove them in isolation before any test that depends on the check.
 
 ```
-IP=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<[^>]*>//g'); IP=${IP:-192.168.225.1}
-/opt/bin/wget -q -O /dev/null --no-check-certificate "https://$IP/cgi-bin/auth_login"; echo rc=$?
+pid=$(systemctl show -p MainPID --value lighttpd)
+ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml | sed 's/<APIPAddr>//;s#</APIPAddr>##')
+hex=$(printf '%s\n' "$ip" | awk -F. '{printf "%02X%02X%02X%02X", $4, $3, $2, $1}')
+inode=$(awk -v endpoint="$hex:01BB" '$2 == endpoint && $4 == "0A" {print $10; exit}' /proc/net/tcp)
+owns=0
+for fd in /proc/"$pid"/fd/*; do
+    [ "$(readlink "$fd" 2>/dev/null)" = "socket:[$inode]" ] && { owns=1; break; }
+done
+[ "$(systemctl is-active lighttpd)" = active ] && [ -n "$inode" ] && [ "$owns" = 1 ] && echo "lighttpd owns the LAN HTTPS listener"
+su www-data -s /bin/bash -c 'REQUEST_METHOD=GET /usrdata/quecdeck/www/cgi-bin/auth_login'
 ```
 
-- [ ] `rc=0` (wget followed the 303 chain to a 200)
+- [ ] The ownership command reports that lighttpd owns the configured LAN HTTPS listener
+- [ ] `auth_login` prints `Status: 303 See Other` and `Location: /`
 - [ ] No new entry in `/tmp/quecdeck/logs/access_events.jsonl` and no lockout
       counter created (the GET branch must be side-effect free)
 
 ## 2. Preflight failure path (nonexistent tag)
 
 ```
-bash /tmp/test_update.sh v9.9.9
+missing_tag="v999999999.$(date +%s).$$"
+bash /tmp/test_update.sh "$missing_tag"
 ```
 
 - [ ] FATAL: could not download release files; nothing staged, site untouched
-- [ ] `cat /tmp/quecdeck_update.status` is `failed`
+- [ ] `cat /run/quecdeck/update.status` is `failed`
 - [ ] `/usrdata/quecdeck_last_update.log` exists, `root` owner, mode `600`,
-      content matches `/tmp/install_quecdeck.log`
+      content matches `/run/quecdeck/install.log`
 - [ ] `mount | grep ' / '` shows `ro`
 
 ## 3. Downgrade guard blocks
@@ -95,7 +108,7 @@ bash /tmp/test_update.sh <current>
 - [ ] Guard allows the equal version (no FATAL)
 - [ ] Checksum verify: `All checksums verified OK.`
 - [ ] Content-only run takes the stays-up branch: log shows
-      `Verifying CGIs respond on <ip>...` then
+      `Verifying the new web stack...` then
       `lighttpd stayed up through the swap` (no lighttpd restart)
 - [ ] ttyd verifies against the LOCAL manifest: log has NO
       "download checksums" step between the ttyd.bash/ttyd.service fetches
@@ -112,7 +125,7 @@ Two shells (or `tail -f` in one, trigger from a second):
 
 ```
 # shell A
-tail -f /tmp/install_quecdeck.log
+tail -f /run/quecdeck/install.log
 # shell B
 bash /tmp/test_update.sh <current> &
 # the moment shell A prints "Preparing for swap...":

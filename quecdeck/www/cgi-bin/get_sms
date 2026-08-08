@@ -5,8 +5,8 @@ cgi_require_post
 
 # PDU mode: CMGF=0, and CMGL=4 for "all" - the text-mode spelling CMGL="ALL"
 # answers ERROR here. Only the PDU carries the User Data Header, which says
-# which parts belong to one concatenated message and in what order; text mode
-# hands over the decoded body alone. sms.js does the decoding, so no CSCS.
+# which parts belong to one concatenated message and in what order. Text mode
+# hands over the decoded body alone. The sms.js module does the decoding, so no CSCS.
 # 15s: a full inbox runs large (132 parts observed), and the rc check below
 # refuses an overrun outright rather than serving it short.
 # +CSCA? and +CSMP dropped: a query nothing reads, and text-mode SEND parameters
@@ -19,7 +19,7 @@ cgi_require_post
 # complete. The body check still holds if an older atcli is rolled back, and
 # matches every other read path.
 #
-# Two independent guards, both mutation-checked in tools/run-tests.sh: dropping
+# Two independent guards, both mutation-checked in tests/host/run-tests.sh: dropping
 # either one fails a test.
 #   rc     - a reply the modem never terminated, or nothing at all.
 #   the OK - a reply that arrived complete but does not end in OK.

@@ -107,7 +107,7 @@ other two are kept here because they explain the original bug.
 | Something at ~80 commands | see caveat below | the modem | normal `ERROR` reply |
 | Response time per `+CMGD` | 300 ms | the modem (documented) | timeout, partial delete |
 
-Measured with `tools/device-test-atcaps.sh` and its predecessor:
+Measured with `tests/device/device-test-atcaps.sh` and its predecessor:
 
 ```
 +CGMM  79 commands / 475 chars -> OK
@@ -140,7 +140,7 @@ means the cap counts commands; a roughly doubled count means it counts
 response bytes. Neither outcome threatens a single-slot line, which answers in
 one line, so this was left unresolved on purpose.
 
-**The 512 cap is ours, not the modem's.** `tools/device-test-atclid.sh:234`
+**The 512 cap is ours, not the modem's.** `tests/device/device-test-atclid.sh:234`
 has said so all along: "a command past CMD_MAX (512) is refused by the daemon,
 and atcli sends it happily." The daemon drops the command locally and answers
 nothing. The modem never sees it and is not at fault.
@@ -347,9 +347,9 @@ non-destructive probes. Both take care to address only slots **above** the
 capacity `AT+CPMS?` reports, where no message can exist.
 
 ```
-adb push tools/device-test-smsdelete.sh /tmp/
+adb push tests/device/device-test-smsdelete.sh /tmp/
 adb shell /tmp/device-test-smsdelete.sh     # storage, abort-on-error, timing
-adb push tools/device-test-atcaps.sh /tmp/
+adb push tests/device/device-test-atcaps.sh /tmp/
 adb shell /tmp/device-test-atcaps.sh        # CMD_MAX drift, what the ~80 counts
 ```
 
@@ -438,7 +438,7 @@ belongs in `tools/device-costs.md`.
 - ITU-T V.250: semicolon concatenation, and the rule that exceeding the
   accepted character count "shall" produce ERROR. Not applicable to the 512
   cap, which never reaches the DCE.
-- `tools/device-test-atclid.sh` for daemon behavior, `CMD_MAX`, and the
+- `tests/device/device-test-atclid.sh` for daemon behavior, `CMD_MAX`, and the
   `malformed` counter.
 - `tools/device-costs.md` for what an AT batch, a fork and a CGI request
   actually cost on this hardware, and for how to measure without the CPU

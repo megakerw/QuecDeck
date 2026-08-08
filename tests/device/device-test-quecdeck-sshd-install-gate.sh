@@ -1,5 +1,5 @@
 #!/bin/sh
-# quecdeck.sh SSH-install gate verification. device-test-sshd-gate.sh already
+# quecdeck.sh SSH-install gate verification. The device-test-sshd-gate.sh script already
 # proves the UNIT-level gate (sshd.service's ExecStartPre) blocks a bind while
 # the firewall is down. This script proves the OTHER gate: the
 # `if systemctl restart firewall; then ... else ... fi` block inside

@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # Define toolkit paths
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin:/usrdata/root/bin
+# The legacy root bin may have been world-writable. Use only trusted command
+# directories. Installed login shells add root/bin after it has been hardened.
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin
 GITUSER="megakerw"
 REPONAME="QuecDeck"
 GITTREE="main"
@@ -33,22 +35,99 @@ patch_root_passwd() {
     fi
 }
 
+# Root-owned runtime dir for everything root writes. /run is root-owned and not
+# world-writable, so nothing can pre-plant a name here.
+ensure_rundir() {
+    mkdir -p /run/quecdeck && chmod 755 /run/quecdeck
+}
+
+# One-time repair marker. Before this existed, /usrdata/root and bin were 0777.
+# Their contents therefore cannot be trusted merely by changing the mode.
+ROOT_HOME_HARDENED=/usrdata/root/.quecdeck-home-hardened
+
+write_root_profile() {
+    rm -f /usrdata/root/.profile
+    printf '%s\n' '# Set PATH for all shells' \
+        'export PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin' \
+        > /usrdata/root/.profile
+    chown root:root /usrdata/root/.profile
+    chmod 644 /usrdata/root/.profile
+}
+
+# Seal root's home before inspecting children. On the first hardened run,
+# quarantine the old bin entry out of PATH and recreate it: its former 0777
+# mode made every existing entry untrustworthy. The quarantine is retained for
+# manual recovery of legitimate custom files.
+root_home_dirs() {
+    mkdir -p /usrdata/root || return 1
+    chown root:root /usrdata/root && chmod 700 /usrdata/root || return 1
+
+    _hardened=0
+    if [ ! -L "$ROOT_HOME_HARDENED" ] && [ -f "$ROOT_HOME_HARDENED" ] && \
+       [ "$(stat -c '%U %a' "$ROOT_HOME_HARDENED" 2>/dev/null)" = "root 600" ] && \
+       grep -qx '1' "$ROOT_HOME_HARDENED" 2>/dev/null; then
+        _hardened=1
+    fi
+
+    if [ "$_hardened" = "0" ]; then
+        if [ -e /usrdata/root/bin ] || [ -L /usrdata/root/bin ]; then
+            _quarantine="/usrdata/root/bin.pre-quecdeck-hardening.$(date +%s).$$"
+            while [ -e "$_quarantine" ] || [ -L "$_quarantine" ]; do
+                _quarantine="${_quarantine}.x"
+            done
+            mv /usrdata/root/bin "$_quarantine" || return 1
+            echo "Previous root bin quarantined at $_quarantine"
+        fi
+        mkdir -m 755 /usrdata/root/bin || return 1
+        chown root:root /usrdata/root/bin || return 1
+        write_root_profile || return 1
+        rm -f "$ROOT_HOME_HARDENED"
+        printf '1\n' > "$ROOT_HOME_HARDENED" || return 1
+        chown root:root "$ROOT_HOME_HARDENED" && chmod 600 "$ROOT_HOME_HARDENED" || return 1
+    elif [ -L /usrdata/root/bin ] || [ ! -d /usrdata/root/bin ]; then
+        echo -e "\e[1;31mRefusing unsafe /usrdata/root/bin after hardening.\e[0m"
+        return 1
+    else
+        chown root:root /usrdata/root/bin && chmod 755 /usrdata/root/bin || return 1
+    fi
+}
+
+root_home_profile() {
+    root_home_dirs || return 1
+    write_root_profile
+}
+
 # Check for existing Entware/opkg installation, install if not installed
 ensure_entware_installed() {
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
-    remount_rw
+    if ! remount_rw; then
+        echo -e "\e[1;31mCannot remount / read-write; Entware setup aborted.\e[0m"
+        trap - EXIT
+        return 1
+    fi
     if [ ! -f "/opt/bin/opkg" ]; then
         echo -e "\e[1;32mInstalling Entware/OPKG...\e[0m"
-        cd /tmp && wget --timeout=30 --tries=2 -O installentware.sh "$GITROOT/installentware.sh"
-        echo "6e6839411282774ede732046589ee4e083e485c42e27a2de157d7350f3651226  installentware.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f /tmp/installentware.sh; exit 1; }
+        # Staged in root-owned /run/quecdeck, not /tmp: this downloads, verifies
+        # and then EXECUTES as root at a fixed, predictable name. In sticky /tmp
+        # another uid can pre-create that name, which blocks root's own write
+        # (fs.protected_regular) and leaves the verify-then-exec sequence resting
+        # on sysctls rather than on directory ownership.
+        ensure_rundir
+        _ent=/run/quecdeck/installentware.sh
+        rm -f "$_ent"
+        wget --timeout=30 --tries=2 -O "$_ent" "$GITROOT/installentware.sh"
+        echo "fea6ce198087f4869ef8def1a57d4f1a2a3b821c7ae86396363fc840c43493ff  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
         echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
-        chmod +x installentware.sh && ./installentware.sh
+        # Run with the staging dir as CWD, matching the previous "cd /tmp" so a
+        # relative write by the installer still lands in scratch tmpfs.
+        chmod 755 "$_ent" && cd /run/quecdeck && "$_ent"
         if [ "$?" -ne 0 ]; then
             echo -e "\e[1;31mEntware/OPKG installation failed. Please check your internet connection or the repository URL.\e[0m"
-            rm -f /tmp/installentware.sh
+            rm -f "$_ent"
+            cd /
             exit 1
         fi
-        rm -f /tmp/installentware.sh
+        rm -f "$_ent"
         cd /
     else
         if [ "$(readlink /bin/login)" != "/opt/bin/login" ]; then
@@ -65,11 +144,7 @@ ensure_entware_installed() {
             rm -f /opt/etc/passwd
             cp /etc/shadow /opt/etc/
             cp /etc/passwd /opt/etc
-            mkdir -p /usrdata/root/bin
-            touch /usrdata/root/.profile
-            echo "# Set PATH for all shells" > /usrdata/root/.profile
-            echo "export PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin" >> /usrdata/root/.profile
-            chmod +x /usrdata/root/.profile
+            root_home_profile || exit 1
             patch_root_passwd
             rm -f /bin/login /usr/bin/passwd
             ln -sf /opt/bin/login /bin
@@ -81,11 +156,7 @@ ensure_entware_installed() {
 
         if [ ! -f "/usrdata/root/.profile" ]; then
             opkg update && opkg install shadow-useradd
-            mkdir -p /usrdata/root/bin
-            touch /usrdata/root/.profile
-            echo "# Set PATH for all shells" > /usrdata/root/.profile
-            echo "export PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin" >> /usrdata/root/.profile
-            chmod +x /usrdata/root/.profile
+            root_home_profile || exit 1
             patch_root_passwd
         fi
     fi
@@ -212,15 +283,15 @@ uninstall_entware() {
 }
 
 set_quecdeck_passwd(){
-    mkdir -p /usrdata/root/bin
+    root_home_dirs || return 1
     /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
     echo "f92fb393702895662aa1fd7a04f6644e79ee899d67accac691cd87e81c2d6f4f  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
-    chmod +x /usrdata/root/bin/quecdeckpasswd
+    chmod 755 /usrdata/root/bin/quecdeckpasswd
     /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
     echo "d93fe9ab90dd7c640d7843de08ed8037f456a0d3c9475ee012dfa0630b4e70c9  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
-    chmod +x /usrdata/root/bin/quecdeckdevpasswd
+    chmod 755 /usrdata/root/bin/quecdeckdevpasswd
     if [ -f /opt/etc/.htpasswd ]; then
         echo -e "\e[1;32mExisting password kept.\e[0m"
     fi
@@ -245,11 +316,13 @@ set_root_passwd() {
 fetch_and_run_installer() {
     _tag_root="$1"
     _tag="$2"
-    _fetch_dir=/tmp/.quecdeck-update-cli
+    # Root-owned staging under /run, not /tmp: nothing else can create a name
+    # here, so the download target cannot be pre-planted.
+    ensure_rundir
+    _fetch_dir=/run/quecdeck/update-cli
 
     rm -rf "$_fetch_dir"
     mkdir -m 700 "$_fetch_dir" || { echo -e "\e[1;31mFailed to create $_fetch_dir.\e[0m"; return 1; }
-    chown root:root "$_fetch_dir"
 
     _checksums="$_fetch_dir/checksums.sha256"
     _installer="$_fetch_dir/update_quecdeck.sh"
@@ -354,6 +427,7 @@ uninstall_quecdeck_components() {
         local label="$1" val="$2"
         case "$val" in
             REMOVED) echo -e "  $(printf '%-22s' "$label") \e[1;32m$val\e[0m" ;;
+            "REBOOT REQUIRED") echo -e "  $(printf '%-22s' "$label") \e[1;33m$val\e[0m" ;;
             SKIPPED) echo -e "  $(printf '%-22s' "$label") $val" ;;
             *)       echo -e "  $(printf '%-22s' "$label") \e[1;31m$val\e[0m" ;;
         esac
@@ -369,11 +443,16 @@ uninstall_quecdeck_components() {
     result_lighttpd="SKIPPED"
     result_files="SKIPPED"
     result_runtime_state="SKIPPED"
+    firewall_reboot_required=0
 
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
-    remount_rw
+    if ! remount_rw; then
+        echo -e "\e[1;31mCannot remount / read-write; uninstall aborted before removing anything.\e[0m"
+        trap - EXIT
+        return 1
+    fi
 
-    # Remove any transient update unit. Newer installs write it to /run; older
+    # Remove any transient update unit. Newer installs write it to /run. Older
     # ones wrote it to /lib, where a failed update could strand it. Harmless if
     # absent.
     rm -f /run/systemd/system/install_quecdeck.service /lib/systemd/system/install_quecdeck.service
@@ -410,8 +489,28 @@ uninstall_quecdeck_components() {
     rm -f /lib/systemd/system/multi-user.target.wants/connection-logger.service
 
     # Uninstall firewall
+    # Ordinary service stops intentionally leave the policy in place. Remove
+    # owned chains only here. Stop lighttpd explicitly as a backstop in case
+    # the firewall unit or its loaded PartOf= relationship is already missing.
     systemctl stop firewall > /dev/null 2>&1
-    [ -f /lib/systemd/system/firewall.service ] && result_firewall="REMOVED"
+    systemctl stop lighttpd > /dev/null 2>&1
+    _firewall_helper=/usrdata/quecdeck/script/firewall.sh
+    if [ -f "$_firewall_helper" ] &&
+       grep -qx 'QUECDECK_FIREWALL_REMOVE_API=1' "$_firewall_helper"; then
+        if /bin/bash /usrdata/quecdeck/script/firewall.sh --remove; then
+            result_firewall="REMOVED"
+        else
+            result_firewall="FAILED"
+            echo -e "\e[1;31mWARNING: QuecDeck firewall rules could not be removed.\e[0m"
+            firewall_reboot_required=1
+        fi
+    elif [ -f "$_firewall_helper" ] || [ -f /lib/systemd/system/firewall.service ]; then
+        # Pre-remove-API releases ignore unknown arguments and would reapply the
+        # firewall while claiming success. Leave their in-memory chains alone.
+        # The reboot requested in the summary clears the runtime rules.
+        result_firewall="REBOOT REQUIRED"
+        firewall_reboot_required=1
+    fi
     rm -f /lib/systemd/system/firewall.service
     rm -f /lib/systemd/system/multi-user.target.wants/firewall.service
 
@@ -435,6 +534,25 @@ uninstall_quecdeck_components() {
         rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
     fi
 
+    # Safety net for units this uninstaller no longer names. A release can drop a
+    # unit and delete its removal line in the same commit, leaving the file
+    # installed and enabled forever with nothing left that remembers it. Every
+    # unit we ship executes something out of /usrdata/quecdeck, so the file on
+    # disk identifies itself no matter what any list remembers. Match Exec*
+    # directives only: a path mentioned in a comment is not ownership evidence.
+    # The named blocks above have already taken current units, so this catches
+    # leftovers. Marker presence is asserted by tests/host/ci-checks.sh.
+    for _f in /lib/systemd/system/*.service; do
+        [ -f "$_f" ] || continue
+        grep -qE '^Exec(Start|StartPre|StartPost|Reload|Stop|StopPost)=.*/usrdata/quecdeck(/|[[:space:]]|$)' "$_f" 2>/dev/null || continue
+        _u=$(basename "$_f")
+        echo -e "\e[1;33mRemoving orphaned unit from an earlier release: $_u\e[0m"
+        # stop + explicit rm, matching every other removal here: the enable
+        # symlinks are hand-made, not systemctl-managed.
+        systemctl stop "${_u%.service}" >/dev/null 2>&1
+        rm -f "$_f" "/lib/systemd/system/multi-user.target.wants/$_u"
+    done
+
     rm -f /opt/etc/sudoers.d/www-data
     rm -f /opt/etc/.htpasswd
     rm -f /opt/etc/.htpasswd_dev
@@ -445,6 +563,10 @@ uninstall_quecdeck_components() {
     rm -f /usrdata/root/bin/atcli
     rm -f /usrdata/root/bin/quecdeckpasswd
     rm -f /usrdata/root/bin/quecdeckdevpasswd
+    # Removing this marker makes an uninstall followed by reinstall a clean
+    # first migration. Any quarantine is retained for manual recovery and will
+    # intentionally keep the otherwise user-owned root home from being rmdir'd.
+    rm -f "$ROOT_HOME_HARDENED"
     rmdir /usrdata/root/bin 2>/dev/null
     rmdir /usrdata/root 2>/dev/null
     systemctl daemon-reload
@@ -454,11 +576,14 @@ uninstall_quecdeck_components() {
     # /tmp is tmpfs, so it survives an uninstall (only a reboot clears it):
     # without this, sessions, auth-failure/lockout counters, and logs from the
     # old install would silently carry into the next one.
-    [ -e /tmp/quecdeck ] && result_runtime_state="REMOVED"
-    rm -rf /tmp/quecdeck /tmp/quecdeck_update.status /tmp/quecdeck_preflight.sha256 \
-        /tmp/install_quecdeck.log /tmp/install_quecdeck.sh /tmp/installentware.sh \
-        /tmp/.quecdeck-update /tmp/.quecdeck-update-cli \
-        /tmp/.quecdeck-release.tar.gz /tmp/.quecdeck-release-extract
+    # Two trees, one per writer: /run/quecdeck is everything root writes,
+    # /tmp/quecdeck everything www-data writes. _legacy holds the pre-split
+    # paths from before the split, so an upgrade-then-uninstall leaves nothing.
+    _legacy="/tmp/quecdeck_update.status /tmp/quecdeck_preflight.sha256 /tmp/install_quecdeck.log /tmp/install_quecdeck.sh /tmp/installentware.sh /tmp/.quecdeck-update /tmp/.quecdeck-update-cli /tmp/.quecdeck-release.tar.gz /tmp/.quecdeck-release-extract" # tmpguard-ok: never opened, only passed to rm below
+    { [ -e /tmp/quecdeck ] || [ -e /run/quecdeck ]; } && result_runtime_state="REMOVED" # tmpguard-ok: existence test, no open
+    # tmpguard-ok: uninstall removes fixed top-level names only. The rm command does not
+    # follow a symlink supplied as the final path component.
+    rm -rf /tmp/quecdeck /run/quecdeck $_legacy
 
     remount_ro
     trap - EXIT
@@ -475,8 +600,12 @@ uninstall_quecdeck_components() {
     _show_uninstall_result "ttyd"               "$result_ttyd"
     _show_uninstall_result "Lighttpd"           "$result_lighttpd"
     _show_uninstall_result "QuecDeck files"     "$result_files"
-    _show_uninstall_result "Runtime state (/tmp)" "$result_runtime_state"
+    _show_uninstall_result "Runtime state"       "$result_runtime_state"
     echo "============================================"
+    if [ "$firewall_reboot_required" = "1" ]; then
+        echo ""
+        echo -e "\e[1;33mREBOOT REQUIRED: restart the modem to clear the remaining firewall rules.\e[0m"
+    fi
 }
 
 
@@ -496,7 +625,7 @@ sshd_service() {
         1)
             ensure_entware_installed
 
-            # Refuse to install if root has no password. sshd with PermitRootLogin yes
+# Refuse to install if root has no password. The SSH daemon with PermitRootLogin enabled
             # and no password set would leave the device wide open on the LAN.
             root_pw=$(grep "^root:" /opt/etc/shadow 2>/dev/null | cut -d: -f2)
             case "$root_pw" in
@@ -556,31 +685,36 @@ sshd_service() {
             grep -q "sshd:x:106" /opt/etc/passwd || \
                 echo "sshd:x:106:65534:Linux User,,,:/opt/run/sshd:/bin/nologin" >> /opt/etc/passwd
 
-            # Download and install service file and IP update script
-            mkdir -p /tmp/quecdeck
-            /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
-            echo "12f5725cbaa915a0b98fa83180b60eb179a5235a98598183799dc570ee8b4d5c  /tmp/quecdeck/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f /tmp/quecdeck/sshd.service; return; }
+            # Download and install service file and IP update script.
+            # Staged in root-owned /run/quecdeck, NOT /tmp/quecdeck: that dir
+            # belongs to www-data, which could both plant a symlink for wget to
+            # follow and swap the file between sha256sum and cp, installing an
+            # unverified unit as root.
+            ensure_rundir
+            _stage=/run/quecdeck
+            /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
+            echo "12f5725cbaa915a0b98fa83180b60eb179a5235a98598183799dc570ee8b4d5c  $_stage/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f $_stage/sshd.service; return; }
             echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
-            /opt/bin/wget --timeout=30 --tries=2 -q -O /tmp/quecdeck/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
-            echo "dc10b79739f1d788cfcdfc805e4f84fe1f7da5df29aacc3e3f7f76f0cc1eef19  /tmp/quecdeck/update_sshd_ip.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_sshd_ip.sh.\e[0m"; rm -f /tmp/quecdeck/update_sshd_ip.sh; return; }
+            /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
+            echo "dc10b79739f1d788cfcdfc805e4f84fe1f7da5df29aacc3e3f7f76f0cc1eef19  $_stage/update_sshd_ip.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_sshd_ip.sh.\e[0m"; rm -f $_stage/update_sshd_ip.sh; return; }
             echo -e "\e[1;32mIntegrity verified: update_sshd_ip.sh\e[0m"
             trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
             remount_rw
-            cp -f /tmp/quecdeck/sshd.service /lib/systemd/system/sshd.service
-            rm -f /tmp/quecdeck/sshd.service
-            cp -f /tmp/quecdeck/update_sshd_ip.sh /opt/etc/ssh/update_sshd_ip.sh
+            cp -f $_stage/sshd.service /lib/systemd/system/sshd.service
+            rm -f $_stage/sshd.service
+            cp -f $_stage/update_sshd_ip.sh /opt/etc/ssh/update_sshd_ip.sh
             chown root:root /opt/etc/ssh/update_sshd_ip.sh
             chmod 700 /opt/etc/ssh/update_sshd_ip.sh
-            rm -f /tmp/quecdeck/update_sshd_ip.sh
+            rm -f $_stage/update_sshd_ip.sh
             ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service
             remount_ro
             trap - EXIT
             systemctl daemon-reload
             # Apply the port-22 rule before starting sshd (firewall.sh keys it off
             # the sshd.service file) so 22 is LAN-restricted first. Restart the
-            # service, not firewall.sh directly, to stay fail-closed; this cycles
+            # service, not firewall.sh directly, to stay fail-closed. This cycles
             # lighttpd via PartOf=, sshd unaffected.
-            # sshd start is gated on the restart: without the port-22 rules,
+            # The sshd start is gated on the restart: without the port-22 rules,
             # sshd would listen unrestricted (WAN included) while the UI is down.
             if systemctl restart firewall; then
                 systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start; check 'systemctl status sshd' for details.\e[0m"; }
@@ -605,7 +739,7 @@ sshd_service() {
             systemctl daemon-reload
             # Drop the port-22 rule (sshd.service removed above, so firewall.sh
             # rebuilds without it). Restart the service, not firewall.sh directly,
-            # to stay fail-closed; cycles lighttpd via PartOf=.
+            # to stay fail-closed. This also cycles lighttpd through PartOf=.
             systemctl restart firewall || echo -e "\e[1;31mWARNING: firewall failed to restart; the web UI may be down. Check 'systemctl status firewall lighttpd'.\e[0m"
             echo ""
             echo -e "\e[1;32msshd uninstalled.\e[0m"

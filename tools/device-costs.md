@@ -45,7 +45,7 @@ otherwise unmodified: `git show HEAD:path > /tmp/old`.
 
 Better still, **alternate rounds** rather than measuring each variant once, so
 drift cancels instead of landing on whichever variant you timed second.
-`tools/device-test-authforkbench.sh` does this properly and is the pattern to
+`tests/device/device-test-authforkbench.sh` does this properly and is the pattern to
 copy for anything marginal.
 
 ---
@@ -106,10 +106,10 @@ The CGI floor is why fewer requests beats faster requests: see
 **Not all forks are a CGI spawn.** Removing `auth.lua`'s per-request
 `os.execute` setup check took a keep-alive request from **27.4 ms to 24.2 ms**,
 i.e. ~3 ms, where a full CGI spawn is several times that. Measured by
-`tools/device-test-authforkbench.sh`. Size a fork by what it spawns.
+`tests/device/device-test-authforkbench.sh`. Size a fork by what it spawns.
 
 The `systemctl` batching premise (one D-Bus round trip per unit was the cost)
-is validated by `tools/device-test-system-status.sh`, which also compares
+is validated by `tests/device/device-test-system-status.sh`, which also compares
 batched against one-call-per-unit.
 
 ## AT commands
@@ -219,14 +219,14 @@ numbers here that already have a home.
 | Harness | Measures |
 |---|---|
 | `tools/device-perf-atcli.sh` | atcli client exec and round-trip time, per binary |
-| `tools/device-test-authforkbench.sh` | auth.lua fork removal, alternating-round A/B |
-| `tools/device-test-system-status.sh` | systemctl batching, positional mapping, mobileap parsers |
-| `tools/device-test-atcaps.sh` | `CMD_MAX` drift and the ~80-command modem cap |
-| `tools/device-test-atclid.sh` | daemon, socket, privilege drop, resync window |
-| `tools/device-test-smsdelete.sh` | SMS storage and abort-on-error, non-destructive |
+| `tests/device/device-test-authforkbench.sh` | auth.lua fork removal, alternating-round A/B |
+| `tests/device/device-test-system-status.sh` | systemctl batching, positional mapping, mobileap parsers |
+| `tests/device/device-test-atcaps.sh` | `CMD_MAX` drift and the ~80-command modem cap |
+| `tests/device/device-test-atclid.sh` | daemon, socket, privilege drop, resync window |
+| `tests/device/device-test-smsdelete.sh` | SMS storage and abort-on-error, non-destructive |
 | `tools/sms-delete-flow.md` | the three caps bounding an AT line, and the 300 ms/`+CMGD` budget |
 
-Host suite, no device needed: `tools/run-tests.sh`.
+Host suite, no device needed: `tests/host/run-tests.sh`.
 
 ## Reproducing
 

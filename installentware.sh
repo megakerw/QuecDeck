@@ -70,7 +70,7 @@ mkdir -p /usrdata/opt
 mkdir -p /opt
 create_opt_mount
 echo -e '\033[32mInfo: Proceeding with main installation ...\033[0m'
-# no need to create many folders. entware-opt package creates most
+# no need to create many folders. The entware-opt package creates most
 for folder in bin etc lib/opkg tmp var/lock
 do
   if [ -d "/opt/$folder" ]; then
@@ -84,7 +84,8 @@ done
 echo -e '\033[32mInfo: Opkg package manager deployment...\033[0m'
 # KNOWN LIMITATION: opkg and opkg.conf are fetched over plain HTTP with no
 # integrity check (Entware ships no signed installer, and the modem's wget can't
-# validate TLS). One-time at first install; exposure is a WAN-path MITM during
+# validate TLS). This is used once during the first install. The exposure is a
+# WAN-path MITM during
 # bootstrap. To close: pin their sha256 here, or vendor opkg in the repo and pull
 # it over the GitHub channel with a hash check, like atcli.
 URL=http://bin.entware.net/${ARCH}/installer
@@ -153,11 +154,39 @@ rm -f /opt/etc/shadow
 rm -f /opt/etc/passwd
 cp /etc/shadow /opt/etc/
 cp /etc/passwd /opt/etc
-mkdir -p /usrdata/root/bin
-touch /usrdata/root/.profile
-echo "# Set PATH for all shells" > /usrdata/root/.profile
-echo "export PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin" >> /usrdata/root/.profile
-chmod +x /usrdata/root/.profile
+ROOT_HOME_HARDENED=/usrdata/root/.quecdeck-home-hardened
+mkdir -p /usrdata/root || exit 1
+chown root:root /usrdata/root && chmod 700 /usrdata/root || exit 1
+_hardened=0
+if [ ! -L "$ROOT_HOME_HARDENED" ] && [ -f "$ROOT_HOME_HARDENED" ] && \
+   [ "$(stat -c '%U %a' "$ROOT_HOME_HARDENED" 2>/dev/null)" = "root 600" ] && \
+   grep -qx '1' "$ROOT_HOME_HARDENED" 2>/dev/null; then
+    _hardened=1
+fi
+if [ "$_hardened" = "0" ]; then
+    if [ -e /usrdata/root/bin ] || [ -L /usrdata/root/bin ]; then
+        _quarantine="/usrdata/root/bin.pre-quecdeck-hardening.$(date +%s).$$"
+        while [ -e "$_quarantine" ] || [ -L "$_quarantine" ]; do _quarantine="${_quarantine}.x"; done
+        mv /usrdata/root/bin "$_quarantine" || exit 1
+        echo "Previous root bin quarantined at $_quarantine"
+    fi
+    mkdir -m 755 /usrdata/root/bin || exit 1
+    chown root:root /usrdata/root/bin || exit 1
+    rm -f /usrdata/root/.profile "$ROOT_HOME_HARDENED"
+    printf '1\n' > "$ROOT_HOME_HARDENED" || exit 1
+    chown root:root "$ROOT_HOME_HARDENED" && chmod 600 "$ROOT_HOME_HARDENED" || exit 1
+elif [ -L /usrdata/root/bin ] || [ ! -d /usrdata/root/bin ]; then
+    echo -e "\e[1;31mRefusing unsafe /usrdata/root/bin after hardening.\e[0m"
+    exit 1
+else
+    chown root:root /usrdata/root/bin && chmod 755 /usrdata/root/bin || exit 1
+fi
+rm -f /usrdata/root/.profile
+printf '%s\n' '# Set PATH for all shells' \
+    'export PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin' \
+    > /usrdata/root/.profile
+chown root:root /usrdata/root/.profile
+chmod 644 /usrdata/root/.profile
 sed -i '1s|/home/root:/bin/sh|/usrdata/root:/bin/bash|' /opt/etc/passwd
 rm -f /bin/login /usr/bin/passwd
 ln -sf /opt/bin/login /bin

@@ -21,14 +21,14 @@
 # read-only checks (unit validity + loaded directives) run first, no prompt.
 #
 # It checks:
-#   1. lighttpd.service is valid and the LOADED unit carries Requires=,
+#   1. The lighttpd.service file is valid and the loaded unit carries Requires=,
 #      After=, and PartOf= on firewall.service (catches a missing daemon-reload
 #      or a unit that never picked up the directives).
 #   2. Restart propagation, repeated -n times (default 1): each
 #      `systemctl restart firewall` must cycle lighttpd (new MainPID) and it
-#      must return to active and serving on its own. This is the property the
-#      shell scripts stopped hand-holding once PartOf= went in; -n hammers it
-#      to surface an intermittent recovery failure a single pass would miss.
+#      must return to active with its HTTPS listener restored. This is the
+#      property that PartOf= now provides.
+#      -n hammers it to surface an intermittent failure a single pass misses.
 #   3. Stop propagation: `systemctl stop firewall` takes lighttpd down with it
 #      (Requires=/PartOf=), then the tree is restored.
 #
@@ -82,20 +82,20 @@ wait_state() {
     return 1
 }
 
-# 0 if lighttpd answers an HTTPS request on the LAN IP (any status line = the
-# server is up; / normally 302s to /login.html).
-http_up() {
-    _out=$(/opt/bin/wget -S --max-redirect=0 -O /dev/null --no-check-certificate "https://$IP/" 2>&1)
-    printf '%s\n' "$_out" | grep -qiE 'HTTP/[0-9.]+ [0-9]+'
+# A request generated on the modem does not enter through bridge0 and is
+# intentionally blocked by the ingress policy. Verify the local HTTPS listener
+# here. Tests run from the ADB host cover actual LAN request delivery.
+https_listening() {
+    awk '$2 ~ /:01BB$/ && $4 == "0A" { found=1 } END { exit !found }' /proc/net/tcp
 }
 
-# Best effort: leave both services up however the script exits. Starting
-# lighttpd pulls firewall up too (Requires=), recovering the whole tree from
-# any interrupted check.
+# Best effort: leave both services up however the script exits. Start the
+# dependency root first. The firewall unit's ExecStartPost brings lighttpd up without
+# creating a synchronous lighttpd -> firewall -> lighttpd transaction cycle.
 restore() {
     systemctl reset-failed firewall lighttpd >/dev/null 2>&1
-    systemctl start lighttpd >/dev/null 2>&1
     systemctl start firewall >/dev/null 2>&1
+    systemctl start lighttpd >/dev/null 2>&1
 }
 
 echo "=================================================================="
@@ -172,8 +172,8 @@ else
             if [ -n "$_pid_before" ] && [ "$_pid_before" = "$_pid_after" ]; then
                 echo "    cycle $_cyc/$ITER: FAIL - lighttpd active but MainPID unchanged ($_pid_after); restart did not propagate"
                 _c2_fail=$((_c2_fail+1))
-            elif ! http_up; then
-                echo "    cycle $_cyc/$ITER: FAIL - lighttpd active but https://$IP did not respond"
+            elif ! https_listening; then
+                echo "    cycle $_cyc/$ITER: FAIL - lighttpd active but TCP 443 is not listening"
                 _c2_fail=$((_c2_fail+1))
             fi
         else
@@ -189,7 +189,7 @@ else
         _cyc=$((_cyc+1))
     done
     if [ "$_c2_fail" -eq 0 ]; then
-        ok "all $ITER restart cycle(s) recovered lighttpd (new PID + HTTP up)"
+        ok "all $ITER restart cycle(s) recovered lighttpd (new PID + HTTPS listener)"
     else
         bad "$_c2_fail of $ITER restart cycles did not recover lighttpd cleanly (details above)"
     fi
@@ -203,10 +203,10 @@ else
     else
         bad "lighttpd stayed active after the firewall was stopped -- the coupling does not enforce 'no UI without firewall' at runtime"
     fi
-    # Restore the tree (start lighttpd pulls firewall up via Requires=).
+    # Restore from the dependency root. The firewall unit starts lighttpd itself.
     echo "  ... restoring both services"
     systemctl reset-failed firewall lighttpd >/dev/null 2>&1
-    systemctl start lighttpd >/dev/null 2>&1
+    systemctl start firewall >/dev/null 2>&1
     if wait_state firewall active 20 && wait_state lighttpd active 20; then
         ok "both services restored to active"
     else
@@ -220,7 +220,7 @@ echo "=================================================================="
 echo " Results: $pass passed, $fail failed, $warn warnings"
 echo "=================================================================="
 if [ "$fail" -eq 0 ]; then
-    echo " VERDICT: coupling intact. lighttpd is bound to the firewall and a"
+echo " VERDICT: coupling intact. Lighttpd is bound to the firewall and a"
     echo "          firewall restart cycles it back up on its own."
 else
     echo " VERDICT: coupling FAILURE above. If Check 2 failed, PartOf= is not"
