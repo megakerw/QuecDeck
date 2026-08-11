@@ -4,12 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
+    <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=948ea14a" />
-    <link rel="stylesheet" href="css/styles.css?v=948ea14a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=71ebd6dd" />
+    <link rel="stylesheet" href="css/styles.css?v=71ebd6dd" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=948ea14a"></script>
-    <script src="js/alpinejs.min.js?v=948ea14a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=71ebd6dd"></script>
+    <script src="js/alpinejs.min.js?v=71ebd6dd" defer></script>
   </head>
   <body>
     <main>
@@ -55,7 +56,7 @@
                     />
                   </div>
                   <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;" :disabled="submitting">
-                    <span x-show="!submitting">Sign In</span>
+                    <span x-show="!submitting" x-cloak>Sign In</span>
                     <span x-show="submitting" x-cloak>Signing in...</span>
                   </button>
                 </form>
@@ -65,7 +66,7 @@
       </div>
     </main>
 
-    <script src="js/capslock.js?v=948ea14a"></script>
-    <script src="js/login.js?v=948ea14a"></script>
+    <script src="js/capslock.js?v=71ebd6dd"></script>
+    <script src="js/login.js?v=71ebd6dd"></script>
   </body>
 </html>

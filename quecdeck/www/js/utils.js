@@ -278,12 +278,3 @@ function cleanIp(ip) {
   if (/^[0:]+$/.test(ip)) return '-'; // covers ::, 0:0:0:0:0:0:0:0, etc.
   return ip;
 }
-
-// On BFCache restore (iOS Safari backgrounding), in-flight fetches are
-// cancelled and their rejections are delivered when the page resumes. This
-// leaves loading flags set and status values null, disabling buttons. A
-// forced reload restores clean state (same effect as the user refreshing).
-window.addEventListener('pageshow', (event) => {
-  if (event.persisted) window.location.reload();
-});
-

@@ -4,19 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
+    <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=948ea14a" />
-    <link rel="stylesheet" href="css/styles.css?v=948ea14a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=71ebd6dd" />
+    <link rel="stylesheet" href="css/styles.css?v=71ebd6dd" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=948ea14a"></script>
-    <script src="js/utils.js?v=948ea14a"></script>
-    <script src="js/alpinejs.min.js?v=948ea14a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=71ebd6dd"></script>
+    <script src="js/utils.js?v=71ebd6dd"></script>
+    <script src="js/alpinejs.min.js?v=71ebd6dd" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="fetchDeviceInfo()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=948ea14a"></script>
+        <script src="js/nav.js?v=71ebd6dd"></script>
 
         <div class="row gy-3 mt-4 mb-0 align-items-stretch">
           <div class="col-md">
@@ -83,11 +84,11 @@
                   <span class="text-muted fw-semibold text-nowrap">WWAN IPv6</span>
                   <span class="text-end text-break" x-text="wwanIpv6"></span>
                 </li>
-                <li class="list-group-item d-flex justify-content-between align-items-center gap-2" x-show="dnsIPv6Primary !== '-'">
+                <li class="list-group-item d-flex justify-content-between align-items-center gap-2" x-show="dnsIPv6Primary !== '-'" x-cloak>
                   <span class="text-muted fw-semibold text-nowrap">DNS Primary (IPv6)</span>
                   <span class="text-end text-break" x-text="dnsIPv6Primary"></span>
                 </li>
-                <li class="list-group-item d-flex justify-content-between align-items-center gap-2" x-show="dnsIPv6Secondary !== '-'">
+                <li class="list-group-item d-flex justify-content-between align-items-center gap-2" x-show="dnsIPv6Secondary !== '-'" x-cloak>
                   <span class="text-muted fw-semibold text-nowrap">DNS Secondary (IPv6)</span>
                   <span class="text-end text-break" x-text="dnsIPv6Secondary"></span>
                 </li>
@@ -156,6 +157,6 @@
 
       </div>
     </main>
-    <script src="js/deviceinfo.js?v=948ea14a"></script>
+    <script src="js/deviceinfo.js?v=71ebd6dd"></script>
   </body>
 </html>

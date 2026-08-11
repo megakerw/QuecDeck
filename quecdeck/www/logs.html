@@ -4,19 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
+    <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=948ea14a" />
-    <link rel="stylesheet" href="css/styles.css?v=948ea14a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=71ebd6dd" />
+    <link rel="stylesheet" href="css/styles.css?v=71ebd6dd" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=948ea14a"></script>
-    <script src="js/utils.js?v=948ea14a"></script>
-    <script src="js/alpinejs.min.js?v=948ea14a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=71ebd6dd"></script>
+    <script src="js/utils.js?v=71ebd6dd"></script>
+    <script src="js/alpinejs.min.js?v=71ebd6dd" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="logsPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=948ea14a"></script>
+        <script src="js/nav.js?v=71ebd6dd"></script>
 
         <div class="alert alert-warning small mt-4 mb-0" x-show="clockUnsynced" x-cloak>
           Device clock appears unsynced. Timestamps below may be inaccurate until it syncs (e.g. once connected to a cell tower).
@@ -31,8 +32,8 @@
                 <span x-show="loadingConn" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshConnection()">Refresh</button>
               </div>
-              <div x-show="connectionEvents.length === 0 && !loadingConn" class="text-muted small">No connection events recorded yet.</div>
-              <div x-show="connectionEvents.length > 0" style="max-height:420px; overflow-y:auto">
+              <div x-show="connectionEvents.length === 0 && !loadingConn" class="text-muted small" x-cloak>No connection events recorded yet.</div>
+              <div x-show="connectionEvents.length > 0" style="max-height:420px; overflow-y:auto" x-cloak>
                 <table class="table table-sm mb-0">
                   <thead>
                     <tr>
@@ -52,7 +53,7 @@
                   </tbody>
                 </table>
               </div>
-              <div x-show="connectionEvents.length > 0" class="small mt-auto pt-2">Last 500 entries. Cleared on reboot.</div>
+              <div x-show="connectionEvents.length > 0" class="small mt-auto pt-2" x-cloak>Last 500 entries. Cleared on reboot.</div>
             </div>
           </div>
 
@@ -63,8 +64,8 @@
                 <span x-show="loadingAccess" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshAccess()">Refresh</button>
               </div>
-              <div x-show="accessEvents.length === 0 && !loadingAccess" class="text-muted small">No access events recorded yet.</div>
-              <div x-show="accessEvents.length > 0" style="max-height:420px; overflow-y:auto">
+              <div x-show="accessEvents.length === 0 && !loadingAccess" class="text-muted small" x-cloak>No access events recorded yet.</div>
+              <div x-show="accessEvents.length > 0" style="max-height:420px; overflow-y:auto" x-cloak>
                 <table class="table table-sm mb-0">
                   <thead>
                     <tr>
@@ -84,7 +85,7 @@
                   </tbody>
                 </table>
               </div>
-              <div x-show="accessEvents.length > 0" class="small mt-auto pt-2">Last 500 entries. Cleared on reboot.</div>
+              <div x-show="accessEvents.length > 0" class="small mt-auto pt-2" x-cloak>Last 500 entries. Cleared on reboot.</div>
             </div>
           </div>
 
@@ -94,8 +95,8 @@
                 Watchcat Restarts
                 <button type="button" class="btn btn-sm btn-danger ms-auto" @click="clearRestartLog()">Clear</button>
               </div>
-              <div x-show="restartEvents.length === 0 && !loadingRestart" class="text-muted small">No watchcat restarts recorded yet.</div>
-              <div x-show="restartEvents.length > 0" style="max-height:420px; overflow-y:auto">
+              <div x-show="restartEvents.length === 0 && !loadingRestart" class="text-muted small" x-cloak>No watchcat restarts recorded yet.</div>
+              <div x-show="restartEvents.length > 0" style="max-height:420px; overflow-y:auto" x-cloak>
                 <table class="table table-sm mb-0">
                   <thead>
                     <tr>
@@ -113,7 +114,7 @@
                   </tbody>
                 </table>
               </div>
-              <div x-show="restartEvents.length > 0" class="small mt-auto pt-2">Last 50 entries. Persists across reboots.<span x-show="restartEvents.some(e => e.detail.includes('reboot streak'))"> Streak # resets after sustained connectivity.</span></div>
+              <div x-show="restartEvents.length > 0" class="small mt-auto pt-2" x-cloak>Last 50 entries. Persists across reboots.<span x-show="restartEvents.some(e => e.detail.includes('reboot streak'))" x-cloak> Streak # resets after sustained connectivity.</span></div>
             </div>
           </div>
 
@@ -124,8 +125,8 @@
                 <span x-show="loadingAtcmd" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshAtcmd()">Refresh</button>
               </div>
-              <div x-show="atcmdEvents.length === 0 && !loadingAtcmd" class="text-muted small">No daemon log entries recorded yet.</div>
-              <div x-show="atcmdEvents.length > 0" style="max-height:420px; overflow-y:auto">
+              <div x-show="atcmdEvents.length === 0 && !loadingAtcmd" class="text-muted small" x-cloak>No daemon log entries recorded yet.</div>
+              <div x-show="atcmdEvents.length > 0" style="max-height:420px; overflow-y:auto" x-cloak>
                 <table class="table table-sm mb-0">
                   <thead>
                     <tr>
@@ -143,7 +144,7 @@
                   </tbody>
                 </table>
               </div>
-              <div x-show="atcmdEvents.length > 0" class="small mt-auto pt-2">Last 100 lines. A few lines per daemon start are normal, including "serving"; timeouts and drops appear here. Cleared on reboot.</div>
+              <div x-show="atcmdEvents.length > 0" class="small mt-auto pt-2" x-cloak>Last 100 lines. A few lines per daemon start are normal, including "serving"; timeouts and drops appear here. Cleared on reboot.</div>
             </div>
           </div>
 
@@ -152,6 +153,6 @@
       </div>
     </main>
 
-    <script src="js/logs.js?v=948ea14a"></script>
+    <script src="js/logs.js?v=71ebd6dd"></script>
   </body>
 </html>

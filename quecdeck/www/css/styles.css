@@ -250,9 +250,11 @@
   --sa-surface: #1b1d23;
   --bs-body-bg: var(--sa-surface);
   --bs-body-bg-rgb: 27, 29, 35;
+  /* Two steps, not one: containers round at 12px, the controls sitting inside
+     them at 8px. A single value makes nested corners read as concentric. */
   --sa-card-radius: 12px;
+  --sa-control-radius: 8px;
   --sa-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.2);
-  --sa-card-shadow-hover: 0 4px 8px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.25);
   --sa-transition: 0.15s ease;
 }
 
@@ -275,67 +277,421 @@ html {
   scrollbar-gutter: stable both-edges;
 }
 
-/* Default to a slightly reduced scale on mouse-driven (desktop/laptop) devices,
-   which reads more comfortably than 100%. pointer:fine keeps touch devices on
-   native scaling, so this is independent of screen size. */
-@media (pointer: fine) {
-  body {
-    zoom: 0.9;
+/* ============================================================
+   APPLICATION NAVIGATION
+   ============================================================ */
+/* One element for both breakpoints. Bootstrap's .navbar-expand-lg renders the
+   inner .offcanvas inline and horizontal above 992px, and as a real drawer
+   below it. The labelled groups are dropdowns up there; down here the menus are
+   forced open (see the max-width block) so the drawer still shows all ten
+   destinations at once, and nav.js strips the toggle wiring to match. */
+.app-bar {
+  --bs-navbar-padding-y: 0;
+  --bs-navbar-padding-x: 0;
+  /* .app-bar-inner supplies the spacing with its own gap; the brand's default
+     margin-end would stack on top and push the divider off-centre. */
+  --bs-navbar-brand-margin-end: 0;
+  /* Above the breakpoint Bootstrap re-pads .nav-link from its own
+     --bs-navbar-nav-link-padding-x at higher specificity, so setting only
+     --bs-nav-link-padding-x on .app-nav silently applies to the drawer alone. */
+  --bs-navbar-nav-link-padding-x: 0.7rem;
+  padding: 0;
+}
+
+/* login.html and setup.html are pre-auth: no app bar, just a plain Bootstrap
+   navbar holding the wordmark. Moving the app pages onto .app-bar left those
+   two as a bare transparent strip, so give them the same surface. */
+/* One bar geometry for the whole product: .app-bar-inner on the authenticated
+   pages, and the plain Bootstrap navbar that login.html and setup.html use to
+   hold their wordmark. Declared together so the two cannot drift, which is
+   exactly what happened when only the app bar was made taller. */
+.app-bar-inner,
+.navbar:not(.app-bar) {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--sa-card-radius);
+  background: var(--sa-surface);
+  box-shadow: var(--sa-card-shadow);
+}
+
+/* Those pages wrap the wordmark in .container-fluid.px-3, which would stack on
+   the padding above and inset it further than the app bar's. Utility classes
+   carry !important, so clearing one takes the same. */
+.navbar:not(.app-bar) > .container-fluid {
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+}
+
+/* .row pulls itself up by its own gutter, so the bar needs the gap restored. */
+.navbar:not(.app-bar) + .row {
+  margin-top: 1.25rem;
+}
+
+.app-brand,
+.navbar:not(.app-bar) .navbar-brand {
+  color: var(--bs-body-color);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-brand:hover {
+  color: var(--bs-body-color);
+}
+
+.app-nav {
+  --bs-nav-link-padding-x: 0.7rem;
+  --bs-nav-link-padding-y: 0.4rem;
+  gap: 0.125rem;
+}
+
+/* Group buttons and top-level links share one look. Reset the <button> so it
+   sits on the same baseline as the anchors beside it. */
+.app-nav .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  border: 0;
+  border-radius: var(--sa-control-radius);
+  background: transparent;
+  color: var(--bs-secondary-color);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: color var(--sa-transition), background-color var(--sa-transition);
+}
+
+.app-nav .nav-link:hover {
+  color: var(--bs-body-color);
+  background: rgba(var(--bs-secondary-bg-rgb), 0.55);
+}
+
+/* Open is not selected. An open menu takes the hover treatment so it cannot be
+   read as the current page, which keeps the accent until you actually navigate.
+   .active comes second on purpose: when the open group is also the current one,
+   the accent wins. */
+.app-nav .nav-link.show {
+  color: var(--bs-body-color);
+  background: rgba(var(--bs-secondary-bg-rgb), 0.55);
+}
+
+.app-nav .nav-link.active {
+  color: var(--bs-primary-text-emphasis);
+  background: var(--bs-primary-bg-subtle);
+}
+
+/* No vertical padding: it would leave a strip of menu background above the first
+   item and below the last, so their hover fill could never reach the rounded
+   corners. */
+.app-nav .dropdown-menu {
+  --bs-dropdown-min-width: 12rem;
+  --bs-dropdown-padding-y: 0;
+  --bs-dropdown-border-radius: var(--sa-card-radius);
+  --bs-dropdown-bg: var(--sa-surface);
+  box-shadow: var(--sa-card-shadow);
+}
+
+/* Scaled with the bar, and kept one step under it so the menu still reads as
+   the level below. 2.5rem also gives the drawer a 40px tap target. */
+.app-nav .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.85rem;
+  color: var(--bs-secondary-color);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.app-nav .dropdown-item:hover {
+  color: var(--bs-body-color);
+  background: rgba(var(--bs-secondary-bg-rgb), 0.55);
+}
+
+.app-nav .dropdown-item.active {
+  color: var(--bs-primary-text-emphasis);
+  background: var(--bs-primary-bg-subtle);
+}
+
+/* Nav and logout glyphs are stroked at 1.5, so they hold their weight against
+   the label rather than blotting next to it. */
+.app-nav svg,
+.app-logout svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+/* --bs-primary is #0d6efd, a third blue next to the active row's #6ea8fe label
+   on #031633. Matching the label keeps the nav to one blue; against either the
+   surface or the active background it is still a high-contrast ring. */
+.app-nav .nav-link:focus-visible,
+.app-nav .dropdown-item:focus-visible,
+.app-logout:focus-visible {
+  outline: 2px solid var(--bs-primary-text-emphasis);
+  outline-offset: -2px;
+}
+
+.app-logout {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.75rem;
+  border: 0;
+  border-radius: var(--sa-control-radius);
+  background: transparent;
+  color: var(--bs-secondary-color);
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.app-logout:hover {
+  color: var(--bs-body-color);
+}
+/* Zero the token rather than blanket-killing the shadow: Bootstrap also sets
+   outline:0 on :focus, so an unconditional box-shadow:none leaves the toggler
+   with no keyboard focus indicator at all. */
+.navbar-toggler {
+  --bs-navbar-toggler-focus-width: 0;
+  padding: 0.35rem;
+  border: 0;
+}
+
+.navbar-toggler:focus-visible {
+  outline: 2px solid var(--bs-primary-text-emphasis);
+  outline-offset: -2px;
+}
+
+.navbar-toggler .navbar-toggler-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* ---------- drawer, below 992px ---------- */
+@media (max-width: 991.98px) {
+  /* Ten items at 2.5rem plus the wordmark and logout run to roughly 500px, which
+     overflows a phone in landscape. Bootstrap puts the scroll on .offcanvas-body
+     and this markup has none, so it belongs here. overflow-x is pinned rather
+     than left to compute from overflow-y, so nothing that overhangs the content
+     box can raise a horizontal scrollbar. */
+  /* No bottom padding: the logout row is the last child and carries its own
+     0.75rem, so the drawer adding more would leave the label 12px under the
+     divider but 24px above the drawer's edge. */
+  .app-nav-panel {
+    --bs-offcanvas-width: 16rem;
+    padding: 1.25rem 0.75rem 0;
+    border-right: 0;
+    border-radius: 0 var(--sa-card-radius) var(--sa-card-radius) 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .app-brand-drawer {
+    display: block;
+    margin-bottom: 0.5rem;
+    padding: 0 0.75rem 0.85rem;
+    border-bottom: 1px solid var(--bs-border-color);
+  }
+
+  .app-nav-close {
+    position: absolute;
+    top: 1.3rem;
+    right: 0.85rem;
+  }
+
+  /* Groups become headings with their menus permanently open, so the drawer
+     keeps showing every destination rather than hiding seven behind a tap. */
+  .app-nav .app-nav-group-label {
+    pointer-events: none;
+    padding: 0 0.75rem 0.3rem;
+    min-height: 0;
+    margin-top: 0.75rem;
+    background: transparent !important;
+    color: var(--bs-secondary-color) !important;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .app-nav .app-nav-group-label::after {
+    display: none;
+  }
+
+  .app-nav .dropdown-menu {
+    display: block;
+    position: static;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .app-nav .dropdown-item {
+    border-radius: var(--sa-control-radius);
+  }
+
+  /* Overview is a .nav-link while the other nine are .dropdown-items, so without
+     the first selector it is the one active row in the drawer with no accent
+     bar. :not() keeps the bar off the group headings, which are also .nav-links
+     and can carry .active when the current page is inside them. */
+  .app-nav .nav-link.active:not(.app-nav-group-label),
+  /* Overview is the only ungrouped destination, so it is a .nav-link while the
+     other nine are .dropdown-items. The drawer flattens them into one list, so
+     it has to match them: without this it is 4px shorter, a size smaller, 2.4px
+     less indented and missing the accent bar. :not() spares the group headings,
+     which are .nav-links too and keep their small-caps treatment. */
+  .app-nav .nav-link:not(.app-nav-group-label) {
+    gap: 0.6rem;
+    min-height: 2.5rem;
+    padding: 0.5rem 0.85rem;
+  }
+
+  .app-nav .nav-link.active:not(.app-nav-group-label),
+  .app-nav .dropdown-item.active {
+    box-shadow: inset 2px 0 0 var(--bs-primary-text-emphasis);
+  }
+
+  /* Ends the same list the nine destinations are in, so it matches their height
+     and size; the base values are tuned for the bar, where it stands alone.
+     Full-bleed so the rule reads as a section break rather than a short line
+     floating inside the drawer's padding, with the label held on the items' text
+     line: 0.75rem of drawer padding plus their own 0.85rem.
+     No margin-top: auto here, the nav below already grows to push this down. */
+  /* Ends the same list the nine destinations are in, so it matches their height,
+     size and 0.85rem text inset. Its rule spans the drawer's content width, the
+     same as the wordmark's underline at the top: a full-bleed one disagreed with
+     both that and the inset rows between them. */
+  .app-logout {
+    width: 100%;
+    min-height: 2.5rem;
+    margin: 0.5rem 0 0;
+    padding: 1rem 0.85rem;
+    border-top: 1px solid var(--bs-border-color);
+    border-radius: 0;
+    font-size: 0.9rem;
+    text-align: left;
+  }
+
+  .app-nav-panel .app-nav {
+    flex: 1 1 auto;
   }
 }
 
-/* ============================================================
-   NAVBAR
-   ============================================================ */
-.navbar {
-  background: var(--sa-surface) !important;
-  border: none;
-  box-shadow: var(--sa-card-shadow);
-  border-radius: 8px;
-}
+/* ---------- horizontal bar, 992px and up ---------- */
+@media (min-width: 992px) {
+  .app-brand-drawer,
+  .app-nav-close {
+    display: none;
+  }
 
-.navbar + .row {
-  margin-top: 1.25rem !important;
-}
+  /* Taller than the drawer's bar: up here it carries the whole navigation, and
+     vertical space is the axis a desktop has to spare. Left at 3.5rem below the
+     breakpoint, where the bar holds only a hamburger and the wordmark and a
+     phone's height is the scarce axis. */
+  .app-bar-inner,
+  .navbar:not(.app-bar) {
+    min-height: 3.75rem;
+  }
 
-.navbar > .container-fluid {
-  align-items: baseline;
-}
 
-.navbar-brand {
-  font-weight: 700;
-  font-size: 1.1rem;
-  letter-spacing: -0.2px;
-}
+  /* .offcanvas is flex-column, and Bootstrap only rows it out via .offcanvas-body,
+     which this markup deliberately does not have. Without this the nav and the
+     logout button stack on two lines. */
+  .app-nav-panel {
+    flex-direction: row;
+    align-items: center;
+  }
 
-.navbar .navbar-text {
-  align-self: center;
-}
+  /* The logout button carries 0.75rem of its own padding so its hover fill has
+     room, which insets its label that much further from the bar's edge than the
+     wordmark, whose box has none. Matching it lines both labels up at the same
+     inset without moving either box towards the rounded corners.
+     Desktop only: below the breakpoint logout lives in the drawer, so there is
+     nothing on the right to be symmetrical with. */
+  .app-brand,
+  .navbar:not(.app-bar) .navbar-brand {
+    padding-left: 0.75rem;
+  }
 
-.nav-link {
-  font-size: 0.95rem;
-  font-weight: 500;
-  transition: color var(--sa-transition);
-}
+  /* Divider between the wordmark and the nav. Hung off the panel rather than
+     the brand so it stays outside the link's hit area, and sized independently
+     of the wordmark's line box.
+     Centred against the two labels, not the two boxes: the first nav link adds
+     its own 0.7rem of padding inside the panel, so equal margins here would sit
+     11.2px closer to the wordmark than to "Overview". Both sides come to
+     1.15rem of visible gap:
+       left  = .app-bar-inner's 0.75rem gap + 0.4rem
+       right = 0.45rem + the nav link's 0.7rem padding */
+  .app-nav-panel::before {
+    content: "";
+    flex: none;
+    width: 1px;
+    height: 1.75rem;
+    margin-right: 0.45rem;
+    margin-left: 0.4rem;
+    background: var(--bs-border-color);
+  }
 
-/* ============================================================
-   CARDS
-   ============================================================ */
-.card {
-  border-radius: var(--sa-card-radius) !important;
-  box-shadow: var(--sa-card-shadow);
-  transition: box-shadow var(--sa-transition);
-  overflow: hidden;
-}
+  /* Content is a centred column now, not a strip beside a rail. Width is left to
+     Bootstrap's own container steps, which top out at 1320px, so every page
+     including the pre-auth ones is the same measure. That ceiling also keeps the
+     stat cards from inflating on wide screens, where their aspect-ratio turns
+     width into height.
+     Only the gutter is ours: Bootstrap's container padding is 0.75rem, half the
+     spacing module everything else here uses. */
+  main > .container {
+    padding-right: 1.5rem;
+    padding-left: 1.5rem;
+  }
 
-.card:hover {
-  box-shadow: var(--sa-card-shadow-hover);
-}
+  .app-logout {
+    margin-left: auto;
+  }
 
-.card-header {
-  font-weight: 600;
-  font-size: 0.875rem;
-  letter-spacing: 0.01em;
+  /* Top-level items lose their glyph up here: the group toggles beside them
+     have none, so a lone icon on Overview reads as an oversight. In the drawer
+     it sits in a flat list with the other nine and keeps it. */
+  .app-nav > .nav-item > .nav-link svg {
+    display: none;
+  }
+
+  /* On the app's own scale rather than above it: 0.9rem is what table cells and
+     form controls use, and 2.25rem is the table row height, so the bar sits in
+     the same rhythm as the panels under it.
+     Desktop only: in the drawer these sit in one flat list with the nine
+     dropdown items and need to match those instead. */
+  .app-nav .nav-link,
+  .app-logout,
+  .app-nav .dropdown-item {
+    min-height: 2.25rem;
+  }
+
+  /* Clipping to the padding box rounds the end items' corners to the menu's own
+     inner radius, so hover fills the corner exactly. Doing it here rather than
+     with per-item radii means nothing has to hardcode radius minus border width.
+     Safe to clip: the longest group is four items, so these never scroll. */
+  .app-nav .dropdown-menu {
+    --bs-dropdown-min-width: 13rem;
+    margin-top: 0.4rem;
+    overflow: hidden;
+  }
+
+  /* Roomier than in the drawer, where the panel's own padding already insets
+     these and the extra would eat into a 16rem width. */
+  .app-nav .dropdown-item {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
 }
 
 /* ============================================================
@@ -409,10 +765,6 @@ html {
   width: 64px !important;
 }
 
-.stat-card .stat-icon {
-  font-size: 3.75rem;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
-}
 
 /* ============================================================
    TABLES
@@ -432,14 +784,14 @@ html {
    PROGRESS BARS
    ============================================================ */
 .progress {
-  border-radius: 6px;
+  border-radius: var(--sa-control-radius);
 }
 
 /* ============================================================
    BUTTONS
    ============================================================ */
 .btn {
-  border-radius: 7px;
+  border-radius: var(--sa-control-radius);
   font-size: 0.875rem;
   font-weight: 500;
   transition: transform 0.1s ease, box-shadow var(--sa-transition), opacity var(--sa-transition);
@@ -468,7 +820,7 @@ html {
    ============================================================ */
 .form-control,
 .form-select {
-  border-radius: 7px;
+  border-radius: var(--sa-control-radius);
   font-size: 0.9rem;
 }
 
@@ -515,7 +867,7 @@ html {
 .loading-modal {
   background-color: var(--bs-body-bg) !important;
   padding: 1.5rem 2rem;
-  border-radius: 8px;
+  border-radius: var(--sa-card-radius);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   max-width: 420px;
   width: 90%;
@@ -533,7 +885,7 @@ html {
    ============================================================ */
 .panel-section {
   background: var(--sa-surface);
-  border-radius: 8px;
+  border-radius: var(--sa-card-radius);
   box-shadow: var(--sa-card-shadow);
   padding: 1.25rem 1.5rem;
   margin-bottom: 1.5rem;
@@ -631,4 +983,11 @@ html {
 .chart-box    { height: 210px !important; }
 .input-mw-180 { max-width: 180px; }
 .input-mw-160 { max-width: 160px; }
+
+/* .form-narrow is on three column wrappers (network.html twice, settings.html
+   once) and deliberately styles nothing. A 24rem cap on the controls inside was
+   tried and read as cramped once the container moved to Bootstrap's 1320px step.
+   Left inert rather than removed from the markup, which would touch two pages
+   for no gain. */
+
 .sms-inbox-scroll { max-height: 400px; overflow-y: scroll; overflow-x: hidden; }

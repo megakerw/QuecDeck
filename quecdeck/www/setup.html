@@ -4,12 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
+    <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=948ea14a" />
-    <link rel="stylesheet" href="css/styles.css?v=948ea14a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=71ebd6dd" />
+    <link rel="stylesheet" href="css/styles.css?v=71ebd6dd" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=948ea14a"></script>
-    <script src="js/alpinejs.min.js?v=948ea14a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=71ebd6dd"></script>
+    <script src="js/alpinejs.min.js?v=71ebd6dd" defer></script>
   </head>
   <body>
     <main>
@@ -66,7 +67,7 @@
                     <div class="d-flex gap-2" style="margin-top: 2rem;">
                       <button type="button" class="btn btn-secondary flex-fill" @click="skipDev()" :disabled="submitting">Skip</button>
                       <button type="submit" class="btn btn-primary flex-fill" :disabled="submitting || !devPass || !devPassConfirm">
-                        <span x-show="!submitting">Finish</span>
+                        <span x-show="!submitting" x-cloak>Finish</span>
                         <span x-show="submitting" x-cloak>Setting up...</span>
                       </button>
                     </div>
@@ -79,7 +80,7 @@
         </div>
       </div>
     </main>
-    <script src="js/capslock.js?v=948ea14a"></script>
-    <script src="js/setup.js?v=948ea14a"></script>
+    <script src="js/capslock.js?v=71ebd6dd"></script>
+    <script src="js/setup.js?v=71ebd6dd"></script>
   </body>
 </html>

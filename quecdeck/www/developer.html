@@ -4,19 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
+    <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=948ea14a" />
-    <link rel="stylesheet" href="css/styles.css?v=948ea14a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=71ebd6dd" />
+    <link rel="stylesheet" href="css/styles.css?v=71ebd6dd" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=948ea14a"></script>
-    <script src="js/utils.js?v=948ea14a"></script>
-    <script src="js/alpinejs.min.js?v=948ea14a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=71ebd6dd"></script>
+    <script src="js/utils.js?v=71ebd6dd"></script>
+    <script src="js/alpinejs.min.js?v=71ebd6dd" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="developerPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=948ea14a"></script>
+        <script src="js/nav.js?v=71ebd6dd"></script>
 
         <!-- Developer unlock prompt, shown once status is known and dev is not yet unlocked -->
         <div class="row gy-3 mt-4 justify-content-center" x-show="devStatusLoaded && !devUnlocked" x-cloak>
@@ -50,7 +51,7 @@
                     :disabled="devUnlocking || !devPassword"
                   >
                     <span x-show="devUnlocking" x-cloak>Unlocking...</span>
-                    <span x-show="!devUnlocking">Unlock</span>
+                    <span x-show="!devUnlocking" x-cloak>Unlock</span>
                   </button>
                 </div>
               </template>
@@ -132,20 +133,20 @@
                   </select>
                 </div>
 
-                <div x-show="networkModeCell == 'LTE'">
+                <div x-show="networkModeCell == 'LTE'" x-cloak>
                   <div class="input-group mb-3">
                     <span class="input-group-text">Num Cells</span>
                     <input type="number" class="form-control" placeholder="1-10" min="1" max="10" aria-label="NumCells" x-model="cellNum" />
                   </div>
                   <template x-for="(cell, index) in cells" :key="index">
-                    <div class="input-group mb-3" x-show="cellNum > index">
+                    <div class="input-group mb-3" x-show="cellNum > index" x-cloak>
                       <input type="text" aria-label="EARFCN" placeholder="EARFCN" class="form-control" x-model="cell.earfcn" />
                       <input type="text" aria-label="PCI" placeholder="PCI" class="form-control" x-model="cell.pci" />
                     </div>
                   </template>
                 </div>
 
-                <div x-show="networkModeCell == 'NR5G-SA'">
+                <div x-show="networkModeCell == 'NR5G-SA'" x-cloak>
                   <div class="input-group mb-3">
                     <input type="text" aria-label="EARFCN" placeholder="EARFCN" class="form-control" x-model="cells[0].earfcn" />
                     <input type="text" aria-label="PCI" placeholder="PCI" class="form-control" x-model="cells[0].pci" />
@@ -164,10 +165,10 @@
                 </div>
               <div class="mt-auto pt-3">
                 <div class="d-flex gap-2">
-                  <button type="button" class="btn btn-primary" x-show="networkModeCell == 'LTE'" @click="cellLockEnableLTE()" :disabled="cellLockLoading">Lock LTE Cells</button>
-                  <button type="button" class="btn btn-primary" x-show="networkModeCell == 'NR5G-SA'" @click="cellLockEnableNR()" :disabled="cellLockLoading">Lock NR5G-SA Cells</button>
-                  <button type="button" class="btn btn-danger" x-show="networkModeCell == 'Unlock LTE'" @click="cellLockDisableLTE()" :disabled="cellLockLoading">Unlock LTE Cells</button>
-                  <button type="button" class="btn btn-danger" x-show="networkModeCell == 'Unlock NR5G-SA'" @click="cellLockDisableNR()" :disabled="cellLockLoading">Unlock NR5G-SA Cells</button>
+                  <button type="button" class="btn btn-primary" x-show="networkModeCell == 'LTE'" @click="cellLockEnableLTE()" :disabled="cellLockLoading" x-cloak>Lock LTE Cells</button>
+                  <button type="button" class="btn btn-primary" x-show="networkModeCell == 'NR5G-SA'" @click="cellLockEnableNR()" :disabled="cellLockLoading" x-cloak>Lock NR5G-SA Cells</button>
+                  <button type="button" class="btn btn-danger" x-show="networkModeCell == 'Unlock LTE'" @click="cellLockDisableLTE()" :disabled="cellLockLoading" x-cloak>Unlock LTE Cells</button>
+                  <button type="button" class="btn btn-danger" x-show="networkModeCell == 'Unlock NR5G-SA'" @click="cellLockDisableNR()" :disabled="cellLockLoading" x-cloak>Unlock NR5G-SA Cells</button>
                 </div>
                 <div class="form-text mt-2">Cell locking only works for the primary cell and is not persistent across reboots.</div>
               </div>
@@ -190,7 +191,7 @@
                     @click="toggleTtyd('start')"
                     x-show="!ttydRunning"
                     :disabled="isLoading"
-                  >
+                   x-cloak>
                     Start
                   </button>
                   <button
@@ -199,7 +200,7 @@
                     @click="toggleTtyd('stop')"
                     x-show="ttydRunning"
                     :disabled="isLoading"
-                  >
+                   x-cloak>
                     Stop
                   </button>
                 </li>
@@ -218,7 +219,7 @@
 
       </div>
     </main>
-    <script src="js/capslock.js?v=948ea14a"></script>
-    <script src="js/developer.js?v=948ea14a"></script>
+    <script src="js/capslock.js?v=71ebd6dd"></script>
+    <script src="js/developer.js?v=71ebd6dd"></script>
   </body>
 </html>

@@ -4,19 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
+    <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=948ea14a" />
-    <link rel="stylesheet" href="css/styles.css?v=948ea14a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=71ebd6dd" />
+    <link rel="stylesheet" href="css/styles.css?v=71ebd6dd" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=948ea14a"></script>
-    <script src="js/utils.js?v=948ea14a"></script>
-    <script src="js/alpinejs.min.js?v=948ea14a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=71ebd6dd"></script>
+    <script src="js/utils.js?v=71ebd6dd"></script>
+    <script src="js/alpinejs.min.js?v=71ebd6dd" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="quecdeckWatchCat()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=948ea14a"></script>
+        <script src="js/nav.js?v=71ebd6dd"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
 
@@ -37,8 +38,8 @@
                 <div class="d-flex justify-content-between align-items-start mb-2">
                   <div>
                     <div class="fw-semibold mb-1" style="font-size: 0.875rem">Enable Watchcat</div>
-                    <div class="text-muted small" x-show="enabled">Reboots the modem if all ping targets fail.</div>
-                    <div class="text-muted small" x-show="!enabled">Currently disabled.</div>
+                    <div class="text-muted small" x-show="enabled" x-cloak>Reboots the modem if all ping targets fail.</div>
+                    <div class="text-muted small" x-show="!enabled" x-cloak>Currently disabled.</div>
                   </div>
                   <div class="form-check form-switch ms-3">
                     <input
@@ -137,7 +138,7 @@
                         max="600"
                         placeholder="10 – 600"
                       />
-                      <div class="text-muted small mt-1" x-show="pingInterval >= 10 && pingInterval <= 600">Between 10 and 600 seconds.</div>
+                      <div class="text-muted small mt-1" x-show="pingInterval >= 10 && pingInterval <= 600" x-cloak>Between 10 and 600 seconds.</div>
                       <div class="text-danger small mt-1" x-show="pingInterval < 10 || pingInterval > 600" x-cloak>Must be between 10 and 600 seconds.</div>
                     </div>
                     <div class="col-sm-6 mb-3">
@@ -151,24 +152,24 @@
                         max="10"
                         placeholder="2 – 10"
                       />
-                      <div class="text-muted small mt-1" x-show="pingFailureCount >= 2 && pingFailureCount <= 10">Between 2 and 10 consecutive failures.</div>
+                      <div class="text-muted small mt-1" x-show="pingFailureCount >= 2 && pingFailureCount <= 10" x-cloak>Between 2 and 10 consecutive failures.</div>
                       <div class="text-danger small mt-1" x-show="pingFailureCount < 2 || pingFailureCount > 10" x-cloak>Must be between 2 and 10.</div>
                     </div>
                   </div>
-                  <hr x-show="canSave" />
-                  <div class="d-flex align-items-center gap-2 mb-1" x-show="canSave">
+                  <hr x-show="canSave" / x-cloak>
+                  <div class="d-flex align-items-center gap-2 mb-1" x-show="canSave" x-cloak>
                     <span class="fw-semibold" style="font-size: 0.875rem">Configuration summary</span>
                     <span class="badge" :class="severity.cls" x-text="severity.label"></span>
                   </div>
-                  <ul class="text-muted small mb-0 ps-3" x-show="canSave">
+                  <ul class="text-muted small mb-0 ps-3" x-show="canSave" x-cloak>
                     <li>
                       Reboots the modem after <span class="fw-semibold" x-text="pingFailureCount"></span> failed pings in a row
                       (~<span class="fw-semibold" x-text="rebootWindowLabel"></span> without response).
                     </li>
-                    <li x-show="rebootBackoff && !capExceeded">
+                    <li x-show="rebootBackoff && !capExceeded" x-cloak>
                       If the link stays down, each reboot needs <span class="fw-semibold">twice</span> the failed-ping streak of the last, up to a ~2-hour gap between reboots.
                     </li>
-                    <li x-show="logRestarts">
+                    <li x-show="logRestarts" x-cloak>
                       Reboots are recorded on the <span class="fw-semibold">Logs</span> page.
                     </li>
                     <li x-show="tooAggressive" :class="reckless ? 'text-danger' : 'text-warning'" x-cloak>
@@ -198,7 +199,7 @@
             </div>
 
             <!-- Ping Statistics (only shown when watchcat service is running) -->
-            <div class="panel-section" x-show="serviceActive">
+            <div class="panel-section" x-show="serviceActive" x-cloak>
               <div class="panel-title d-flex justify-content-between align-items-center">
                 <span>Ping Statistics</span>
                 <span class="text-muted small" x-text="statsUpdatedAt ? 'Updated ' + statsUpdatedAt : ''"></span>
@@ -219,7 +220,7 @@
                         <td x-text="row.ip"></td>
                         <td>
                           <span x-text="row.miss"></span>
-                          <span x-show="row.miss > 0" class="ms-1 text-danger small">&#9679;</span>
+                          <span x-show="row.miss > 0" class="ms-1 text-danger small" x-cloak>&#9679;</span>
                         </td>
                       </tr>
                     </template>
@@ -261,8 +262,8 @@
                 <div class="d-flex justify-content-between align-items-start mb-2">
                   <div>
                     <div class="fw-semibold mb-1" style="font-size: 0.875rem">Enable Scheduled Restart</div>
-                    <div class="text-muted small" x-show="srEnabled">Reboots the modem on a schedule.</div>
-                    <div class="text-muted small" x-show="!srEnabled">Currently disabled.</div>
+                    <div class="text-muted small" x-show="srEnabled" x-cloak>Reboots the modem on a schedule.</div>
+                    <div class="text-muted small" x-show="!srEnabled" x-cloak>Currently disabled.</div>
                   </div>
                   <div class="form-check form-switch ms-3">
                     <input class="form-check-input" type="checkbox" role="switch" x-model="srEnabled" />
@@ -289,7 +290,7 @@
                   </div>
 
                   <!-- Day of week (weekly only) -->
-                  <div class="mb-4" x-show="srType === 'weekly'">
+                  <div class="mb-4" x-show="srType === 'weekly'" x-cloak>
                     <label class="form-label fw-semibold">Day of Week</label>
                     <select class="form-select" x-model.number="srDay">
                       <option value="1">Monday</option>
@@ -311,8 +312,8 @@
                     <div class="text-muted small mt-2">
                       Will restart at
                       <span x-text="String(srHour).padStart(2,'0') + ':' + String(srMinute).padStart(2,'0')"></span>
-                      <span x-show="srType === 'weekly'" x-text="' every ' + ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][srDay - 1]"></span>
-                      <span x-show="srType === 'daily'"> every day</span>
+                      <span x-show="srType === 'weekly'" x-text="' every ' + ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][srDay - 1]" x-cloak></span>
+                      <span x-show="srType === 'daily'" x-cloak> every day</span>
                       (your local time).
                     </div>
                   </div>
@@ -336,6 +337,6 @@
         </div>
       </div>
     </main>
-    <script src="js/watchcat.js?v=948ea14a"></script>
+    <script src="js/watchcat.js?v=71ebd6dd"></script>
   </body>
 </html>

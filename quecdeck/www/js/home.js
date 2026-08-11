@@ -1,37 +1,20 @@
-const _css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+// Read on first use, not at parse time. getComputedStyle forces a style flush,
+// and at module scope that lands before the document has finished loading, which
+// is what "Layout was forced before the page was fully loaded" reports. Every
+// caller is an Alpine getter, so the first read happens during render.
+// An empty result is not cached, so a read that somehow lands before the sheet
+// applies is retried rather than remembered.
+const _statusColors = {};
 
-const STATUS_COLOR_GREEN  = _css('--status-color-green');
-const STATUS_COLOR_YELLOW = _css('--status-color-yellow');
-const STATUS_COLOR_RED    = _css('--status-color-red');
-const STATUS_COLOR_GREY   = _css('--status-color-grey');
-const STATUS_COLOR_BLUE   = _css('--status-color-blue');
-
-function fitStatCardTexts() {
-  document.querySelectorAll('.stat-card .card-body').forEach(body => {
-    const text = body.querySelector('.card-text');
-    if (!text) return;
-    text.style.fontSize = '';
-    const available = body.clientWidth - 32;
-    if (available <= 0) return;
-    let size = Math.min(parseFloat(getComputedStyle(text).fontSize), 22.4);
-    text.style.fontSize = size + 'px';
-    while (text.scrollWidth > available && size > 10) {
-      size--;
-      text.style.fontSize = size + 'px';
-    }
-  });
+function statusColor(name) {
+  let value = _statusColors[name];
+  if (!value) {
+    value = getComputedStyle(document.documentElement)
+      .getPropertyValue('--status-color-' + name).trim();
+    if (value) _statusColors[name] = value;
+  }
+  return value;
 }
-
-document.addEventListener('alpine:initialized', () => {
-  fitStatCardTexts();
-  const _statCardObservers = [];
-  document.querySelectorAll('.stat-card .card-text').forEach(el => {
-    const obs = new MutationObserver(fitStatCardTexts);
-    obs.observe(el, { childList: true, characterData: true, subtree: true });
-    _statCardObservers.push(obs);
-  });
-  window.addEventListener('resize', fitStatCardTexts);
-});
 
 function processAllInfos() {
   return {
@@ -75,19 +58,19 @@ function processAllInfos() {
     cpuLoad: "-",
     get signalColor() {
       const v = parseFloat(this.signalPercentage);
-      if (isNaN(v) || v === 0) return STATUS_COLOR_GREY;
-      if (v >= 70) return STATUS_COLOR_GREEN;
-      if (v >= 40) return STATUS_COLOR_YELLOW;
-      return STATUS_COLOR_RED;
+      if (isNaN(v) || v === 0) return statusColor('grey');
+      if (v >= 70) return statusColor('green');
+      if (v >= 40) return statusColor('yellow');
+      return statusColor('red');
     },
     get cpuLoadColor() {
       // Single-core device with a ~0.3-0.55 resting load; yellow must mean
       // "elevated beyond the normal stack", red "sustained saturation".
       const v = parseFloat(this.cpuLoad);
-      if (isNaN(v)) return STATUS_COLOR_GREY;
-      if (v < 0.7) return STATUS_COLOR_GREEN;
-      if (v < 1.2) return STATUS_COLOR_YELLOW;
-      return STATUS_COLOR_RED;
+      if (isNaN(v)) return statusColor('grey');
+      if (v < 0.7) return statusColor('green');
+      if (v < 1.2) return statusColor('yellow');
+      return statusColor('red');
     },
     ramPercent: "-",
     ramUsed: "-",
@@ -535,11 +518,11 @@ function processAllInfos() {
 
     get tempColor() {
       const t = parseInt(this.temperature, 10);
-      if (isNaN(t))  return STATUS_COLOR_GREEN;
-      if (t >= 75)   return STATUS_COLOR_RED;
-      if (t >= 60)   return STATUS_COLOR_YELLOW;
-      if (t >= 20)   return STATUS_COLOR_GREEN;
-      return STATUS_COLOR_BLUE;
+      if (isNaN(t))  return statusColor('green');
+      if (t >= 75)   return statusColor('red');
+      if (t >= 60)   return statusColor('yellow');
+      if (t >= 20)   return statusColor('green');
+      return statusColor('blue');
     },
 
     getProgressBarClass(pct) {
