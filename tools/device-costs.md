@@ -178,31 +178,28 @@ Reproduce with `tools/device-perf-cache.sh`. Boosted clock, as everywhere here.
 | Operation | Cost |
 |---|---|
 | `_cache_load` (one open, no fork) | 450 us |
-| `cache_read` (load + emit) | 500 us |
-| `cache_is_fresh` (load + `_epoch_now` + compare) | 1650 us |
-| **`cache_write` (temp + mv)** | remeasure on device |
-| `cache_get_or_fetch` HIT | **3800 us** |
-| `cache_get_or_fetch` MISS, `modem_stats` | 38500 us before chmod removal; remeasure |
-| `cache_get_or_fetch` MISS, `modem_conn` | 18500 us before chmod removal; remeasure |
+| `cache_read` (load + emit) | 550 us |
+| `cache_is_fresh` (load + `_epoch_now` + compare) | 1750 us |
+| **`cache_write` (temp + mv)** | **4900 us** |
+| `cache_get_or_fetch` HIT | **3900 us** |
+| `cache_get_or_fetch` MISS, `modem_stats` | **35500 us** |
+| `cache_get_or_fetch` MISS, `modem_conn` | 15500 us |
 
-Before the chmod removal, a miss cost about twice the AT command it wrapped:
-`modem_stats` was 19500 us raw against 38500 us through the cache, and
-`modem_conn` was 6500 against 18500. The ~12 ms of wrapper was mostly the old
-`cache_write`, whose `chmod` and `mv` were two forks at ~3200 us each.
+After the chmod removal, `modem_stats` is 20500 us raw against 35500 us through
+the cache, and `modem_conn` is 5000 against 15500. The wrapper adds roughly
+10-15 ms to a miss, including validation, time-header work and the atomic write.
 
-**The `chmod` fork was removed after this measurement.** Files now land `0600`
-from `cgi-lib.sh`'s `umask 077`; www-data is the only application consumer and
-root can still inspect them through its DAC override. `mv` remains because it
-is the atomic replace that prevents torn reads. Re-run
-`tools/device-perf-cache.sh` before recording a new `cache_write` or miss cost.
+**Removing the `chmod` fork cut `cache_write` from 7750 us to 4900 us.** Files
+now land `0600` from `cgi-lib.sh`'s `umask 077`; www-data is the only application
+consumer and root can still inspect them through its DAC override. `mv` remains
+because it is the atomic replace that prevents torn reads.
 
 `cache_is_fresh` reads a centisecond epoch header rather than calling `stat`:
-450 us against 3800 us. The full read path per cached resource went 6400 us to
-3400 us.
+the complete load-and-age check is 1750 us, while `stat -c %Y` alone is 4350 us.
 
-In the pre-change measurement, a hit was 3800 us against a 38500 us miss, so
-the cache saved ~35 ms per avoided fetch. At ttl 2 against a 3 s poll a single
-client avoids none: the saving is for concurrent readers in the same tick.
+A hit is 3900 us against a 35500 us `modem_stats` miss, so the cache saves
+roughly 32 ms per avoided fetch. At ttl 2 against a 3 s poll a single client
+avoids none: the saving is for concurrent readers in the same tick.
 
 At a 3 s dashboard cadence with ttl 2, every poll misses: **~24 AT commands per
 11 polls**. That is the price of the page refreshing at the rate it claims.
