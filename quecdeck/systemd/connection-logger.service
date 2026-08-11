@@ -6,6 +6,9 @@ After=atcmd-daemon.service
 Type=simple
 User=www-data
 ExecStart=/bin/bash /usrdata/quecdeck/script/connection_logger.sh
+# Matches lighttpd.service so every new file this service writes lands 0600.
+# Only www-data and root consume them, and root bypasses DAC.
+UMask=0077
 Restart=always
 RestartSec=5s
 StandardOutput=null

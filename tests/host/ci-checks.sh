@@ -126,6 +126,40 @@ for _u in quecdeck/systemd/*.service; do
         err "unit self-identity: $_u has no QuecDeck Exec* path, so the orphan sweeps cannot recognise it as ours"
 done
 
+# -------------------------------------------------- www-data mode guard ----
+# Session tokens, caches, logs and lockout counters get their 0600 from a umask,
+# not from a per-file chmod: auth.lua is Lua inside lighttpd with no chmod and
+# no way to source cgi-lib.sh, and cache_write dropped its chmod to save a fork
+# on the poll path. A umask is invisible where the file is written, which is the
+# exact class of bug tests/device/device-test-runsplit.sh was written for, so
+# pin both halves here.
+#
+# Half one: the shell side. cgi-lib.sh must set it itself, so the mode does not
+# depend on which unit (or sudo, or shell) invoked the caller. Exercise the
+# source-time effect rather than grepping for text: a umask moved into an
+# uncalled helper would still exist in the file but would no longer protect
+# every caller. Keep this in a subshell so the CI runner retains its own mask.
+_cgi_umask=$( (umask 022; . quecdeck/script/cgi-lib.sh >/dev/null 2>&1; umask) )
+[ "$_cgi_umask" = "0077" ] || \
+    err "www-data mode: sourcing quecdeck/script/cgi-lib.sh under umask 022 leaves umask $_cgi_umask, expected 0077"
+
+# Half two: the unit side, which is the only thing covering auth.lua. Every unit
+# running as www-data must declare it. lighttpd is listed by hand because it
+# drops to www-data via lighttpd.conf's server.username, not User=.
+_umask_units="quecdeck/systemd/lighttpd.service"
+for _u in quecdeck/systemd/*.service; do
+    [ -f "$_u" ] || continue
+    grep -q '^User=www-data' "$_u" && _umask_units="$_umask_units $_u"
+done
+# A collapsed glob would make the loop below pass vacuously.
+[ "$(printf '%s\n' $_umask_units | grep -c .)" -ge 2 ] || \
+    err "www-data mode: unit scope collapsed to '$_umask_units'"
+for _u in $_umask_units; do
+    [ -f "$_u" ] || { err "www-data mode: $_u is listed but missing"; continue; }
+    grep -qx 'UMask=0077' "$_u" || \
+        err "www-data mode: $_u runs as www-data but does not declare UMask=0077 (auth.lua's session rewrite would land 0644)"
+done
+
 # ------------------------------------------------------- dialect guard -----
 for f in quecdeck/script/*.sh quecdeck/www/cgi-bin/* quecdeck/console/*; do
     [ -f "$f" ] || continue

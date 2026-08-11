@@ -145,11 +145,34 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 - All CGI endpoints validate the `Origin` header against the current host, blocking cross-origin requests and functioning as CSRF protection
 - All state-changing endpoints are POST-only
 - Login attempts are rate-limited with a 1-second delay per attempt and a 15-minute lockout after 5 failures; all login events are written to the access log
-- Session tokens are 64-character random strings stored in a `chmod 700` directory; cookies are flagged `HttpOnly`, `Secure`, and `SameSite=Strict`; session file writes are atomic (temp file plus rename), and the developer-unlock flag is kept in a separate per-session file to avoid write races
+- Session tokens are 64-character random strings stored in `0600` files inside a `0700` directory; cookies are flagged `HttpOnly`, `Secure`, and `SameSite=Strict`; session file writes are atomic (temp file plus rename), and the developer-unlock flag is kept in a separate per-session file to avoid write races
 - Passwords must be at least 8 characters and are validated before any credential check is performed
 - Path traversal is rejected in depth: lighttpd is pinned to reject encoded slashes (`%2f`) and dot-segments rather than silently decode them, and the auth layer independently rejects both literal `..` and percent-encoded (`%2e`) sequences before any access-exemption check
 
-**Data at rest:** the AT response cache, session directory, and log directory are all `chmod 700`. Password hashes are stored `root:root 600`, unreadable from the web tier: login checks pass the password over stdin to a small root helper via sudo, which answers with an exit code. Pre-start scripts and anything running with elevated access are `chmod 700 root:root`.
+**Data at rest:** private web runtime state follows one invariant: it is owned by
+`www-data`, directories are `0700`, and regular application-data files are
+`0600`. Shell CGIs establish that file mode with `umask 077` in `cgi-lib.sh`;
+systemd units use `UMask=0077` for Lua and standalone service writers. Modes are
+restrictive at creation time, not repaired afterward with `chmod`. IPC entries
+such as `atcli.sock` and its empty lock file use service-defined modes; their
+`0700` parent remains the access boundary. Root can inspect all of this state
+through its normal DAC override. Password hashes are stored `root:root 600`,
+unreadable from the web tier: login checks pass the password over stdin to a
+small root helper via sudo, which answers with an exit code. Pre-start scripts
+and anything running with elevated access are `chmod 700 root:root`.
+
+For permission troubleshooting, start services through systemd so their unit
+mask applies, and inspect the loaded setting and runtime tree as root:
+
+```sh
+systemctl show lighttpd -p UMask -p MainPID
+find /tmp/quecdeck -maxdepth 3 -exec stat -c '%A %a %U:%G %n' {} \;
+```
+
+Files that existed before a permission-policy update retain their old mode until
+they are atomically replaced, rotated, or cleared with `/tmp` at reboot. A new
+consumer running under another UID will not be able to read this private state
+unless its access model is deliberately changed.
 
 #### Threat model and limitations
 

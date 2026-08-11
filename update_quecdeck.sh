@@ -125,6 +125,16 @@ harden_root_home() {
     fi
 }
 
+# Normalize archive-derived modes before stage_release applies the narrower
+# executable and root-only grants. Takes the stage path explicitly so the mode
+# policy can be exercised against an isolated fixture on-device.
+normalize_stage_modes() {
+    local _stage_root="$1"
+    [ -d "$_stage_root" ] || return 1
+    find "$_stage_root" -type d -exec chmod 755 {} + &&
+        find "$_stage_root" -type f -exec chmod 644 {} +
+}
+
 # Mutual exclusion and liveness are owned by systemd: this runs as the
 # install_quecdeck oneshot, so a concurrent start coalesces and get_update_log
 # reads state via 'systemctl is-active'. No lock or PID file needed.
@@ -364,6 +374,15 @@ stage_release() {
 
     cd /
 
+    # Deterministic mode baseline before anything widens it. The release tarball
+    # carries its own modes (664/775) and chmod +x is umask-relative, so both
+    # leak a group-write bit into the deploy. Must stay ahead of the grants
+    # below, which widen only what actually runs.
+    if ! normalize_stage_modes "$STAGE_DIR"; then
+        echo -e "\e[1;31mFATAL: Could not normalize staged release permissions.\e[0m"
+        return 1
+    fi
+
     chown root:root "$STAGE_DIR/atcli"
     # Deliberately NOT setuid (zero-setuid design): the daemon, started as
     # root by systemd, is the only thing that opens /dev/smd11 with
@@ -376,9 +395,9 @@ stage_release() {
     # www-data-writable (755): a web-tier compromise can't drop/overwrite a CGI.
     chown -R root:www-data $STAGE_DIR/www/cgi-bin
     chmod 755 $STAGE_DIR/www/cgi-bin $STAGE_DIR/www/cgi-bin/*
-    chmod +x $STAGE_DIR/script/*
-    chmod +x $STAGE_DIR/console/menu/*
-    chmod +x $STAGE_DIR/console/.profile
+    chmod 755 $STAGE_DIR/script/*
+    chmod 755 $STAGE_DIR/console/menu/*
+    chmod 755 $STAGE_DIR/console/.profile
     # Root-only scripts (sudo targets and root-unit payloads): root:root so
     # www-data can never replace a privileged entry point, 700 since nothing
     # unprivileged runs or reads them. The rest of script/ stays 755: www-data

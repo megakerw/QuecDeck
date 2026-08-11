@@ -138,9 +138,11 @@ if requires_dev_unlocked then
 end
 
 -- Refresh last_access via an atomic temp-file + rename. No per-file chmod is
--- needed: the sessions dir is 0700 (auth_login creates it with umask 077), so
--- no other user can traverse into it and the temp file's mode is irrelevant.
--- This drops a shell-fork (os.execute) from every authenticated request.
+-- needed: lighttpd.service sets UMask=0077, so this temp file is created 0600
+-- and the rename preserves it. Lua has no chmod, so the unit's mask is what
+-- keeps the token file sealed without a shell-fork (os.execute) on every
+-- authenticated request. The 0700 sessions dir is the outer layer, not the
+-- only one.
 local tmp = sf .. ".new"
 local wf = io.open(tmp, "w")
 if wf then

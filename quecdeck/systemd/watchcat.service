@@ -6,6 +6,8 @@ After=network.target opt.mount
 Type=simple
 User=www-data
 ExecStart=/bin/bash /usrdata/quecdeck/script/watchcat.sh
+# Private files created by this www-data service default to owner-only.
+UMask=0077
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=5

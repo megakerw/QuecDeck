@@ -18,9 +18,9 @@ esac
 # kernel releases an flock when the holding process dies (even on SIGKILL), so
 # a crashed scan can't wedge the lock. Degrade to no guard if flock is missing
 # rather than blocking scans entirely.
-# umask, not a bare mkdir: this can be the first creator of /tmp/quecdeck, and
-# no root unit re-tightens that parent any more. Without it the dir persists at
-# the CGI umask (0755) and the 0644 cache files under it become world-readable.
+# Keep the scoped umask at this security-sensitive creation site even though
+# cgi-lib.sh now establishes the same mask globally. This CGI can be the first
+# creator of /tmp/quecdeck, and no root unit re-tightens that parent later.
 (umask 077; mkdir -p /tmp/quecdeck)
 if command -v flock >/dev/null 2>&1; then
     exec 9>/tmp/quecdeck/qscan.lock

@@ -64,6 +64,8 @@ bf_clear "$FAILURE_DIR" "$client_ip"
 
 # Create session. Directory must be 700 so other local users cannot list tokens.
 # Use umask to set permissions atomically on creation rather than a separate chmod.
+# Redundant with both cgi-lib.sh and lighttpd.service, but kept as a local
+# guarantee at the security-sensitive session creation site.
 (umask 077; mkdir -p /tmp/quecdeck/sessions)
 token=$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 64)
 now=$(date +%s)

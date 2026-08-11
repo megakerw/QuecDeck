@@ -33,6 +33,7 @@ PROBE=qdsplit-probe
 CANDIDATE_UPDATER=${1:-}
 HARDEN_FIXTURE=/run/qdsplit-root-home
 HARDEN_OUTSIDE=/run/qdsplit-outside
+MODE_FIXTURE=/run/qdsplit-stage-modes
 
 pass=0; fail=0; warn=0
 ok()   { echo "  PASS: $1"; pass=$((pass+1)); }
@@ -51,7 +52,7 @@ cleanup() {
     rm -f "$RUNDIR/update.status" "$OLD_STATUS" 2>/dev/null
     systemctl reset-failed install_quecdeck_fetch >/dev/null 2>&1
     systemctl reset-failed install_quecdeck >/dev/null 2>&1
-    rm -rf "$HARDEN_FIXTURE" "$HARDEN_OUTSIDE" 2>/dev/null
+    rm -rf "$HARDEN_FIXTURE" "$HARDEN_OUTSIDE" "$MODE_FIXTURE" 2>/dev/null
 }
 trap cleanup EXIT INT TERM
 
@@ -72,6 +73,12 @@ grep -q '/run/quecdeck' "$RUN_UPDATE" 2>/dev/null && DEPLOYED=1
 # www-data's tree, D would report a regression that only means "not deployed".
 UNIT_DEPLOYED=0
 grep -q '/run/quecdeck' /lib/systemd/system/atcmd-daemon.service 2>/dev/null && UNIT_DEPLOYED=1
+# Sections A2/A3 assert 0600 on www-data's files. That mode comes from a umask
+# rather than a chmod, so gate on the installed library actually carrying it:
+# against an older build the checks would report a regression that only means
+# "not deployed".
+UMASK_DEPLOYED=0
+grep -qx 'umask 077' /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null && UMASK_DEPLOYED=1
 [ "$DEPLOYED" = "0" ] && {
     echo ""
     echo "  !! Installed run_update.sh does not use /run/quecdeck: the split is"
@@ -83,6 +90,23 @@ echo ""
 echo "[Facts]"
 for s in protected_symlinks protected_regular; do
     echo "  fs.$s = $(cat /proc/sys/fs/$s 2>/dev/null || echo unknown)"
+done
+
+# ---- U: loaded service masks ---------------------------------------------
+# Source checks prove the unit files contain UMask=. This proves systemd has
+# parsed and loaded the policy on the device; a copied unit without a matching
+# daemon-reload would otherwise pass CI but leave the running service loose.
+echo ""
+echo "[U] loaded www-data service masks"
+for _u in lighttpd connection-logger watchcat scheduled_restart; do
+    _loaded_umask=$(systemctl show "$_u" -p UMask --value 2>/dev/null)
+    if [ "$_loaded_umask" = "0077" ]; then
+        ok "$_u loaded UMask=0077"
+    elif [ "$UMASK_DEPLOYED" = "0" ]; then
+        note "$_u loaded UMask=${_loaded_umask:-unknown}: expected until the umask release is deployed"
+    else
+        bad "$_u loaded UMask=${_loaded_umask:-unknown}, expected 0077 (unit missing, rejected, or not daemon-reloaded)"
+    fi
 done
 
 # ---- A: the ownership rule, as a table -----------------------------------
@@ -153,13 +177,16 @@ echo ""
 echo "[A2] www-data creators seal a fresh parent (not just the existing one)"
 FRESH=/tmp/qdfresh
 $SUDO -u www-data rm -rf "$FRESH" 2>/dev/null; rm -rf "$FRESH" 2>/dev/null
-# cache_write and _bf_file are the two shipped creators. Run them as www-data
-# with their target redirected, so a missing umask shows up as a loose parent.
+# cache_write and bf_fail are the two shipped file creators. Run them as
+# www-data with their targets redirected, so a missing umask shows up as a
+# loose parent or file. bf_fail deliberately sleeps for one second as part of
+# the production brute-force path. Exercising it here avoids a vacuous glob
+# over a directory that _bf_file alone would leave empty.
 $SUDO -u www-data bash -c "
     . /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null
     _CACHE_DIR=$FRESH/cache
     cache_write \"\$_CACHE_DIR/probe\" 'x' >/dev/null 2>&1
-    _bf_file $FRESH/auth_failures 10.0.0.1 >/dev/null 2>&1
+    bf_fail $FRESH/auth_failures 10.0.0.1 >/dev/null 2>&1
 " >/dev/null 2>&1
 if [ -d "$FRESH" ]; then
     for _d in "$FRESH" "$FRESH/cache" "$FRESH/auth_failures"; do
@@ -175,10 +202,60 @@ if [ -d "$FRESH" ]; then
             *) ok "fresh $_d created $_fm (owner-only write)" ;;
         esac
     done
+    # The FILE mode, not just its parent. cache_write no longer chmods, so this
+    # is what catches a lost umask. The probe ran under sudo, outside any unit,
+    # so it can only pass if cgi-lib.sh sets the mask itself: a mode that came
+    # from a unit's UMask= would show up here as 644.
+    for _f in "$FRESH/cache/probe" "$FRESH/auth_failures"/*; do
+        [ -f "$_f" ] || continue
+        _ffm=$(stat -c %a "$_f" 2>/dev/null)
+        if [ "$_ffm" = "600" ]; then
+            ok "fresh $_f created 600 (holds without a unit UMask)"
+        elif [ "$UMASK_DEPLOYED" = "0" ]; then
+            note "fresh $_f came out $_ffm: installed cgi-lib.sh has no 'umask 077'. Expected until deployed."
+        else
+            bad "fresh $_f came out $_ffm, expected 600: cgi-lib.sh lost its 'umask 077', so the mode now depends on which unit invoked the caller"
+        fi
+    done
 else
     note "creators did not run; cgi-lib.sh may not be installed at the expected path"
 fi
 rm -rf "$FRESH" 2>/dev/null
+
+# ---- A3: the live files, written by the real units ------------------------
+# A2 covers the shell side under sudo. Only this covers auth.lua: it is Lua
+# inside lighttpd, cannot source cgi-lib.sh and has no chmod, so its session
+# rewrite is sealed by lighttpd.service's UMask= alone. The session filename IS
+# the bearer token, so its mode is the second layer under the 0700 dir.
+#
+# sessions/ and cache/ only: both are written temp-file + rename, so a fresh
+# mode appears on the next write. Appended files (logs/) keep whatever mode they
+# were created with until /tmp clears at reboot, so a correct but recently
+# updated device would fail there for no real reason.
+echo ""
+echo "[A3] live www-data files are owner-only"
+_a3=0
+for _d in "$WEBDIR/sessions" "$WEBDIR/cache"; do
+    [ -d "$_d" ] || continue
+    for _f in "$_d"/*; do
+        [ -f "$_f" ] || continue
+        _a3=$((_a3+1))
+        _lm=$(stat -c %a "$_f" 2>/dev/null)
+        if [ "$_lm" = "600" ]; then
+            ok "$_f is 600"
+        elif [ "$UMASK_DEPLOYED" = "0" ]; then
+            note "$_f is $_lm: predates the umask change. Expected until deployed."
+        else
+            bad "$_f is $_lm, expected 600 (a session token or cached modem data)"
+        fi
+    done
+done
+[ "$_a3" = "0" ] && note "no session or cache files yet; log in to the UI and load the dashboard, then re-run"
+for _f in "$WEBDIR/logs"/*; do
+    [ -f "$_f" ] || continue
+    _lm=$(stat -c %a "$_f" 2>/dev/null)
+    [ "$_lm" = "600" ] || note "$_f is $_lm: appended files keep their creation mode until /tmp clears at reboot"
+done
 
 # ---- C: the old paths are dead -------------------------------------------
 echo ""
@@ -316,6 +393,45 @@ else
         else
             bad "candidate harden_root_home rejected the isolated legacy fixture"
         fi
+    fi
+fi
+
+# ---- F: candidate staged-mode normalization ------------------------------
+echo ""
+echo "[F] candidate updater normalizes archive modes and fails closed"
+if [ -z "$CANDIDATE_UPDATER" ]; then
+    note "skipped: pass a candidate update_quecdeck.sh to test its mode-normalization function"
+elif [ ! -f "$CANDIDATE_UPDATER" ]; then
+    bad "candidate updater not found: $CANDIDATE_UPDATER"
+else
+    grep -q '^[[:space:]]*if ! normalize_stage_modes "$STAGE_DIR"; then$' "$CANDIDATE_UPDATER" \
+        && ok "stage_release invokes normalize_stage_modes and checks its result" \
+        || bad "stage_release does not fail on normalize_stage_modes failure"
+    _mode_fn=$(sed -n '/^normalize_stage_modes() {/,/^}/p' "$CANDIDATE_UPDATER")
+    if [ -z "$_mode_fn" ]; then
+        bad "candidate updater has no extractable normalize_stage_modes function"
+    else
+        eval "$_mode_fn"
+        rm -rf "$MODE_FIXTURE"
+        mkdir -p "$MODE_FIXTURE/sub"
+        : > "$MODE_FIXTURE/plain"
+        : > "$MODE_FIXTURE/sub/plain"
+        chmod 775 "$MODE_FIXTURE" "$MODE_FIXTURE/sub"
+        chmod 664 "$MODE_FIXTURE/plain" "$MODE_FIXTURE/sub/plain"
+        if normalize_stage_modes "$MODE_FIXTURE"; then
+            _mode_bad=$(find "$MODE_FIXTURE" -type d ! -perm 755 -o -type f ! -perm 644 2>/dev/null | head -1)
+            [ -z "$_mode_bad" ] \
+                && ok "archive-style 775/664 tree normalized to 755/644" \
+                || bad "mode normalization left an unexpected mode on $_mode_bad"
+        else
+            bad "candidate normalize_stage_modes rejected a valid fixture"
+        fi
+        if normalize_stage_modes "$MODE_FIXTURE/missing" >/dev/null 2>&1; then
+            bad "candidate normalize_stage_modes accepted a missing stage tree"
+        else
+            ok "missing stage tree is rejected (update fails closed)"
+        fi
+        rm -rf "$MODE_FIXTURE"
     fi
 fi
 

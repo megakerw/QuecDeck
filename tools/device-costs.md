@@ -180,29 +180,29 @@ Reproduce with `tools/device-perf-cache.sh`. Boosted clock, as everywhere here.
 | `_cache_load` (one open, no fork) | 450 us |
 | `cache_read` (load + emit) | 500 us |
 | `cache_is_fresh` (load + `_epoch_now` + compare) | 1650 us |
-| **`cache_write` (temp + chmod + mv)** | **7750 us** |
+| **`cache_write` (temp + mv)** | remeasure on device |
 | `cache_get_or_fetch` HIT | **3800 us** |
-| `cache_get_or_fetch` MISS, `modem_stats` | **38500 us** |
-| `cache_get_or_fetch` MISS, `modem_conn` | 18500 us |
+| `cache_get_or_fetch` MISS, `modem_stats` | 38500 us before chmod removal; remeasure |
+| `cache_get_or_fetch` MISS, `modem_conn` | 18500 us before chmod removal; remeasure |
 
-**A miss costs about twice the AT command it wraps.** `modem_stats` is 19500 us
-raw against 38500 us through the cache; `modem_conn` 6500 against 18500. The
-~12 ms of wrapper is mostly `cache_write`, whose `chmod` and `mv` are two forks
-at ~3200 us each.
+Before the chmod removal, a miss cost about twice the AT command it wrapped:
+`modem_stats` was 19500 us raw against 38500 us through the cache, and
+`modem_conn` was 6500 against 18500. The ~12 ms of wrapper was mostly the old
+`cache_write`, whose `chmod` and `mv` were two forks at ~3200 us each.
 
-**Both were reviewed and kept (2026-08-05).** `mv` is the atomic replace that
-prevents torn reads. `chmod 644` costs ~3.2 ms on every miss, i.e. on every
-dashboard poll, and buys root-readability of the cache for debugging, which was
-judged worth it. This is a settled decision, not an oversight: do not remove
-either on latency grounds without raising it first.
+**The `chmod` fork was removed after this measurement.** Files now land `0600`
+from `cgi-lib.sh`'s `umask 077`; www-data is the only application consumer and
+root can still inspect them through its DAC override. `mv` remains because it
+is the atomic replace that prevents torn reads. Re-run
+`tools/device-perf-cache.sh` before recording a new `cache_write` or miss cost.
 
 `cache_is_fresh` reads a centisecond epoch header rather than calling `stat`:
 450 us against 3800 us. The full read path per cached resource went 6400 us to
 3400 us.
 
-A hit is 3800 us against a 38500 us miss, so the cache saves ~35 ms per avoided
-fetch. At ttl 2 against a 3 s poll a single client avoids none: the saving is
-for concurrent readers in the same tick.
+In the pre-change measurement, a hit was 3800 us against a 38500 us miss, so
+the cache saved ~35 ms per avoided fetch. At ttl 2 against a 3 s poll a single
+client avoids none: the saving is for concurrent readers in the same tick.
 
 At a 3 s dashboard cadence with ttl 2, every poll misses: **~24 AT commands per
 11 polls**. That is the price of the page refreshing at the rate it claims.

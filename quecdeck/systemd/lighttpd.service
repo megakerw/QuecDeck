@@ -21,6 +21,11 @@ ExecStartPre=/bin/sh /usrdata/quecdeck/script/lighttpd_prestart.sh
 ExecStartPre=/opt/sbin/lighttpd -tt -f /usrdata/quecdeck/lighttpd.conf
 ExecStart=/opt/sbin/lighttpd -D -f /usrdata/quecdeck/lighttpd.conf
 ExecReload=/bin/kill -USR1 $MAINPID
+# Session files, caches and logs land in www-data-only 0700 dirs, but the mode
+# on the files themselves is the second layer. auth.lua rewrites the session
+# via io.open+rename on every authenticated request and Lua has no chmod, so
+# the umask is the only fork-free way to keep that rewrite at 0600.
+UMask=0077
 Restart=on-failure
 RestartSec=5s
 

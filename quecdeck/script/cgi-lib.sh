@@ -10,6 +10,15 @@ if [ -z "$BASH_VERSION" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
+# Everything this library writes (cache, logs, lockout counters) is www-data's
+# private state, so seal it at the source. umask is a builtin, so this costs no
+# fork on the poll path, and unlike a unit's UMask= it holds no matter who
+# invokes the caller (sudo, a shell, a future unit that forgets the directive).
+# The units set UMask=0077 too, which is what covers auth.lua: it runs inside
+# lighttpd as Lua, cannot source this file, and has no chmod. Asserted by
+# tests/host/ci-checks.sh and device-test-runsplit.sh.
+umask 077
+
 # AT access layer (atcmd_run, atcmd_fire), used by the cache helpers below.
 . /usrdata/quecdeck/script/at-lib.sh
 
@@ -432,15 +441,10 @@ at_result() {
 
 
 # Atomically write content to a cache file via temp file + mv.
-# Cache dir is 700 so only its owner can enter, but files inside are 644 so that
-# root (debug) and www-data (CGI) can both read them regardless of which user
-# created the file. The directory's 700 is the security boundary.
-#
-# Both forks here are deliberate and were measured before being kept: mv is the
-# atomic replace that stops a reader seeing a torn file, and the chmod is what
-# makes the cache readable to root for debugging. Together they are most of this
-# function's 7750 us and about a quarter of a cache miss (tools/device-costs.md).
-# Keeping root-readability was an explicit call, not an oversight.
+# Cache dir is 700 and files are created 600 by this library's umask. www-data
+# is the sole application reader/writer, and root can inspect them through its
+# DAC override. mv remains deliberate: the atomic replace stops readers seeing a
+# torn file without adding a per-write chmod fork.
 cache_write() {
     local f="$1" content="$2" tmp
     tmp="${f}.tmp.$$"
@@ -451,8 +455,12 @@ cache_write() {
     # to arrive owns sealing it. Asserted by tests/device/device-test-runsplit.sh.
     [ -d "$_CACHE_DIR" ] || ( umask 077; mkdir -p "$_CACHE_DIR" )
     _epoch_now
+    # No chmod: this library's umask makes the temp 0600 even when a caller runs
+    # outside systemd. Unit-level masks cover Lua and standalone service writers.
+    # Dropping chmod saves a fork on every dashboard-poll cache miss. Only
+    # www-data reads these, and root bypasses DAC.
     if printf '%s\n%s' "$_NOW_CS" "$content" > "$tmp" \
-        && chmod 644 "$tmp" && mv "$tmp" "$f"; then
+        && mv "$tmp" "$f"; then
         return 0
     fi
     # Keep: the likeliest failure is a full /tmp, where the half-written temp

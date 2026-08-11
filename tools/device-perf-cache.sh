@@ -51,7 +51,7 @@ cache_write "$F" "$(printf '+QTEMP: 42\n+CSQ: 20,99\nOK')"
 bench "_cache_load (one open, no fork)"   "$N_CHEAP" _cache_load "$F"
 bench "cache_is_fresh (load + age)"       "$N_CHEAP" cache_is_fresh "$F" 3600
 bench "cache_read (load + emit)"          "$N_CHEAP" cache_read "$F"
-bench "cache_write (temp + chmod + mv)"   "$N_CHEAP" cache_write "$F" "payload"
+bench "cache_write (temp + mv)"           "$N_CHEAP" cache_write "$F" "payload"
 bench "_epoch_now"                        "$N_CHEAP" _epoch_now
 # What the cache replaced, for scale.
 f_stat() { m=$(stat -c %Y "$F"); }
