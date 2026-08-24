@@ -1,7 +1,7 @@
 #!/bin/sh
 # Verifies the assumptions the self-updater depends on for its transient install
 # unit. The updater writes install_quecdeck.service to /run/systemd/system
-# (tmpfs) and lets that service do the rootfs writes for the swap; this script
+# (tmpfs) and lets that service do the rootfs writes for the swap. This script
 # confirms that whole path works on the device. Run as root:
 #
 #     sh device-test-rununit.sh
@@ -14,7 +14,7 @@
 # It checks:
 #   1. Can a HAND-WRITTEN unit in /run/systemd/system load and start under this
 #      device? (The risk: systemd-run works via the D-Bus API, which may not
-#      be reachable from the CGI-sudo context; a hand-written unit file is.)
+#      be reachable from the CGI-sudo context. A hand-written unit file is.)
 #   2. Can a service launched from such a unit remount / rw and write /lib
 #      (the installer's actual job)?
 #   3. Does `systemd-run` work for the same write, as a fallback if (1) fails?
@@ -72,7 +72,7 @@ else
     mkdir -p "$RUNDIR" 2>/dev/null || echo "  (could not create $RUNDIR)"
 fi
 if [ -e /lib/systemd/system/install_quecdeck.service ]; then
-    echo "  NOTE: leftover /lib/systemd/system/install_quecdeck.service present (inert; from a prior run)"
+    echo "  NOTE: inert /lib/systemd/system/install_quecdeck.service left from a prior run"
 fi
 
 # ---- Test 1: hand-written /run unit loads and runs ---------------------
@@ -109,11 +109,11 @@ fi
 echo ""
 echo "[Test 4] 'systemctl is-active' resolves the /run unit by name"
 st=$(systemctl is-active "${U1}.service" 2>/dev/null)
-# oneshot with no RemainAfterExit reports inactive after a clean run; the point
+# oneshot with no RemainAfterExit reports inactive after a clean run. The point
 # is that is-active RESOLVES it (not 'unknown'), which the mutex logic relies on.
 case "$st" in
     inactive|active|failed|activating) ok "is-active returns a real state: '$st'" ;;
-    *) note "is-active returned '$st' (mutex uses is-active; confirm this still gates correctly)" ;;
+    *) note "is-active returned '$st'. The mutex uses is-active, so confirm this still gates correctly" ;;
 esac
 rm -f "$SENTINEL" /tmp/${PREFIX}.err
 
@@ -134,7 +134,7 @@ systemctl start "${U2}.service" 2>/dev/null
 if [ "$(cat "$SENTINEL" 2>/dev/null)" = "wrote" ]; then
     ok "the service remounted rw and wrote /lib (this is the installer's core op under B)"
 else
-    bad "the service could NOT write /lib -- B would fail; use the systemd-run fallback"
+    bad "the service could NOT write /lib -- B would fail. Use the systemd-run fallback"
 fi
 if [ "$(rootfs_state)" = "ro" ]; then
     ok "the service restored / to read-only"
@@ -157,7 +157,7 @@ if command -v systemd-run >/dev/null 2>&1; then
         note "systemd-run did not complete the write (check 'journalctl' if available)"
     fi
 else
-    note "systemd-run not present -- fallback unavailable; Test 1/2 must pass for B"
+    note "systemd-run not present -- fallback unavailable. Test 1/2 must pass for B"
 fi
 rm -f "$SENTINEL"
 

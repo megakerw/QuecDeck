@@ -454,7 +454,7 @@ case "$cmgf0" in
             *)          bad "daemon alive after reading stored SMS" ;;
         esac
         atcmd_run "AT+CMGF=$cmgf0" 3000 >/dev/null ;;
-    *)  skp "AT+CMGF? gave no mode; skipped SMS read rather than guess at it" ;;
+    *)  skp "AT+CMGF? returned no mode. Skipped SMS read rather than guess at it" ;;
 esac
 
 # ---- explicit --direct + no implicit fallback (daemon must be stopped: its

@@ -1,5 +1,5 @@
 // GSM 03.38 default alphabet: 128 septet values, position = value. 0x1B escapes
-// into the extension table; an escape code missing there renders as a space.
+// into the extension table. An escape code missing there renders as a space.
 // Escape slot is String.fromCharCode(0x1B), not a raw control byte: editors and
 // encoding conversions eat those, and losing it shifts every later entry.
 const SMS_GSM7_BASIC =
@@ -50,7 +50,7 @@ function fetchSMS() {
       this.isLoading = true;
       fetchText("/cgi-bin/get_sms", { method: "POST" })
         .then(data => {
-          // get_sms reports a failed listing in the body (the CGI convention;
+          // get_sms reports a failed listing in the body (the CGI convention.
           // authFetch only rejects on the login redirect). Throwing keeps what
           // is on screen, since a partial listing parses as a complete shorter
           // inbox. +CMS/+CME match too: they terminate the command, so the CGI
@@ -74,7 +74,7 @@ function fetchSMS() {
     // Parse the PDU-mode listing (AT+CMGF=0, AT+CMGL=4): a
     // "+CMGL: <index>,<stat>,,<length>" header followed by one line of PDU hex.
     // PDU mode because only the UDH says which parts form one message and in
-    // what order; text mode gives the decoded body alone.
+    // what order. Text mode gives the decoded body alone.
     parseSMSData(data) {
       // Tests call this directly and reuse one instance across listings.
       this.messages = [];
@@ -82,7 +82,7 @@ function fetchSMS() {
       const parts = [];
       let textModeHeaders = 0;
       for (let i = 0; i < lines.length; i++) {
-        // PDU-mode headers are all numeric; text mode quotes the status.
+        // PDU-mode headers are all numeric. Text mode quotes the status.
         // Distinguishes an upgrade mismatch (cached page vs new CGI) from data,
         // instead of decoding a text-mode body as a PDU.
         const header = /^\+CMGL:\s*(\d+),\s*\d+\s*,/.exec(lines[i]);
@@ -107,7 +107,7 @@ function fetchSMS() {
         console.error(`get_sms returned ${textModeHeaders} text-mode entries; this page decodes PDUs. Reload after an update.`);
       }
 
-      // Bucket by the sender's concatenation reference; a part with no UDH
+      // Bucket by the sender's concatenation reference. A part with no UDH
       // stands alone.
       const buckets = new Map();
       for (const part of parts) {
@@ -121,7 +121,7 @@ function fetchSMS() {
       // A bucket is not a message: the 8-bit reference gets reused, so one
       // bucket can hold several (seen on a real inbox, 12 parts under one
       // reference, sequences 1-6 twice). Walk oldest first and close the open
-      // message on a repeated sequence or when it is full; a repeat means the
+      // message on a repeated sequence or when it is full. A repeat means the
       // next message started, complete or not.
       const groups = [];
       for (const bucket of buckets.values()) {
@@ -159,7 +159,7 @@ function fetchSMS() {
 
     // Join a message's parts, already in sequence order. Runs of UCS2 parts are
     // joined as bytes and decoded once so a surrogate pair split across two
-    // parts survives; text parts pass through. Per run and not one alphabet for
+    // parts survives. Text parts pass through. Per run and not one alphabet for
     // the whole group, because an aggregator can escalate to UCS2 mid-message.
     joinParts(group) {
       let out = '';
@@ -244,7 +244,7 @@ function fetchSMS() {
       // Reject a PDU carrying less user data than its UDL declares. The septet
       // unpacker reads past the end as 0, which is "@" in GSM-7, so a short PDU
       // would decode as the real text plus a run of @ rather than as an error.
-      // GSM-7 packs udl septets into ceil(udl * 7 / 8) octets; the others are
+      // GSM-7 packs udl septets into ceil(udl * 7 / 8) octets. The others are
       // one octet per unit.
       const udOctets = alphabet === 0 ? Math.ceil((udl * 7) / 8) : udl;
       if (ud.length < udOctets) {
@@ -334,7 +334,7 @@ function fetchSMS() {
 
     // Always by index, even when everything is selected. A "delete all" call
     // would erase the whole store, including messages that arrived while the
-    // page was open; these indices are exactly what the user saw.
+    // page was open. These indices are exactly what the user saw.
     deleteSelectedSMS() {
       if (this.selectedMessages.length === 0) return;
       if (this.messages.length === 0) return;

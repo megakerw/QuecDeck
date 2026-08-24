@@ -64,7 +64,7 @@ function processAllInfos() {
       return statusColor('red');
     },
     get cpuLoadColor() {
-      // Single-core device with a ~0.3-0.55 resting load; yellow must mean
+      // Single-core device with a ~0.3-0.55 resting load. Yellow must mean
       // "elevated beyond the normal stack", red "sustained saturation".
       const v = parseFloat(this.cpuLoad);
       if (isNaN(v)) return statusColor('grey');
@@ -86,7 +86,7 @@ function processAllInfos() {
     uploadStat: "0",
 
     // Pure parser: applies the modem_stats AT response (already split into
-    // lines) to component state. Called by fetchDashboard; never fetches.
+    // lines) to component state. Called by fetchDashboard. Never fetches.
     applyModemStats(lines) {
             // Cache repeated line lookups
             const servingcell_line = lines.find((l) => l.includes('+QENG: "servingcell"'));
@@ -285,7 +285,7 @@ function processAllInfos() {
 
               const longCIDDec = longCID ? parseInt(longCID, 16) : null;
               const isNR = this.networkMode === "5G SA TDD" || this.networkMode === "5G SA FDD";
-              // NR 36-bit: >>14 / &0x3FFF; LTE 28-bit: >>8 / &0xFF
+              // NR 36-bit: >>14 / &0x3FFF. LTE 28-bit: >>8 / &0xFF
               const nodeID   = longCIDDec !== null ? (isNR ? longCIDDec >> 14    : longCIDDec >> 8)   : null;
               const sectorID = longCIDDec !== null ? (isNR ? longCIDDec & 0x3FFF : longCIDDec & 0xFF) : null;
               this.eNBID = nodeID !== null ? nodeID : "Unknown";
@@ -496,7 +496,7 @@ function processAllInfos() {
       return NR_BANDWIDTH_MAP[nr_bw];
     },
 
-    // Linear percent of v within [lo, hi], clamped to 15-100; 0 if NaN or below floor.
+    // Linear percent of v within [lo, hi], clamped to 15-100. 0 if NaN or below floor.
     scalePct(v, floor, lo, hi) {
       if (isNaN(v) || v < floor) return 0;
       const percentage = ((v - lo) / (hi - lo)) * 100;

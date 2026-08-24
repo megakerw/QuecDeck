@@ -1,7 +1,7 @@
 #!/bin/bash
 # On-device probe for the SMS delete path. Run as root:
 #   /tmp/device-test-smsdelete.sh
-# Dev tool, not deployed; copy it to the device manually and delete it after.
+# Dev tool, not deployed. Copy it to the device manually and delete it after.
 #
 # DELETES NOTHING. Every CMGD sent here names a slot ABOVE the capacity
 # AT+CPMS? reports, so no message can occupy it. Do NOT lower those indices to
@@ -28,7 +28,7 @@ note() { echo "NOTE: $1"; }
 
 # ------------------------------------------------- storage and safe slots ----
 # The SET form answers +CPMS: <used1>,<total1>,<used2>,<total2>,<used3>,<total3>
-# with NO store names; only the read form (AT+CPMS?) carries them. Capacity is
+# with NO store names. Only the read form (AT+CPMS?) carries them. Capacity is
 # therefore the SECOND field. Parsing it as if names were present captured
 # <used2> instead, which on this device read 128 against a real capacity of 255
 # and put every "safe" probe slot INSIDE the store. Nothing was lost, but the
@@ -48,7 +48,7 @@ if [ "$SAFE" -le "$total" ]; then
     bad "probe slot $SAFE is not above capacity $total - refusing to send CMGD"
     echo ""; echo "pass=$pass fail=$fail skip=$skip"; exit 1
 fi
-echo "ME store: ${used:-?} used of $total; probe slots start at $SAFE (past capacity)"
+echo "ME store: ${used:-?} used of $total. Probe slots start at $SAFE (past capacity)"
 
 # What the modem currently thinks storage is, before anything sets it. If this
 # is not ME, then delete_sms not setting CPMS was a live bug, not a theory.
@@ -68,7 +68,7 @@ model=$(atcmd_run 'AT+CGMM' 3000 | grep -v '^AT' | grep -v '^OK$' | grep -v '^$'
 echo ""
 echo "model line: ${model:-<none>}"
 # Non-destructive abort test: put a guaranteed-bad CMGD first, then a read-only
-# +CGMM. If the model line comes back, the chain continued past the error; if
+# +CGMM. If the model line comes back, the chain continued past the error. If
 # not, everything after the first bad index was discarded.
 echo ""
 echo "--- does a chain continue past a bad command?"

@@ -2,12 +2,12 @@
 # iptables-restore --noflush semantics probe. GATES the iptables-restore
 # based quecdeck/script/firewall.sh: it relies on a declared chain
 # (":NAME - [0:0]") being FLUSHED and refilled under --noflush, which changed
-# across iptables versions. Ran GO (3/3) on the device 2026-07-19; re-run
+# across iptables versions. Ran GO (3/3) on the device 2026-07-19. Re-run
 # after any modem firmware update that could change the iptables build.
 #
 #     sh device-test-noflush-semantics.sh
 #
-# Uses throwaway chains (QDTEST/QDTEST2) only; never touches QUECDECK, INPUT,
+# Uses throwaway chains (QDTEST/QDTEST2) only. Never touches QUECDECK, INPUT,
 # or any QCMAP state. Cleans up after itself on any exit.
 #
 # Verdicts:
@@ -46,7 +46,7 @@ if printf '*filter\n:QDTEST - [0:0]\n-A QDTEST -p tcp --dport 7 -j RETURN\nCOMMI
         | iptables-restore --noflush -w 5; then
     ok "iptables-restore --noflush -w 5 accepted (options supported)"
 else
-    bad "iptables-restore --noflush -w 5 FAILED outright; draft is a NO-GO as written"
+    bad "iptables-restore --noflush -w 5 FAILED outright. Draft is a NO-GO as written"
 fi
 _rules=$(iptables -w 5 -S QDTEST 2>/dev/null)
 _has_old=$(printf '%s\n' "$_rules" | grep -c -- '--dport 9')
@@ -54,9 +54,9 @@ _has_new=$(printf '%s\n' "$_rules" | grep -c -- '--dport 7')
 if [ "$_has_new" = "1" ] && [ "$_has_old" = "0" ]; then
     ok "FLUSH semantics: declared chain was flushed and refilled (draft-compatible)"
 elif [ "$_has_new" = "1" ] && [ "$_has_old" = "1" ]; then
-    bad "APPEND semantics: old rule survived alongside the new one; the draft would accumulate stale rules on every run and needs an explicit flush step"
+    bad "APPEND semantics: old rule survived alongside the new one. The draft would accumulate stale rules on every run and needs an explicit flush step"
 else
-    bad "unexpected chain state after restore (old=$_has_old new=$_has_new); inspect: iptables -S QDTEST"
+    bad "unexpected chain state after restore (old=$_has_old new=$_has_new). Inspect: iptables -S QDTEST"
 fi
 
 # ---- Probe 2: declared chain that does not exist yet --------------------
@@ -67,7 +67,7 @@ if printf '*filter\n:QDTEST2 - [0:0]\n-A QDTEST2 -p tcp --dport 7 -j RETURN\nCOM
         && iptables -w 5 -S QDTEST2 >/dev/null 2>&1; then
     ok "missing declared chain was created (first-boot path works)"
 else
-    bad "declared-but-missing chain was NOT created; first boot would fail"
+    bad "declared-but-missing chain was NOT created. First boot would fail"
 fi
 
 # ---- verdict ------------------------------------------------------------
@@ -75,11 +75,11 @@ echo ""
 echo "=================================================================="
 echo " Results: $pass passed, $fail failed"
 if [ "$fail" -eq 0 ]; then
-    echo " VERDICT: GO -- device semantics match the draft; proceed to the"
+    echo " VERDICT: GO -- device semantics match the draft. Proceed to the"
     echo "          full device pass (coupling, fail-closed, SSH tests)."
 else
     echo " VERDICT: NO-GO -- the draft's --noflush assumption does not hold"
-    echo "          on this build; rework the flush strategy first."
+    echo "          on this build. Rework the flush strategy first."
 fi
 echo "=================================================================="
 [ "$fail" -eq 0 ] && exit 0 || exit 1

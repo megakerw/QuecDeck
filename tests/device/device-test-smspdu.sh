@@ -2,11 +2,11 @@
 # On-device check that the PDU-mode SMS rewrite holds against a REAL inbox.
 # Run as root:
 #   /tmp/device-test-smspdu.sh
-# Dev tool, not deployed; copy it to the device manually and delete it after.
+# Dev tool, not deployed. Copy it to the device manually and delete it after.
 # Read-only: never deletes, never sends.
 #
 # PRIVACY: prints STRUCTURE ONLY. PDU hex carries the body and sender in clear
-# and is never echoed; senders are relabelled S1, S2, ... The output is safe to
+# and is never echoed. Senders are relabelled S1, S2, ... The output is safe to
 # paste back.
 #
 # Checks what only a real inbox can settle:
@@ -57,7 +57,7 @@ esac
 # ------------------------------------------------------ header shapes -----
 echo ""
 echo "--- header shape"
-# \r is already stripped at the atcli layer; trim defensively anyway.
+# \r is already stripped at the atcli layer. Trim defensively anyway.
 lines=$(printf '%s\n' "$raw" | tr -d '\r')
 pdu_hdrs=$(printf '%s\n' "$lines" | grep -c '^+CMGL:[[:space:]]*[0-9]\+,[[:space:]]*[0-9]\+[[:space:]]*,')
 txt_hdrs=$(printf '%s\n' "$lines" | grep -c '^+CMGL:[[:space:]]*[0-9]\+,[[:space:]]*"')
@@ -122,7 +122,7 @@ printf '%s\n' "$lines" | awk '
     adig=$(hx $p);            p=$(( p + 2 ))
     aton=$(hx $p);            p=$(( p + 2 ))
     # Sender digits are read only to advance past them and to build a stable
-    # anonymous label; they are never printed.
+    # anonymous label. They are never printed.
     aoct=$(( (adig + 1) / 2 ))
     asender=${pdu:$p:$(( aoct*2 ))}; p=$(( p + aoct*2 ))
     p=$(( p + 2 ))                                     # protocol identifier
@@ -178,8 +178,8 @@ awk '
     }
     END {
       printf "\nstored parts: %d   distinct senders: %d\n", n, senders
-      printf "%d standalone + %d concatenation buckets (a bucket can hold more than one message; see the split rule replay below)\n", singles, groups
-      if (nondeliver) printf "NOTE: %d entries are not SMS-DELIVER; sms.js skips these by design\n", nondeliver
+      printf "%d standalone + %d concatenation buckets (a bucket can hold more than one message, as shown by the split rule replay below)\n", singles, groups
+      if (nondeliver) printf "NOTE: %d entries are not SMS-DELIVER. sms.js skips these by design\n", nondeliver
       printf "alphabets: GSM7=%d 8bit=%d UCS2=%d other=%d\n", alph[0]+0, alph[1]+0, alph[2]+0, alph[3]+0
       printf "sender type-of-number: alphanumeric=%d international=%d national/other=%d\n", tonc[5]+0, tonc[1]+0, n-(tonc[5]+0)-(tonc[1]+0)
 

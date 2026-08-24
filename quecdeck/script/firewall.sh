@@ -67,7 +67,7 @@ firmware_settle_delay() { # firmware_settle_delay <whole uptime seconds>
 
 if ! read -r uptime_value _ < /proc/uptime ||
    ! settle_delay=$(firmware_settle_delay "${uptime_value%.*}"); then
-    echo "firewall: could not read system uptime; refusing to apply the policy." >&2
+    echo "firewall: could not read system uptime. Refusing to apply the policy." >&2
     exit 1
 fi
 [ "$settle_delay" -eq 0 ] || sleep "$settle_delay"
@@ -90,11 +90,11 @@ fi
 # delay fails this run, and systemd retries in 10 seconds. A firmware topology change
 # stays fail-closed and leaves a useful error rather than weakening the policy.
 if ! ip link show bridge0 >/dev/null 2>&1; then
-    echo "firewall: LAN bridge bridge0 does not exist; refusing to apply the policy." >&2
+    echo "firewall: LAN bridge bridge0 does not exist. Refusing to apply the policy." >&2
     exit 1
 fi
 if ! ip -4 addr show dev bridge0 2>/dev/null | grep -qE "[[:space:]]inet[[:space:]]+$LAN_IP/"; then
-    echo "firewall: LAN address $LAN_IP is not assigned to bridge0; refusing to apply the policy." >&2
+    echo "firewall: LAN address $LAN_IP is not assigned to bridge0. Refusing to apply the policy." >&2
     exit 1
 fi
 
@@ -103,7 +103,7 @@ fi
 # only half of the firewall installed.
 for command_name in iptables iptables-restore ip6tables ip6tables-restore; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
-        echo "firewall: required command $command_name is unavailable; refusing to apply the policy." >&2
+        echo "firewall: required command $command_name is unavailable. Refusing to apply the policy." >&2
         exit 1
     fi
 done
@@ -164,11 +164,11 @@ v6_rules+="COMMIT
 
 # The one load-bearing apply is atomic and uses one bounded lock acquisition.
 # A bare -w waits forever, and a oneshot unit has no start timeout to break a
-# wedged lock). Any failure applies NOTHING and fails the unit (fail closed,
+# wedged lock. Any failure applies NOTHING and fails the unit (fail closed,
 # so lighttpd's Requires= keeps the UI down rather than serving unfirewalled).
 # Restart=on-failure retries in 10s.
 if ! printf '%s' "$v4_rules" | iptables-restore --noflush -w 5; then
-    echo "firewall: iptables-restore failed; refusing to continue." >&2
+    echo "firewall: iptables-restore failed. Refusing to continue." >&2
     exit 1
 fi
 
@@ -178,30 +178,30 @@ fi
 # cannot drift from this check. A query failure (such as a -w 5 lock timeout) is
 # distinguished from a real mismatch so the error points to the correct cause.
 if ! quecdeck_query=$(iptables -w 5 -S QUECDECK 2>&1); then
-    echo "firewall: could not read back the QUECDECK chain to verify it; refusing to continue." >&2
+    echo "firewall: could not read back the QUECDECK chain to verify it. Refusing to continue." >&2
     echo "firewall: $quecdeck_query" >&2
     exit 1
 fi
 actual=$(printf '%s\n' "$quecdeck_query" | grep -c '^-A QUECDECK')
 if [ "$actual" -ne "$expected" ]; then
-    echo "firewall: QUECDECK has $actual rules, expected $expected; refusing to continue." >&2
+    echo "firewall: QUECDECK has $actual rules, expected $expected. Refusing to continue." >&2
     exit 1
 fi
 
 # IPv6 is load-bearing too. Its chain is replaced atomically and read back
 # before the INPUT jump is touched, matching the IPv4 failure semantics.
 if ! printf '%s' "$v6_rules" | ip6tables-restore --noflush -w 5; then
-    echo "firewall: ip6tables-restore failed; refusing to continue." >&2
+    echo "firewall: ip6tables-restore failed. Refusing to continue." >&2
     exit 1
 fi
 if ! quecdeck6_query=$(ip6tables -w 5 -S QUECDECK6 2>&1); then
-    echo "firewall: could not read back the QUECDECK6 chain; refusing to continue." >&2
+    echo "firewall: could not read back the QUECDECK6 chain. Refusing to continue." >&2
     echo "firewall: $quecdeck6_query" >&2
     exit 1
 fi
 actual_v6=$(printf '%s\n' "$quecdeck6_query" | grep -c '^-A QUECDECK6')
 if [ "$actual_v6" -ne "$expected_v6" ]; then
-    echo "firewall: QUECDECK6 has $actual_v6 rules, expected $expected_v6; refusing to continue." >&2
+    echo "firewall: QUECDECK6 has $actual_v6 rules, expected $expected_v6. Refusing to continue." >&2
     exit 1
 fi
 
@@ -216,7 +216,7 @@ converge_input_jump() {
     local jump_attempts=0 input_query jump_count
     while [ "$jump_attempts" -lt 10 ]; do
         if ! input_query=$("$table_command" -w 5 -S INPUT 2>&1); then
-            echo "firewall: could not read INPUT while verifying the $chain jump; refusing to continue." >&2
+            echo "firewall: could not read INPUT while verifying the $chain jump. Refusing to continue." >&2
             echo "firewall: $input_query" >&2
             return 1
         fi
@@ -225,13 +225,13 @@ converge_input_jump() {
             1) break ;;
             0)
                 if ! "$table_command" -w 5 -I INPUT -j "$chain"; then
-                    echo "firewall: failed to install the $chain INPUT jump; refusing to continue." >&2
+                    echo "firewall: failed to install the $chain INPUT jump. Refusing to continue." >&2
                     return 1
                 fi
                 ;;
             *)
                 if ! "$table_command" -w 5 -D INPUT -j "$chain"; then
-                    echo "firewall: failed to remove a duplicate $chain INPUT jump; refusing to continue." >&2
+                    echo "firewall: failed to remove a duplicate $chain INPUT jump. Refusing to continue." >&2
                     return 1
                 fi
                 ;;
@@ -242,13 +242,13 @@ converge_input_jump() {
     # The tenth operation may itself have reached the target, so verify current
     # state rather than judging the count observed immediately before it.
     if ! input_query=$("$table_command" -w 5 -S INPUT 2>&1); then
-        echo "firewall: could not perform the final INPUT jump check; refusing to continue." >&2
+        echo "firewall: could not perform the final INPUT jump check. Refusing to continue." >&2
         echo "firewall: $input_query" >&2
         return 1
     fi
     jump_count=$(printf '%s\n' "$input_query" | grep -c "^-A INPUT -j $chain\$")
     if [ "$jump_count" -ne 1 ]; then
-        echo "firewall: $chain INPUT jump did not converge to one after $jump_attempts attempts; refusing to continue." >&2
+        echo "firewall: $chain INPUT jump did not converge to one after $jump_attempts attempts. Refusing to continue." >&2
         return 1
     fi
 }

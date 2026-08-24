@@ -81,7 +81,7 @@ do
   fi
 done
 
-echo -e '\033[32mInfo: Opkg package manager deployment...\033[0m'
+echo -e '\033[32mInfo: opkg package manager deployment...\033[0m'
 # KNOWN LIMITATION: opkg and opkg.conf are fetched over plain HTTP with no
 # integrity check (Entware ships no signed installer, and the modem's wget can't
 # validate TLS). This is used once during the first install. The exposure is a

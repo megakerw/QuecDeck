@@ -1,12 +1,12 @@
 #!/bin/bash
 # On-device latency measurement for the AT command path. Run as root:
 #   /tmp/device-test-atlatency.sh
-# Dev tool, not deployed; copy to the device manually. Read-only: sends only
+# Dev tool, not deployed. Copy to the device manually. read-only: sends only
 # the no-op 'AT' command, touches nothing.
 #
 # Measures atcmd_run round trips via the daemon socket against the --direct
 # per-command port open as the baseline. Timing uses /proc/uptime
-# centiseconds (BusyBox date has no %N; bash may predate EPOCHREALTIME),
+# centiseconds because BusyBox date has no %N and Bash may predate EPOCHREALTIME,
 # so per-call figures are averaged over enough iterations to be meaningful.
 
 set -u
@@ -63,4 +63,4 @@ fi
 
 echo ""
 echo "Interpretation: the daemon should win by the per-command port open"
-echo "cost; if socket is not clearly faster, investigate."
+echo "cost. If the socket is not clearly faster, investigate."

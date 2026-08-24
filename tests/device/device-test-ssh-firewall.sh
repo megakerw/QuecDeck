@@ -9,13 +9,13 @@
 # Run me THREE times, doing the menu action between runs (no arguments needed):
 #
 #   sh device-test-ssh-firewall.sh     # 1) BEFORE install -> saves a baseline
-#   ... install SSH:   sh quecdeck.sh -> 3 -> install ...
+#   ... Install SSH:   sh quecdeck.sh -> 3 -> install ...
 #   sh device-test-ssh-firewall.sh     # 2) AFTER install  -> checks the add + recovery
-#   ... uninstall SSH: sh quecdeck.sh -> 3 -> uninstall ...
+#   ... Uninstall SSH: sh quecdeck.sh -> 3 -> uninstall ...
 #   sh device-test-ssh-firewall.sh     # 3) AFTER uninstall -> checks the removal + recovery
 #
 # Run as root on a device where QuecDeck (lighttpd + firewall) is up. It only
-# reads iptables and systemd state; it never changes the firewall itself.
+# reads iptables and systemd state. It never changes the firewall itself.
 
 DIR=/tmp/quecdeck-sshfw
 
@@ -24,7 +24,7 @@ ok()  { echo "  PASS: $1"; pass=$((pass+1)); }
 bad() { echo "  FAIL: $1"; fail=$((fail+1)); }
 
 # lighttpd is cycled by the firewall restart and may still be coming up when the
-# checkpoint runs; poll briefly for it to be active again.
+# checkpoint runs. Poll briefly for it to be active again.
 wait_lighttpd_up() { _w=0; while [ "$_w" -lt 8 ]; do systemctl is-active lighttpd >/dev/null 2>&1 && return 0; sleep 1; _w=$((_w+1)); done; return 1; }
 lighttpd_pid() { systemctl show lighttpd -p MainPID 2>/dev/null | cut -d= -f2; }
 count_jumps()  { iptables -S INPUT 2>/dev/null | grep -c -- '-j QUECDECK'; }
@@ -82,7 +82,7 @@ if [ ! -f "$DIR/after_install" ]; then
         bad "expected 2 port-22 rules (ACCEPT+DROP), found $a_22"
     fi
     if wait_lighttpd_up; then
-        ok "lighttpd is up after install (MainPID $b_pid -> $a_pid; cycled by the firewall restart and recovered)"
+        ok "lighttpd is up after install (MainPID $b_pid -> $a_pid, cycled by the firewall restart and recovered)"
     else
         bad "lighttpd is NOT up after install -- it did not recover from the firewall restart"
     fi
@@ -107,7 +107,7 @@ u_j=$(getval "$DIR/after_uninstall" JUMPS)
 [ "$u_22" = "$b_22" ] && ok "port-22 rules removed -- back to baseline ($u_22)" \
     || bad "port-22 rules not cleaned up (found $u_22, baseline had $b_22)"
 if wait_lighttpd_up; then
-    ok "lighttpd is up after uninstall (MainPID $i_pid -> $u_pid; cycled by the firewall restart and recovered)"
+    ok "lighttpd is up after uninstall (MainPID $i_pid -> $u_pid, cycled by the firewall restart and recovered)"
 else
     bad "lighttpd is NOT up after uninstall -- it did not recover from the firewall restart"
 fi
@@ -133,6 +133,6 @@ if [ "$fail" -eq 0 ]; then
     rm -rf "$DIR"        # clean state for a fresh run next time
     exit 0
 else
-    echo " Failures above. State kept in $DIR for inspection; remove it to reset."
+    echo " Failures above. State kept in $DIR for inspection. Remove it to reset."
     exit 1
 fi

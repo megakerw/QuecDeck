@@ -25,9 +25,9 @@ if path:find("%.%.", 1, true) or path:lower():find("%2e", 1, true) then
 end
 
 -- Redirect to setup wizard if no admin password has been configured yet.
--- lighty.c.stat (mod_magnet 1.4.60+; every install's Entware lighttpd is
+-- lighty.c.stat is available in mod_magnet 1.4.60 and later. Every install's Entware lighttpd is
 -- newer) needs no read permission (htpasswd files are root:root 600) and
--- no fork. Served from lighttpd's stat cache; ~1s staleness on setup/reset
+-- no fork. Served from lighttpd's stat cache with about one second of staleness on setup/reset
 -- transitions is fine. The shell test keeps auth alive on a build without
 -- the API rather than 500ing every request.
 local setup_needed
@@ -50,7 +50,7 @@ if setup_needed then
     return 0
 end
 
--- Setup page is only valid before setup; redirect away once it's done
+-- The setup page is valid only before setup. Redirect away once setup is complete.
 if path == "/setup.html" then
     return redirect("/")
 end

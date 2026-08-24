@@ -40,7 +40,7 @@ restore_state() {
     rm -f "$TMP"
     if [ "$had_config" = "1" ]; then
         cp -p "$BACKUP" "$CONFIG" || {
-            echo "FATAL: original schedule could not be restored; backup retained at $BACKUP" >&2
+            echo "FATAL: original schedule could not be restored. Backup retained at $BACKUP" >&2
             return 1
         }
     else
@@ -60,11 +60,11 @@ echo "=================================================================="
 systemctl stop scheduled_restart atcmd-daemon >/dev/null 2>&1
 if systemctl is-active scheduled_restart >/dev/null 2>&1 \
     || systemctl is-active atcmd-daemon >/dev/null 2>&1; then
-    bad "the scheduler or AT daemon could not be stopped; refusing the startup-minute test"
+    bad "the scheduler or AT daemon could not be stopped. Refusing the startup-minute test"
 else
     cursor=$(journalctl -n 0 --show-cursor --no-pager 2>/dev/null | sed -n 's/^-- cursor: //p')
     if [ -z "$cursor" ]; then
-        skp "journal cursor support is unavailable; startup dispatch cannot be observed safely"
+        skp "journal cursor support is unavailable. Startup dispatch cannot be observed safely"
     else
         second=$(date +%S); second=${second#0}; [ -n "$second" ] || second=0
         # Do not build the fixture in the final ten seconds of a minute: file
@@ -73,7 +73,7 @@ else
         [ "$second" -ge 50 ] && sleep 11
         hour=$(date +%H)
         minute=$(date +%M)
-        # 10# is unavailable in some /bin/sh implementations; strip one leading
+        # 10# is unavailable in some /bin/sh implementations. Strip one leading
         # zero so JSON carries ordinary decimal values.
         hour=${hour#0}; minute=${minute#0}
         [ -n "$hour" ] || hour=0

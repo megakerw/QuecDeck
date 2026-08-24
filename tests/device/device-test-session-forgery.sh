@@ -65,20 +65,20 @@ for _h in /opt/etc/.htpasswd /opt/etc/.htpasswd_dev; do
 done
 
 echo ""
-echo "[Prop 1] www-data writes a session file; auth.lua accepts it as admin"
+echo "[Prop 1] www-data writes a session file. auth.lua accepts it as admin"
 _now=$(date +%s)
 if "$SUDO" -u www-data sh -c "printf 'user=admin\nrole=admin\ncreated=%s\nlast_access=%s\n' $_now $_now > $SESSIONS/$PROOF_TOKEN" 2>/dev/null; then
     _code=$(/opt/bin/wget -S --max-redirect=0 -O /dev/null --no-check-certificate \
         --header="Cookie: session=$PROOF_TOKEN" "https://$IP/cgi-bin/get_system_status" 2>&1 \
         | grep -m1 -oE 'HTTP/[0-9.]+ [0-9]+' | awk '{print $2}')
     case "$_code" in
-        200) bad "a www-data-authored session file was accepted (HTTP 200 on a gated CGI). The web tier can self-authorize admin; the dev gate is not a boundary against a www-data compromise." ;;
+        200) bad "a www-data-authored session file was accepted (HTTP 200 on a gated CGI). The web tier can self-authorize admin. The dev gate is not a boundary against a www-data compromise." ;;
         30[0-9]) ok "the forged session was rejected (HTTP $_code -> login). Session files are not trusted on content alone." ;;
         *)  note "inconclusive: gated CGI returned '${_code:-none}' (network/cert issue?). Re-run with the device reachable at $IP." ;;
     esac
     rm -f "$SESSIONS/$PROOF_TOKEN"
 else
-    note "could not write the test session file as www-data -- $SESSIONS may not be www-data-writable on this build; that alone would REFUTE prop 1."
+    note "could not write the test session file as www-data -- $SESSIONS may not be www-data-writable on this build. That alone would REFUTE prop 1."
 fi
 
 echo ""

@@ -75,12 +75,12 @@ done
 echo "RESTORING_RF"
 restore_reply=$(atcmd_run 'AT+CFUN=1' 10000) || {
     printf '%s\n' "$restore_reply"
-    echo "FATAL: AT+CFUN=1 did not complete; recovery trap remains armed" >&2
+    echo "FATAL: AT+CFUN=1 did not complete. Recovery trap remains armed" >&2
     exit 1
 }
 printf '%s\n' "$restore_reply"
 printf '%s\n' "$restore_reply" | grep -q '^OK$' || {
-    echo "FATAL: modem did not accept AT+CFUN=1; recovery trap remains armed" >&2
+    echo "FATAL: modem did not accept AT+CFUN=1. Recovery trap remains armed" >&2
     exit 1
 }
 detached=0
@@ -136,4 +136,4 @@ recovery_ready || { echo "FATAL: recovered state did not survive the 30s settlin
 
 echo "FINAL_CFUN"
 atcmd_run 'AT+CFUN?' 5000 || true
-echo "RECOVERED in ${recovery_time}s; stable after 30s"
+echo "RECOVERED in ${recovery_time}s. Stable after 30s"

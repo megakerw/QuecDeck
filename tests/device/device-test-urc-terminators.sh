@@ -7,7 +7,7 @@
 # since an unsolicited one would cut a reply short and leave the port desynced.
 # Measured 2026-08-05 on this device: 3 radio cycles produced 16 captured lines,
 # all replies to this script's own commands. Re-run after a firmware or USB-mode
-# change; if it ever fails, atcli needs to tell the two cases apart again.
+# change. If it ever fails, atcli needs to tell the two cases apart again.
 #
 # Run as root, from the LAN:
 #   CONFIRM=yes /tmp/device-test-urc-terminators.sh
@@ -70,7 +70,7 @@ sleep 2
 cat "$PORT" >> "$CAP" &
 CATPID=$!
 sleep 1
-kill -0 "$CATPID" 2>/dev/null || { echo "FATAL: capture died; is $PORT held?"; exit 1; }
+kill -0 "$CATPID" 2>/dev/null || { echo "FATAL: capture died. Is $PORT held?"; exit 1; }
 
 note "capturing $PORT for $(( IDLE_S + (OFF_S + ON_S) * CYCLES ))s over $CYCLES cycle(s)"
 sleep "$IDLE_S"
@@ -95,7 +95,7 @@ kill "$CATPID" 2>/dev/null
 CATPID=""
 systemctl start "$UNIT" >/dev/null 2>&1
 
-# The modem frames with CRLF; strip the \r so the anchors below mean what they
+# The modem frames with CRLF. Strip the \r so the anchors below mean what they
 # look like. The atcli client does the same before matching.
 strip() { tr -d '\r' < "$CAP"; }
 
@@ -117,12 +117,12 @@ if [ "$hits" -eq 0 ]; then
     note "atcli's flat terminator table holds on this device"
 else
     bad "call-progress terminator seen on $PORT" "$hits line(s)"
-    note "atcli must distinguish solicited terminators again; see its TERMINATORS"
+    note "atcli must distinguish solicited terminators again. See its TERMINATORS"
     strip | grep -nE '^(BUSY|NO ANSWER|NO CARRIER|NO DIALTONE)$' | sed 's/^/      /'
 fi
 
 # Line types seen, whatever the verdict. NOT filtered to unsolicited ones: this
-# script's own AT+CEREG? answer lands here too, so a keyword appearing once is
+# script's own AT+CEREG? Answer lands here too, so a keyword appearing once is
 # as likely to be a reply as a URC. The total below is the reading that needs no
 # such care - a capture holding only this script's traffic is a silent port.
 note "line types seen (includes replies to this script's own commands):"

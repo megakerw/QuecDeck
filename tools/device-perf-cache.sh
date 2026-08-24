@@ -1,10 +1,10 @@
 #!/bin/bash
 # Times the AT response cache and the batches behind it. Run as root:
 #   /tmp/device-perf-cache.sh [iterations]
-# Dev tool, not deployed; copy it to the device manually and delete it after.
+# Dev tool, not deployed. Copy it to the device manually and delete it after.
 #
 # Read-only AT queries only. _CACHE_DIR is redirected at a scratch dir, so the
-# live cache is neither read nor written. Correctness is device-test-cache.sh;
+# live cache is neither read nor written. Correctness is device-test-cache.sh.
 # this answers "what does it cost", and feeds tools/device-costs.md.
 #
 # Every figure here is BOOSTED-CLOCK: a tight loop holds the ondemand governor
@@ -42,7 +42,7 @@ STATS='AT+QTEMP;+QENG="servingcell";+QCAINFO;+CSQ;+QGDNRCNT?;+QGDCNT?;+QUIMSLOT?
 CONN='AT+QMAP="WWANIP";+CGCONTRDP'
 SIM='AT+CIMI;+ICCID;+CNUM'
 
-echo "iterations: $N_CHEAP cheap, $N_AT AT; governor $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)"
+echo "iterations: $N_CHEAP cheap, $N_AT AT. Governor $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)"
 echo
 
 echo "--- shell primitives on the read path (no modem)"
@@ -81,5 +81,5 @@ bench "modem_conn MISS (ttl 0)"           "$N_AT" \
 
 echo
 echo "A dashboard poll is modem_stats + modem_conn. At ttl 2 with a 3 s poll"
-echo "every one is a miss; the HIT figure is what a second concurrent reader"
+echo "every one is a miss. The HIT figure is what a second concurrent reader"
 echo "in the same tick costs instead."

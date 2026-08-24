@@ -35,7 +35,7 @@ case "$action" in
     ippt_enable)
         _r=$(atcmd_run 'AT+QMAP="MPDN_rule",0,1,0,1,1,"FF:FF:FF:FF:FF:FF"' 15000)
         at_result "$_r"
-        # Only reboot if the rule was set; don't reset the modem on a failed set.
+        # Reboot only when the rule was set. Do not reset the modem after a failed set.
         if at_response_ok "$_r"; then
             ( sleep 2; . /usrdata/quecdeck/script/cgi-lib.sh; atcmd_fire 'AT+CFUN=1,1' 10000 ) >/dev/null 2>&1 &
             disown $!

@@ -9,7 +9,7 @@ cgi_require_post
 # hands over the decoded body alone. The sms.js module does the decoding, so no CSCS.
 # 15s: a full inbox runs large (132 parts observed), and the rc check below
 # refuses an overrun outright rather than serving it short.
-# +CSCA? and +CSMP dropped: a query nothing reads, and text-mode SEND parameters
+# +CSCA? And +CSMP dropped: a query nothing reads, and text-mode SEND parameters
 # with no send path (tools/device-costs.md for what the chain costs). CNMI
 # stays, it decides whether an arriving message is stored at all.
 # A listing that stopped before OK is a well-formed shorter inbox: nothing in

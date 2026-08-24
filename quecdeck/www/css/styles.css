@@ -237,12 +237,12 @@
 /* ============================================================
    DESIGN TOKENS
    ============================================================ */
-/* Dark is the only theme. color-scheme here rather than on a [data-bs-theme]
+/* Dark is the only theme. Color-scheme here rather than on a [data-bs-theme]
    selector so form controls and scrollbars are dark from the first rule that
-   applies; the pages also carry <meta name="color-scheme" content="dark"> so
+   applies. The pages also carry <meta name="color-scheme" content="dark"> so
    the canvas is dark before this sheet loads.
    --sa-surface is one solid token for cards, navbar and panels alike, mapped
-   into --bs-body-bg so cards, inputs and modals pick it up; must load after
+   into --bs-body-bg so cards, inputs and modals pick it up. It must load after
    bootstrap.min.css to win. */
 :root {
   color-scheme: dark;
@@ -262,7 +262,7 @@
    BASE
    ============================================================ */
 /* Background on the root too, not just body, so the browser's canvas is already
-   dark before body lays out. Covers from the point this sheet applies; the
+   dark before body lays out. It covers from the point this sheet applies. The
    pre-CSS canvas is the <meta name="color-scheme" content="dark"> in each page. */
 html,
 body {
@@ -271,7 +271,7 @@ body {
 
 /* Always reserve the vertical scrollbar's gutter so the centered layout doesn't
    shift horizontally between pages that scroll (monitoring, logs) and pages that
-   don't. both-edges mirrors the reserved space on the left so content stays
+   don't. Both-edges mirrors the reserved space on the left so content stays
    truly centered rather than sitting a scrollbar-width off to one side. */
 html {
   scrollbar-gutter: stable both-edges;
@@ -282,13 +282,13 @@ html {
    ============================================================ */
 /* One element for both breakpoints. Bootstrap's .navbar-expand-lg renders the
    inner .offcanvas inline and horizontal above 992px, and as a real drawer
-   below it. The labelled groups are dropdowns up there; down here the menus are
+   below it. The labelled groups are dropdowns up there. Down here the menus are
    forced open (see the max-width block) so the drawer still shows all ten
    destinations at once, and nav.js strips the toggle wiring to match. */
 .app-bar {
   --bs-navbar-padding-y: 0;
   --bs-navbar-padding-x: 0;
-  /* .app-bar-inner supplies the spacing with its own gap; the brand's default
+  /* .app-bar-inner supplies the spacing with its own gap. The brand's default
      margin-end would stack on top and push the divider off-centre. */
   --bs-navbar-brand-margin-end: 0;
   /* Above the breakpoint Bootstrap re-pads .nav-link from its own
@@ -430,7 +430,7 @@ html {
 }
 
 /* --bs-primary is #0d6efd, a third blue next to the active row's #6ea8fe label
-   on #031633. Matching the label keeps the nav to one blue; against either the
+   on #031633. Matching the label keeps the nav to one blue. Against either the
    surface or the active background it is still a high-contrast ring. */
 .app-nav .nav-link:focus-visible,
 .app-nav .dropdown-item:focus-visible,
@@ -480,7 +480,7 @@ html {
 @media (max-width: 991.98px) {
   /* Ten items at 2.5rem plus the wordmark and logout run to roughly 500px, which
      overflows a phone in landscape. Bootstrap puts the scroll on .offcanvas-body
-     and this markup has none, so it belongs here. overflow-x is pinned rather
+     and this markup has none, so it belongs here. Overflow-x is pinned rather
      than left to compute from overflow-y, so nothing that overhangs the content
      box can raise a horizontal scrollbar. */
   /* No bottom padding: the logout row is the last child and carries its own
@@ -561,12 +561,6 @@ html {
     box-shadow: inset 2px 0 0 var(--bs-primary-text-emphasis);
   }
 
-  /* Ends the same list the nine destinations are in, so it matches their height
-     and size; the base values are tuned for the bar, where it stands alone.
-     Full-bleed so the rule reads as a section break rather than a short line
-     floating inside the drawer's padding, with the label held on the items' text
-     line: 0.75rem of drawer padding plus their own 0.85rem.
-     No margin-top: auto here, the nav below already grows to push this down. */
   /* Ends the same list the nine destinations are in, so it matches their height,
      size and 0.85rem text inset. Its rule spans the drawer's content width, the
      same as the wordmark's underline at the top: a full-bleed one disagreed with
@@ -969,7 +963,7 @@ html {
 }
 
 /* When the last direct child is a list-group (no button row below), remove the
-   panel's own bottom padding; the last item's natural padding provides the
+   panel's own bottom padding. The last item's natural padding provides the
    visual breathing room. */
 .panel-section:has(> ul.list-group:last-child) {
   padding-bottom: 0;

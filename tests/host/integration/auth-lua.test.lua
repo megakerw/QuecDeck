@@ -29,7 +29,7 @@ local function stub_stat(p)
     return { st_size = size, is_file = true }
 end
 
--- Each case gets a fresh lighty stub; auth.lua's top-level return is the
+-- Each case gets a fresh lighty stub. auth.lua's top-level return is the
 -- status it hands back to mod_magnet (nil/0 = pass request through).
 -- no_stat drops the stat API so auth.lua's shell fallback runs instead.
 local function run(uri, cookie, no_stat)

@@ -60,12 +60,18 @@ port 443, then the side-effect-free `auth_login` GET branch must execute as
 
 ```
 pid=$(systemctl show -p MainPID --value lighttpd)
-ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml | sed 's/<APIPAddr>//;s#</APIPAddr>##')
+ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml | sed -e 's/<APIPAddr>//' -e 's#</APIPAddr>##')
 hex=$(printf '%s\n' "$ip" | awk -F. '{printf "%02X%02X%02X%02X", $4, $3, $2, $1}')
-inode=$(awk -v endpoint="$hex:01BB" '$2 == endpoint && $4 == "0A" {print $10; exit}' /proc/net/tcp)
+inode=$(awk -v endpoint="$hex:01BB" '$2 == endpoint && $4 == "0A" {
+    print $10
+    exit
+}' /proc/net/tcp)
 owns=0
 for fd in /proc/"$pid"/fd/*; do
-    [ "$(readlink "$fd" 2>/dev/null)" = "socket:[$inode]" ] && { owns=1; break; }
+    if [ "$(readlink "$fd" 2>/dev/null)" = "socket:[$inode]" ]; then
+        owns=1
+        break
+    fi
 done
 [ "$(systemctl is-active lighttpd)" = active ] && [ -n "$inode" ] && [ "$owns" = 1 ] && echo "lighttpd owns the LAN HTTPS listener"
 su www-data -s /bin/bash -c 'REQUEST_METHOD=GET /usrdata/quecdeck/www/cgi-bin/auth_login'
@@ -83,7 +89,7 @@ missing_tag="v999999999.$(date +%s).$$"
 bash /tmp/test_update.sh "$missing_tag"
 ```
 
-- [ ] FATAL: could not download release files; nothing staged, site untouched
+- [ ] FATAL: could not download release files. Nothing staged, site untouched
 - [ ] `cat /run/quecdeck/update.status` is `failed`
 - [ ] `/usrdata/quecdeck_last_update.log` exists, `root` owner, mode `600`,
       content matches `/run/quecdeck/install.log`
@@ -96,7 +102,7 @@ bash /tmp/test_update.sh <older>
 ```
 
 - [ ] FATAL names both versions and the `QUECDECK_ALLOW_DOWNGRADE=1` override
-- [ ] Status `failed`; no `.new`/`.old` dirs under /usrdata; site still serving
+- [ ] Status `failed`. No `.new`/`.old` dirs under /usrdata. Site still serving
 - [ ] `/` back to `ro`
 
 ## 4. Happy-path reinstall (equal version passes the guard)
@@ -112,8 +118,8 @@ bash /tmp/test_update.sh <current>
       `lighttpd stayed up through the swap` (no lighttpd restart)
 - [ ] ttyd verifies against the LOCAL manifest: log has NO
       "download checksums" step between the ttyd.bash/ttyd.service fetches
-- [ ] Summary: Stage/Switch/QuecDeck/Firewall/ttyd all OK; no Rollback line
-- [ ] Status `done`; `/usrdata/quecdeck/version` correct (no leading `v`)
+- [ ] Summary: Stage/Switch/QuecDeck/Firewall/ttyd all OK. No Rollback line
+- [ ] Status `done`. `/usrdata/quecdeck/version` correct (no leading `v`)
 - [ ] Manifest retained: `/usrdata/quecdeck/checksums.sha256` present
 - [ ] Persisted log updated (mtime) and matches this run
 - [ ] Browser: login works, dashboard AT data populates, session survived
@@ -132,16 +138,16 @@ bash /tmp/test_update.sh <current> &
 systemctl stop install_quecdeck
 ```
 
-The swap window is seconds wide; if the stop lands too early (before
+The swap window is seconds wide. If the stop lands too early (before
 "Preparing for swap"), expect a plain `failed` with the site untouched --
 reset and retry until the stop lands inside the swap.
 
-- [ ] Log: `Install interrupted mid-swap; attempting rollback.` followed by
+- [ ] Log: `Install interrupted mid-swap. Attempting rollback.` followed by
       `Rollback complete. Previous version restored.`
 - [ ] Status `failed:rollback_ok`
 - [ ] Site serving, version unchanged, `systemctl is-active lighttpd
       atcmd-daemon firewall` all active
-- [ ] `/` back to `ro`; no `.new`/`.old` leftovers under /usrdata
+- [ ] `/` back to `ro`. No `.new`/`.old` leftovers under /usrdata
 
 ## 6. Downgrade override, then return to current
 
@@ -150,7 +156,7 @@ QUECDECK_ALLOW_DOWNGRADE=1 bash /tmp/test_update.sh <older>
 ```
 
 - [ ] `grep Environment /run/systemd/system/install_quecdeck.service` shows the
-      var while the unit exists; install proceeds past the guard
+      var while the unit exists. Install proceeds past the guard
 - [ ] Lands on `<older>` (version file, login page works)
 
 Then re-run step 4 with `<current>` to restore, and confirm it lands.

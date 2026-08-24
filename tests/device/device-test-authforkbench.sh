@@ -10,7 +10,7 @@
 #
 # Usage: device-test-authforkbench.sh [device_ip] [requests_per_round] [rounds]
 # Defaults: 192.168.225.1, 100, 3.
-# Old variant = v1.0.18's auth.lua (shell test as the only setup check);
+# Old variant = v1.0.18's auth.lua (shell test as the only setup check).
 # new variant = the working tree's quecdeck/auth.lua (lighty.c.stat, shell
 # test kept only as fallback).
 
@@ -28,7 +28,7 @@ done
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
-# Git bash on Windows rewrites arguments starting with "/" into Windows
+# Git Bash on Windows rewrites arguments starting with "/" into Windows
 # paths, mangling device paths passed to adb (a native exe). Scoped to adb:
 # curl's -o /dev/null relies on that same conversion. Local paths handed to
 # adb push must then be converted explicitly (native_path).
@@ -55,7 +55,7 @@ trap restore EXIT
 push_variant() {
     adb push "$(native_path "$1")" "$DEVICE_FILE" >/dev/null || return 1
     adb shell "chown root:root $DEVICE_FILE && chmod 644 $DEVICE_FILE" || return 1
-    # Warm-up: triggers the mtime reload and primes the stat cache; the
+    # Warm-up: triggers the mtime reload and primes the stat cache. The
     # response body check catches a variant that 500s (Lua error).
     local code
     code=$(curl -sk -o /dev/null -w '%{http_code}' "$URL")
@@ -63,7 +63,7 @@ push_variant() {
     curl -sk -o /dev/null "$URL?w=[1-5]"
 }
 
-# One keep-alive burst; per-transfer total time in seconds, one per line.
+# One keep-alive burst. Per-transfer total time in seconds, one per line.
 measure() {
     curl -sk -o /dev/null -w '%{time_total}\n' "$URL?b=[1-$N]"
 }
@@ -93,5 +93,5 @@ awk -v o="$old_med" -v n="$new_med" 'BEGIN {
     printf "delta: %.1f ms/request\n", d
     if (d >= 2)       print "RESULT: WIN - fork removal is a clear per-request improvement."
     else if (d > -2)  print "RESULT: NO MEASURABLE DIFFERENCE - within noise."
-    else              print "RESULT: REGRESSION?! new variant is slower; investigate."
+    else              print "RESULT: REGRESSION?! New variant is slower; investigate."
 }'

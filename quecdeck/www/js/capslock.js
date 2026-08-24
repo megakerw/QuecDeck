@@ -6,7 +6,7 @@
 // Caps Lock state is only readable from a key event, so the hint appears on the
 // first keystroke rather than on focus. There is no way to know before that.
 //
-// One shared hint element is moved to whichever field is being typed in; only
+// One shared hint element is moved to whichever field is being typed in. Only
 // one can hold focus at a time, and setup.html has four of them.
 (function () {
   var hint;

@@ -84,7 +84,7 @@ enabled_val=$(json_bool "$WATCHCAT_ENABLED" enable)
 CONFIG=/usrdata/quecdeck/var/watchcat.json
 new_config="{\"enabled\": $enabled_val, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}"
 
-# Command substitution strips the trailing newline written by write_json_config,
+# command substitution strips the trailing newline written by write_json_config,
 # so this compares like for like.
 config_changed=0
 [ "$(cat "$CONFIG" 2>/dev/null)" != "$new_config" ] && config_changed=1

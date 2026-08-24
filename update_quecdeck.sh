@@ -417,7 +417,7 @@ stage_release() {
     # Deliberately NOT setuid (zero-setuid design): the daemon, started as
     # root by systemd, is the only thing that opens /dev/smd11 with
     # privilege. Clients reach its socket through its www-data ownership. The
-    # daemon also verifies peers via SO_PEERCRED), so no caller needs
+    # daemon also verifies peers via SO_PEERCRED, so no caller needs
     # elevation. --direct is root-only and never taken implicitly.
     chmod 0755 "$STAGE_DIR/atcli"
 
@@ -890,7 +890,7 @@ swap_in_release() {
     # Subshell: the sourced helpers stay out of the updater's namespace, and a
     # missing or broken at-lib.sh fails the probe, not the install.
     # Warns, never rolls back: the web UI stays up either way (AT panels go
-        # empty until the daemon recovers. The systemd unit restarts it every 5 seconds).
+    # empty until the daemon recovers. The systemd unit restarts it every 5 seconds.
     sleep 2
     if systemctl is-active atcmd-daemon >/dev/null 2>&1 &&        ( . "$QUECDECK_DIR/script/at-lib.sh" && atcmd_run 'AT' 3000 ) >/dev/null 2>&1; then
         echo "AT daemon serving."
@@ -1103,7 +1103,7 @@ install_ttyd() {
     # against the manifest retained from the staged (already-verified) release,
     # since both run as root.
     _ttyd_sums="$QUECDECK_DIR/checksums.sha256"
-    [ -s "$_ttyd_sums" ] || { echo -e "\e[1;31mRelease manifest missing; cannot verify ttyd files.\e[0m"; return 1; }
+    [ -s "$_ttyd_sums" ] || { echo -e "\e[1;31mRelease manifest missing. Cannot verify ttyd files.\e[0m"; return 1; }
 
     /opt/bin/wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/console/ttyd.bash" || { echo -e "\e[1;31mFailed to download ttyd.bash.\e[0m"; return 1; }
     _exp=$(awk '$2=="*quecdeck/console/ttyd.bash"{print $1}' "$_ttyd_sums")

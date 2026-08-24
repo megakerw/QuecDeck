@@ -166,7 +166,7 @@ else
             [ "$(stamp)" != "$before" ] && ok "the settings save restarted the worker mid-scan" \
                 || bad "the settings save did not restart the worker"
             # The marker is the mechanism. A stop would have been undone by the
-            # restart above; a file cannot be.
+            # restart above. A file cannot be.
             [ -s "$PAUSE_DIR/scan" ] && ok "the pause outlived the restart" \
                 || bad "the pause was lost when the worker restarted"
         fi

@@ -3,7 +3,7 @@
 # coupling test (device-test-firewall-lighttpd.sh) leaves untouched:
 #
 #   1. The systemd manager honors Restart=on-failure on the Type=oneshot firewall unit
-#      (read-only; pre-v244 systemd silently refuses the setting).
+#      This is read-only because pre-v244 systemd silently refuses the setting.
 #   2. Duplicate INPUT jumps converge: an extra -j QUECDECK jump disappears
 #      after one firewall restart (the delete-until-absent loop).
 #   3. A failing firewall.sh makes `systemctl restart firewall` return
@@ -17,7 +17,7 @@
 #   5. The post-restore rule-count guard detects a chain that doesn't have
 #      exactly 2 rules per port. Scope note: this exercises the count/compare
 #      logic against real device iptables output by injecting a rule directly
-#      (bypassing iptables-restore); it does not simulate --noflush producing
+#      (bypassing iptables-restore). It does not simulate --noflush producing
 #      a wrong count in the first place, since that depends on iptables build
 #      semantics already verified separately by device-test-noflush-semantics.sh.
 #
@@ -111,7 +111,7 @@ wait_state firewall active 5 && ok "firewall is active" || { bad "firewall not a
 wait_state lighttpd active 5 && ok "lighttpd is active" || { bad "lighttpd not active at start"; _base_ok=0; }
 if [ "$_base_ok" != "1" ]; then
     echo ""
-    echo "Baseline not healthy; skipping the disruptive checks."
+    echo "Baseline not healthy. Skipping the disruptive checks."
     rm -rf "$DIR"
     [ "$fail" -eq 0 ] && exit 0 || exit 1
 fi
@@ -132,7 +132,7 @@ _j0=$(count_jumps)
 iptables -w 5 -I INPUT -j QUECDECK
 _j1=$(count_jumps)
 if [ "$_j1" -le "$_j0" ]; then
-    bad "could not inject a duplicate jump (count $_j0 -> $_j1); skipping convergence assert"
+    bad "could not inject a duplicate jump (count $_j0 -> $_j1). Skipping convergence assert"
 else
     systemctl restart firewall >/dev/null 2>&1
     wait_state lighttpd active 20
@@ -164,7 +164,7 @@ sleep 2
 
 # ---- Check 4: self-heal after the failure clears ------------------------
 echo ""
-echo "[Check 4] restoring the real script; the tree must recover on its own"
+echo "[Check 4] restoring the real script. The tree must recover on its own"
 cat "$DIR/firewall.sh.bak" > "$FW_SCRIPT"
 chown root:root "$FW_SCRIPT"; chmod 700 "$FW_SCRIPT"
 STUBBED=0
@@ -185,7 +185,7 @@ echo ""
 echo "[Check 5] the post-restore rule-count guard detects a wrong count"
 _expected=$(iptables -w 5 -S QUECDECK 2>/dev/null | grep -c '^-A QUECDECK')
 if [ "$_expected" -lt 2 ]; then
-    bad "could not read a healthy QUECDECK baseline count ($_expected); skipping guard check"
+    bad "could not read a healthy QUECDECK baseline count ($_expected). Skipping guard check"
 else
     # Inject a rule the restore didn't put there, bypassing iptables-restore
     # entirely: this tests detection against real device iptables output, not
@@ -193,17 +193,17 @@ else
     iptables -w 5 -A QUECDECK -p tcp --dport 1 -j DROP
     _corrupted=$(iptables -w 5 -S QUECDECK 2>/dev/null | grep -c '^-A QUECDECK')
     if [ "$_corrupted" -eq "$_expected" ]; then
-        bad "injecting a rule did not change the count ($_corrupted); could not exercise the guard's compare"
+        bad "injecting a rule did not change the count ($_corrupted). Could not exercise the guard's compare"
     else
         ok "corrupted count ($_corrupted) differs from the healthy baseline ($_expected) -- the guard's compare would fire and exit 1"
     fi
-    # A real restart's iptables-restore should flush the injection away; this
+    # A real restart's iptables-restore should flush the injection away. This
     # also proves the guard would NOT false-positive on the healthy result.
     systemctl restart firewall >/dev/null 2>&1
     wait_state lighttpd active 20
     _restored=$(iptables -w 5 -S QUECDECK 2>/dev/null | grep -c '^-A QUECDECK')
     [ "$_restored" -eq "$_expected" ] \
-        && ok "a real restart's iptables-restore cleaned the injected rule; count is back to $_expected (no false positive on the healthy path)" \
+        && ok "a real restart's iptables-restore cleaned the injected rule. Count is back to $_expected (no false positive on the healthy path)" \
         || bad "count is $_restored after a real restart (expected $_expected) -- injected rule was not cleaned, or the restore itself is wrong"
 fi
 systemctl reset-failed firewall lighttpd >/dev/null 2>&1

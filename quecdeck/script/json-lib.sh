@@ -9,7 +9,7 @@
 # (e.g. "day" vs "dayofweek", "ips" vs "track_ips").
 
 # Extract the raw value of a top-level key from flat JSON text.
-# Strips surrounding quotes from string values; arrays are returned with
+# Strips surrounding quotes from string values. Arrays are returned with
 # their brackets/quotes intact for the caller to extract elements from.
 # Prints nothing and returns failure if the key isn't found.
 # Usage: json_get <json_text> <key>

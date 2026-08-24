@@ -1,12 +1,12 @@
 #!/bin/bash
 # Called via sudo by the auth_login/auth_dev CGIs to verify a web password.
 # The htpasswd files are root:root 600 so the web tier can never read the
-# stored hashes; this helper is the only credential-check path. It answers
+# stored hashes. This helper is the only credential-check path. It answers
 # yes/no only: lockout and rate limiting stay in the CGIs (bf_* in cgi-lib).
 # Usage: printf '%s\n' "$password" | sudo check_password.sh <admin|dev> <username>
 # Exit 0 if the password matches, 1 otherwise.
 
-# sudo's secure_path varies by build; pin one that has openssl.
+# sudo's secure_path varies by build. Pin one that has openssl.
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 case "$1" in

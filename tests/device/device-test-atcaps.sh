@@ -2,7 +2,7 @@
 # Pins the two caps that bound a chained AT line, both of which are currently
 # recorded as approximations. Run as root:
 #   /tmp/device-test-atcaps.sh
-# Dev tool, not deployed; copy it to the device manually and delete it after.
+# Dev tool, not deployed. Copy it to the device manually and delete it after.
 #
 # DELETES NOTHING and changes no modem state. Part A sends syntactically
 # invalid commands, which the modem can only reject. Part B repeats +CGMM and
@@ -32,7 +32,7 @@ counter() { "$_ATCLI" --status -s "$_ATCLI_SOCK" 2>/dev/null | awk -v k="$1" '$1
 
 have_counter=1
 [ -z "$(counter malformed)" ] && have_counter=0
-[ "$have_counter" = "0" ] && echo "NOTE: no malformed counter available; silence cannot be attributed"
+[ "$have_counter" = "0" ] && echo "NOTE: no malformed counter available. Silence cannot be attributed"
 
 # ------------------------------------------------- Part A: exact CMD_MAX -----
 # "AT" plus filler to an exact length. The modem rejects it, so a reply of any
@@ -120,7 +120,7 @@ for n in 40 79 80 90 99; do
 done
 
 echo ""
-echo "Read it like this: if +CSQ fails at 79-80 like +CGMM, the cap counts"
+echo "read it like this: if +CSQ fails at 79-80 like +CGMM, the cap counts"
 echo "COMMANDS. If +CSQ still answers at 99, it does not, and the +CGMM"
 echo "boundary is about response volume instead."
 echo ""

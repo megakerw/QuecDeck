@@ -7,7 +7,7 @@ cgi_read_post
 x=$(get_post_param atcmd)
 t=$(get_post_param timeout)
 
-# Clamp timeout to 1000–60000 ms; default 5000.
+# Clamp the timeout to 1000–60000 ms. The default is 5000 ms.
 if ! echo "$t" | grep -qE '^[0-9]+$' || [ "$t" -lt 1000 ] || [ "$t" -gt 60000 ]; then
     t=5000
 fi
@@ -28,7 +28,7 @@ if [ -n "$x" ]; then
     # Each failure is labelled. Too-long is left alone: at-lib already named it,
     # and the truncation note below would misdescribe a command never sent.
     # at-lib names ANY rc 65 as too-long, so if atcli ever reuses 65 for
-    # something else the console states a confidently wrong reason; the device
+    # something else, the console states a confidently wrong reason. The device
     # test asserts too-long implies 65, not the converse.
     if [ "$rc" -eq "$_AT_E_TOOLONG" ]; then
         :

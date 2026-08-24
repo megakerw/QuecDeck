@@ -17,7 +17,7 @@ case "$TYPE" in
     *)     exit 1 ;;
 esac
 
-# Refuse if credentials already exist; setup is one-time only.
+# Refuse if credentials already exist. Setup is one-time only.
 if [ -s "$FILE" ]; then
     exit 1
 fi

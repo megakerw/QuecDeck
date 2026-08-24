@@ -8,8 +8,8 @@ Type=simple
 PIDFile=/opt/var/run/sshd.pid
 # Refuse to bind port 22 unless the firewall is up (its LAN-only rules keep
 # 22 off the WAN). Gate, not Requires=: a firewall restart must not drop live
-# sessions; Restart= below retries until the firewall self-heals. Coupling
-# pattern for a service that must SURVIVE firewall restarts; see
+# sessions. Restart= below retries until the firewall self-heals. Coupling
+# pattern for a service that must SURVIVE firewall restarts. See
 # firewall.service's ExecStartPost for the must-go-DOWN pattern. Keep in
 # sync with the comment there if either pattern changes.
 ExecStartPre=/bin/systemctl is-active firewall

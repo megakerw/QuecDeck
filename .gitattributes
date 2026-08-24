@@ -1,4 +1,4 @@
-# Keep hook scripts as LF — CRLF breaks the shebang on Linux/Git for Windows
+# Keep hook scripts as LF - CRLF breaks the shebang on Linux/Git for Windows
 .githooks/* text eol=lf
 
 # All device-deployed text files must be LF so checksums match between
@@ -27,7 +27,7 @@ quecdeck/console/menu/start_menu.sh text eol=lf
 # listing, so every line differs at once, and sha256sum -c rejects CRLF lines.
 quecdeck/checksums.sha256 text eol=lf
 
-# Binary files — never touch line endings
+# Binary files - never touch line endings
 *.woff2     binary
 *.ico       binary
 *.woff      binary

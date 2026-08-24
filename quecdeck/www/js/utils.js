@@ -2,7 +2,7 @@
 const REBOOT_WAIT_SECS = 55;
 
 // Auth-aware fetch wrapper. Redirects to login if the session has expired.
-// auth.lua returns a 302 to /login.html which fetch() follows silently;
+// auth.lua returns a 302 to /login.html which fetch() follows silently.
 // response.redirected lets us detect this and navigate instead of parsing HTML.
 //
 // On session expiry: navigates to login preserving the current page as ?next=
@@ -225,7 +225,7 @@ function fetchWithTimeout(fetchFn, url, timeoutMs, options = {}) {
 // Retries a fetch-returning call once on rejection. A fetch that rejects right
 // after an idle wait usually died with its pooled keep-alive connection (QCMAP
 // rebuilds connection state on WWAN changes, and a reboot kills sockets without
-// a FIN); the retry opens a fresh connection. Session redirects pass through:
+// a FIN). The retry opens a fresh connection. Session redirects pass through:
 // navigation to the login page is already underway.
 function fetchWithRetry(fetchFn, delayMs = 1500) {
   return fetchFn().catch((err) => {
@@ -235,7 +235,7 @@ function fetchWithRetry(fetchFn, delayMs = 1500) {
 }
 
 // A rejected fetch is a session expiry when authFetch caught a login redirect
-// and is already navigating away; callers should stay silent in that case.
+// and is already navigating away. Callers should stay silent in that case.
 function isSessionExpired(err) {
   return !!err && err.name === 'SessionExpiredError';
 }
@@ -268,7 +268,7 @@ function parseEnvelope(text) {
   return sections;
 }
 
-// Comma-separated AT response field with quotes stripped; undefined if absent.
+// Comma-separated AT response field with quotes stripped. Undefined if absent.
 const atField = (line, i) => line?.split(",")[i]?.replace(/"/g, "");
 
 // Returns "-" for unassigned IP addresses (0.0.0.0 or all-zero IPv6 like ::)

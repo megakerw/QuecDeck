@@ -1,7 +1,7 @@
 #!/bin/sh
 # STATUS: the design this validates is NOT in use. The A/B release-slot idea
 # was evaluated and rejected (2026-07-14) as more complexity than it fixes at
-# the project's current scale; the shipped updater keeps the stage/mv-swap
+# the project's current scale. The shipped updater keeps the stage/mv-swap
 # design in update_quecdeck.sh, and crash-mid-swap recovery is accepted as a
 # manual ADB/SSH job. This script is retained as the ready-made go/no-go
 # gate in case A/B is ever revisited (e.g. a much larger install base, or
@@ -17,13 +17,13 @@
 # Run it when evaluating A/B, and re-run when the answers might have changed:
 # after a firmware update (busybox/coreutils, sudo can all
 # change), or on a different modem than the RM520N-GL it targets. A failure in
-# Test 1 or Test 3 blocks the A/B design as drafted; the verdict says what to do.
+# Test 1 or Test 3 blocks the A/B design as drafted. The verdict says what to do.
 #
 # It checks:
 #   1. Some mv on this device does a true rename() onto an existing symlink
 #      (mv -T semantics) instead of moving the source INTO the link's target.
 #   2. Rapid flips are gap-free: a concurrent reader never sees a moment where
-#      a path through the symlink fails to resolve (best-effort probe; shell
+#      a path through the symlink fails to resolve. This is a best-effort probe because shell
 #      granularity can miss nanosecond gaps, but unlink+recreate shows up).
 #   3. A sudoers rule naming a path THROUGH the symlink still matches after
 #      the link is flipped to a different release dir (www-data -> root, the
@@ -33,7 +33,7 @@
 #      lighttpd docroot / CGI sourcing path after a flip).
 #
 # Non-destructive: everything lives under /usrdata/.qdsymtest plus one
-# uniquely-named sudoers fragment; both are removed on every exit path
+# uniquely-named sudoers fragment. Both are removed on every exit path
 # (including Ctrl-C). The sudoers fragment only whitelists a root-owned 700
 # probe script inside the test dir, and is deleted before the dirs are.
 
@@ -102,7 +102,7 @@ for c in mv /opt/bin/mv; do
             ln -s relA "$BASE/current.tmp" && "$c" -T "$BASE/current.tmp" "$BASE/current"
             continue
         fi
-        bad "'$c -T' ran but left wrong state (current -> ${target:-?}; check for nesting)"
+        bad "'$c -T' ran but left wrong state (current -> ${target:-?}). Check for nesting"
     else
         note "'$c' does not support -T (busybox mv nests into the target dir)"
     fi
@@ -111,7 +111,7 @@ for c in mv /opt/bin/mv; do
     rm -f "$BASE/current"; ln -s relA "$BASE/current"
 done
 if [ -z "$MV_T" ]; then
-    bad "no mv candidate performs an atomic symlink replace; A/B needs coreutils mv (opkg install coreutils-mv)"
+    bad "no mv candidate performs an atomic symlink replace. A/B needs coreutils mv (opkg install coreutils-mv)"
 fi
 
 # ---- Test 2: concurrent reader sees no resolution gap ------------------
@@ -134,7 +134,7 @@ if [ -n "$MV_T" ]; then
     if [ -s "$GAPFILE" ]; then
         bad "reader saw $(wc -l < "$GAPFILE" | tr -d ' ') unresolvable moments across 200 flips (NOT atomic)"
     else
-        ok "no resolution gap observed across 200 flips (best-effort; consistent with rename())"
+        ok "no resolution gap observed across 200 flips (best-effort and consistent with rename())"
     fi
     # Leave current -> relA for the sudo tests.
     rm -f "$BASE/current"; ln -s relA "$BASE/current"
@@ -146,10 +146,10 @@ fi
 echo ""
 echo "[Test 3] sudoers rule naming the symlink path survives a flip"
 if [ -x "$SUDO" ] && id www-data >/dev/null 2>&1; then
-    # The test drops to www-data via root's own sudo; verify that hop first so
+    # The test drops to www-data via root's own sudo. Verify that hop first so
     # a failure below unambiguously means the RULE didn't match.
     if [ "$("$SUDO" -u www-data id -un 2>/dev/null)" != "www-data" ]; then
-        bad "root cannot 'sudo -u www-data' on this device; run the inner command as www-data another way (su?)"
+        bad "root cannot 'sudo -u www-data' on this device. Run the inner command as www-data another way (su?)"
     fi
     printf '#!/bin/sh\necho probe-A\n' > "$BASE/relA/probe.sh"
     printf '#!/bin/sh\necho probe-B\n' > "$BASE/relB/probe.sh"
@@ -171,14 +171,14 @@ if [ -x "$SUDO" ] && id www-data >/dev/null 2>&1; then
         if [ "$out" = "probe-B" ]; then
             ok "same rule still matches after the flip and runs the NEW slot's script"
         else
-            bad "rule no longer matches after flip (got '${out:-nothing}'); rules would need rewriting per release"
+            bad "rule no longer matches after flip (got '${out:-nothing}'). Rules would need rewriting per release"
         fi
     else
         note "flip half skipped (no working mv -T)"
     fi
     rm -f "$SUDOERS_FILE"
 else
-    bad "prerequisites missing ($SUDO and user www-data); cannot verify the sudo path"
+    bad "prerequisites missing ($SUDO and user www-data). Cannot verify the sudo path"
 fi
 
 # ---- Test 4: www-data reads through the symlink (DAC) ------------------
@@ -187,7 +187,7 @@ echo "[Test 4] www-data can read file content through the symlink"
 if [ -x "$SUDO" ] && id www-data >/dev/null 2>&1; then
     got=$("$SUDO" -u www-data cat "$BASE/current/marker" 2>/dev/null)
     if [ "$got" = "A" ] || [ "$got" = "B" ]; then
-        ok "www-data read through the link (got '$got'; lighttpd docroot path is fine)"
+        ok "www-data read through the link (got '$got', so the lighttpd docroot path is fine)"
     else
         bad "www-data could not read through the link (DAC: check the path modes)"
     fi

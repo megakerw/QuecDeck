@@ -1,12 +1,12 @@
 #!/bin/bash
 # On-device verification of the AT response cache. Run as root:
 #   /tmp/device-test-cache.sh
-# Dev tool, not deployed; copy it to the device manually and delete it after.
+# Dev tool, not deployed. Copy it to the device manually and delete it after.
 #
 # Sources the INSTALLED cgi-lib.sh but redirects _CACHE_DIR at a scratch dir,
 # so the live cache is never read or written. Sends no AT commands except in
 # the daemon-down section, which stops and restarts atcmd-daemon (the UI will
-# see a brief gap; device-test-atclid.sh does the same).
+# see a brief gap. The device-test-atclid.sh test does the same.
 #
 # Covers what the host suite cannot:
 #   1. Bash 3.2.57 and BusyBox actually run the constructs (read -d '',

@@ -24,7 +24,7 @@ cleanup() {
     if iptables-restore < "$BACKUP" 2>/dev/null; then
         rm -f "$BACKUP"
     else
-        echo "FATAL: could not restore the saved filter table; backup retained at $BACKUP" >&2
+        echo "FATAL: could not restore the saved filter table. Backup retained at $BACKUP" >&2
     fi
 }
 trap cleanup EXIT
@@ -57,7 +57,7 @@ for port in $PORTS; do
     iptables -A QUECDECK -p tcp --dport "$port" -j DROP
 done
 
-echo "PHASE2_READY: QuecDeck LAN ingress=bridge0; request https://$LAN_IP/ within ${WINDOW}s"
+echo "PHASE2_READY: QuecDeck LAN ingress=bridge0. Request https://$LAN_IP/ within ${WINDOW}s"
 sleep "$WINDOW"
 echo "PHASE2_RULES"
 iptables -L QUECDECK -n -v --line-numbers

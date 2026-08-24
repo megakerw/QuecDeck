@@ -117,7 +117,7 @@ if command -v systemd-analyze >/dev/null 2>&1; then
         ok "systemd-analyze verify clean"
     fi
 else
-    note "systemd-analyze not present; skipped unit-file verification"
+    note "systemd-analyze not present. Skipped unit-file verification"
 fi
 
 # The LOADED unit is what matters (a stale unit without a daemon-reload would
@@ -140,7 +140,7 @@ wait_state firewall active 5 && ok "firewall is active" || { bad "firewall not a
 wait_state lighttpd active 5 && ok "lighttpd is active" || { bad "lighttpd not active at start"; _base_ok=0; }
 if [ "$_base_ok" != "1" ]; then
     echo ""
-    echo "Baseline not healthy; skipping the disruptive checks. Bring both services"
+    echo "Baseline not healthy. Skipping the disruptive checks. Bring both services"
     echo "up ('systemctl start lighttpd') and re-run."
 elif [ "$_has_partof" != "1" ]; then
     echo ""
@@ -170,7 +170,7 @@ else
         if wait_state lighttpd active 20; then
             _pid_after=$(main_pid lighttpd)
             if [ -n "$_pid_before" ] && [ "$_pid_before" = "$_pid_after" ]; then
-                echo "    cycle $_cyc/$ITER: FAIL - lighttpd active but MainPID unchanged ($_pid_after); restart did not propagate"
+                echo "    cycle $_cyc/$ITER: FAIL - lighttpd active but MainPID unchanged ($_pid_after). Restart did not propagate"
                 _c2_fail=$((_c2_fail+1))
             elif ! https_listening; then
                 echo "    cycle $_cyc/$ITER: FAIL - lighttpd active but TCP 443 is not listening"
@@ -204,7 +204,7 @@ else
         bad "lighttpd stayed active after the firewall was stopped -- the coupling does not enforce 'no UI without firewall' at runtime"
     fi
     # Restore from the dependency root. The firewall unit starts lighttpd itself.
-    echo "  ... restoring both services"
+    echo "  ... Restoring both services"
     systemctl reset-failed firewall lighttpd >/dev/null 2>&1
     systemctl start firewall >/dev/null 2>&1
     if wait_state firewall active 20 && wait_state lighttpd active 20; then

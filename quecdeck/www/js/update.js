@@ -46,7 +46,7 @@ function updatePage() {
         })
         .catch((err) => {
           // Raw exception text (e.g. a JSON parse error from a captive
-          // portal's HTML reply) is meaningless to the user; log it instead.
+          // portal's HTML reply) is meaningless to the user. Log it instead.
           console.error('check_update failed:', err);
           this.checkError = 'Could not reach the update server.';
         })
@@ -174,7 +174,7 @@ function updatePage() {
             if (data.status === 'done') {
               this.done = true;
               // get_update_log reports the installed version file, which is
-              // authoritative after the swap; it keeps the cached version
+              // authoritative after the swap. It keeps the cached version
               // correct even if check_update is unreachable.
               if (data.version) {
                 this.currentVersion = data.version;
@@ -218,7 +218,7 @@ function updatePage() {
             return;
           }
           if (data.status === 'done') {
-            // "done" on fresh load is stale (ack race with "Reload now"); go straight to idle.
+            // "done" on fresh load is stale (ack race with "Reload now"). Go straight to idle.
             this.ackUpdate();
             this.checkForUpdates();
             return;

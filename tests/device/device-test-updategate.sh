@@ -14,7 +14,7 @@
 #     sh device-test-updategate.sh <current-tag> [older-tag] [term-only]
 #
 #     <current-tag>  tag matching the installed version, e.g. v1.0.16
-#     [older-tag]    any earlier published tag; enables the downgrade-block
+#     [older-tag]    any earlier published tag. Enables the downgrade-block
 #                    test (3). The downgrade-OVERRIDE test (6) is deliberately
 #                    not automated: it leaves the device on the older release
 #                    mid-run, so a crash strands it there. Run it manually.
@@ -71,11 +71,11 @@ cleanup() {
     [ -n "$_bg_pid" ] && kill "$_bg_pid" 2>/dev/null
     reset_state
     echo ""
-    echo "Cleaned up. / is: $(rootfs_state); status file cleared."
+    echo "Cleaned up. / is: $(rootfs_state). Status file cleared."
 }
 trap 'cleanup' EXIT INT TERM
 
-# Wait until the status file holds a terminal value; echoes it. Empty on timeout.
+# Wait until the status file holds a terminal value. Echoes it. Empty on timeout.
 wait_terminal() { # wait_terminal <timeout-seconds>
     _wt_i=0
     while [ "$_wt_i" -lt "$1" ]; do
@@ -112,7 +112,7 @@ if [ "$TERM_ONLY" = "1" ]; then
     echo ""
     echo "term-only: skipping tests 1-4."
 fi
-# Tests 1-4 (skipped in term-only mode; body kept at original indent).
+# Tests 1-4 are skipped in term-only mode. Their bodies keep the original indent.
 if [ "$TERM_ONLY" = "0" ]; then
 
 # ---- Test 1: health probe in isolation, no side effects ----------------
@@ -120,9 +120,9 @@ echo ""
 echo "[Test 1] Local web-stack health probe"
 _acc_before=$(wc -l < "$ACCESS" 2>/dev/null || echo 0)
 if probe_site; then
-    ok "lighttpd owns the LAN HTTPS listener; auth_login GET returns 303"
+    ok "lighttpd owns the LAN HTTPS listener. auth_login GET returns 303"
 else
-    bad "probe failed (rc $?) -- the post-swap health check WILL fail; stop here"
+    bad "probe failed (rc $?) -- the post-swap health check WILL fail. Stop here"
 fi
 _acc_after=$(wc -l < "$ACCESS" 2>/dev/null || echo 0)
 [ "$_acc_before" = "$_acc_after" ] && ok "no access-log side effect" || bad "probe wrote to $ACCESS (GET branch must be side-effect free)"
@@ -202,7 +202,7 @@ fi # end of tests 1-4
 
 # ---- Test 5: TERM mid-swap triggers the trap rollback -------------------
 # Stop the install unit the moment the swap starts. Too early (before the
-# marker) yields a plain 'failed' with the site untouched; too late yields
+# marker) yields a plain 'failed' with the site untouched. Too late yields
 # 'done'. Both are harmless -- retry up to 3 attempts total.
 echo ""
 echo "[Test 5] SIGTERM mid-swap -> trap rollback (up to 3 attempts)"
@@ -231,8 +231,8 @@ while [ "$_attempt" -le 3 ]; do
     st=$(wait_terminal 120)
     case "$st" in
         failed:rollback_ok) _t5_result="rolled_back"; _rollback_rc=$_attempt_rc; break ;;
-        done)   echo "  (attempt $_attempt: stop landed after completion; retrying)" ;;
-        failed) echo "  (attempt $_attempt: stop landed before the swap; retrying)" ;;
+        done)   echo "  attempt $_attempt: stop landed after completion. Retrying" ;;
+        failed) echo "  attempt $_attempt: stop landed before the swap. Retrying" ;;
         *)      _t5_result="broken:$st"; break ;;
     esac
     _attempt=$((_attempt+1))
@@ -240,10 +240,10 @@ done
 if [ "$_t5_result" = "rolled_back" ]; then
     ok "status 'failed:rollback_ok'"
     [ "${_rollback_rc:-0}" -ne 0 ] && ok "console/bootstrap exits nonzero after successful rollback" || bad "rollback outcome returned success"
-    grep -q "Install interrupted mid-swap; attempting rollback." "$LOG" && ok "trap rollback path ran (not the main-flow one)" || note "rollback ran via the main flow (stop landed after swap returned); trap path untested"
+    grep -q "Install interrupted mid-swap. Attempting rollback." "$LOG" && ok "trap rollback path ran (not the main-flow one)" || note "rollback ran via the main flow. The stop landed after swap returned, so the trap path is untested."
     grep -q "Rollback complete. Previous version restored." "$LOG" && ok "rollback completed" || bad "rollback-complete marker missing"
 elif [ -z "$_t5_result" ]; then
-    note "could not land the stop inside the swap window in 3 attempts; trap rollback untested (try manually)"
+    note "could not land the stop inside the swap window in 3 attempts. The trap rollback remains untested. Try it manually."
 else
     bad "unexpected terminal state '$_t5_result' -- inspect the device before doing anything else"
 fi
@@ -255,7 +255,7 @@ done
 probe_site && ok "web stack healthy after rollback test" || bad "web stack NOT healthy after rollback test"
 
 # If the rollback test left the previous content in place, the device content
-# may predate $CURRENT's tree; re-assert with one final clean reinstall.
+# may predate $CURRENT's tree. Re-assert with one final clean reinstall.
 if [ "$_t5_result" = "rolled_back" ]; then
     echo ""
     echo "[Restore] Clean reinstall of $CURRENT after the rollback test"

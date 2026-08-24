@@ -6,7 +6,7 @@
 #
 # Delimiter-framed text envelope (a ===name=== marker per section) so raw AT
 # text needs no escaping. Helpers emit no trailing newline, so markers after
-# the first are prefixed with \n. Any section may be empty; parsers handle that.
+# the first are prefixed with \n. Any section may be empty. Parsers handle that.
 
 . /usrdata/quecdeck/script/cgi-lib.sh
 cgi_require_post

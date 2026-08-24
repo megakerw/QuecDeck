@@ -19,7 +19,7 @@ UPDATE_SCRIPT="$UPDATE_TMP/quecdeck_update.sh"
 # the result. If creation fails, the fetch unit never starts and no status is written, so
 # the UI would sit on "idle" as though nothing had been requested.
 if ! mkdir -p "$RUNDIR" || ! chmod 755 "$RUNDIR"; then
-    echo "FATAL: cannot create $RUNDIR; refusing to start an update that could not report its own status."
+    echo "FATAL: cannot create $RUNDIR. Refusing to start an update that could not report its own status."
     exit 1
 fi
 
@@ -111,7 +111,7 @@ fi
 for _unit in install_quecdeck install_quecdeck_fetch; do
     state=$(systemctl is-active "$_unit" 2>/dev/null)
     if [ "$state" = "activating" ] || [ "$state" = "active" ]; then
-        echo "An update is already in progress; not starting another." >> "$LOG" 2>/dev/null
+        echo "An update is already in progress. Not starting another." >> "$LOG" 2>/dev/null
         exit 2
     fi
     systemctl reset-failed "$_unit" 2>/dev/null
@@ -119,12 +119,12 @@ done
 
 if ! write_status running; then
     rm -f "${STATUS_FILE}.tmp"
-    echo "FATAL: cannot record update status; refusing to start." >&2
+    echo "FATAL: cannot record update status. Refusing to start." >&2
     exit 1
 fi
 # Must stay ahead of the fetch unit start below, which opens $LOG append as root.
 if ! : > "$LOG" || ! chmod 644 "$LOG"; then
-    abort "FATAL: cannot prepare the update log; refusing to start."
+    abort "FATAL: cannot prepare the update log. Refusing to start."
 fi
 
 # Start the fetch phase as a oneshot written to /run, the same field-proven

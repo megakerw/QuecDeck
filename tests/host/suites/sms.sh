@@ -301,7 +301,7 @@ else
 fi
 unset _qscan_now
 unset -f fetches
-. quecdeck/script/at-lib.sh   # restore the real atcmd_run; see the block above
+. quecdeck/script/at-lib.sh   # Restore the real atcmd_run. See the block above.
 rm -rf "$_CACHE_DIR" "$_FETCH_LOG"
 _CACHE_DIR=$_CACHE_DIR_SAVED
 unset _CACHE_DIR_SAVED _STUB_OUT _STUB_RC _FETCH_LOG
@@ -447,7 +447,7 @@ fi
 
 if [ "$SLOW" = "1" ]; then
     _bfd=$(mktemp -d)
-    # Git Bash lacks flock; provide only its successful-lock contract for the
+    # Git Bash lacks flock. Provide only its successful-lock contract for the
     # state-machine cases. CI and the device use the real command.
     _bf_real_flock=1
     if ! command -v flock >/dev/null 2>&1; then

@@ -10,21 +10,21 @@
 # Non-destructive: pure unauthenticated GETs, no logins attempted, so no
 # lockout counters or access-log entries are created. Run it after any change
 # to auth.lua, lighttpd.conf, or the cgi-bin population -- and any time as a
-# post-release health check; it takes seconds.
+# post-release health check. It takes seconds.
 #
 # It checks:
 #   1. The test's expected pre-auth allowlist matches auth.lua's exempt list
 #      exactly (a NEW exempt endpoint must be added here deliberately).
 #   2. Every other file in /www/cgi-bin/ answers an unauthenticated GET with
 #      a redirect to the login page -- never a 200 (executed!) or a 500.
-#   3. The allowlisted endpoints respond as designed; auth_login's GET must be
+#   3. The allowlisted endpoints respond as designed. auth_login's GET must be
 #      an immediate 303 to / (the updater's health probe contract).
 #   4. Static pages are gated too (/ redirects to login) and traversal probes
 #      never yield a 200.
 
 CGI_DIR=/usrdata/quecdeck/www/cgi-bin
 AUTH_LUA=/usrdata/quecdeck/auth.lua
-# Deliberate pre-auth endpoints. Keep in sync with auth.lua's exempt list;
+# Deliberate pre-auth endpoints. Keep in sync with auth.lua's exempt list.
 # check 1 fails loudly if the two ever diverge.
 ALLOWLIST="auth_login auth_logout"
 pass=0; fail=0; warn=0
@@ -55,7 +55,7 @@ echo "=================================================================="
 # so every endpoint would look "gated" while the gating logic under test
 # (session checks) never runs.
 case "$(probe /cgi-bin/get_settings)" in
-    *setup.html*) echo "FATAL: device is in setup mode; complete setup first."; exit 1 ;;
+    *setup.html*) echo "FATAL: device is in setup mode. Complete setup first."; exit 1 ;;
 esac
 
 # ---- Check 1: allowlist matches auth.lua's exempt list ------------------
@@ -63,7 +63,7 @@ echo ""
 echo "[Check 1] Test allowlist vs auth.lua exempt list"
 _lua_exempt=$(sed -n '/^local exempt = {/,/^}/p' "$AUTH_LUA" 2>/dev/null | grep -oE '/cgi-bin/[a-z_]+' | sed 's|/cgi-bin/||')
 if [ -z "$_lua_exempt" ]; then
-    bad "could not parse auth.lua's exempt list (structure changed? update this test)"
+    bad "could not parse auth.lua's exempt list (structure changed? Update this test)"
 fi
 for _e in $_lua_exempt; do
     case " $ALLOWLIST " in
@@ -114,7 +114,7 @@ esac
 
 # ---- Check 4: static gating + traversal probes ---------------------------
 echo ""
-echo "[Check 4] Static pages gated; traversal never yields 200"
+echo "[Check 4] Static pages gated. Traversal never yields 200"
 _r=$(probe /)
 case "$_r" in
     302\|*/login.html*|302\|/login.html*) ok "/ redirects to login" ;;

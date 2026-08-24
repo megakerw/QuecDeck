@@ -15,7 +15,7 @@ js/sms.js           ->  message.indices (storage slots, one per PART)
 POST indices=N,N,.. ->  cgi-bin/delete_sms
 delete_sms          ->  one +CMGD per AT line, never chained
 script/at-lib.sh    ->  atcmd_run, maps atcli's exit 65 to an ERROR body line
-quecdeck/atcli      ->  refuses over CMD_MAX before connecting; unix socket
+quecdeck/atcli      ->  refuses over CMD_MAX before connecting, then uses a unix socket
 atcmd-daemon        ->  owns the AT port, serializes, enforces CMD_MAX
 modem
 ```
@@ -136,7 +136,7 @@ a command count cap.
 
 To separate them, repeat a command with a much shorter response (`AT+CMEE?`
 answers about 9 chars against `+CGMM`'s ~20) and find its boundary. Same count
-means the cap counts commands; a roughly doubled count means it counts
+means the cap counts commands. A roughly doubled count means it counts
 response bytes. Neither outcome threatens a single-slot line, which answers in
 one line, so this was left unresolved on purpose.
 
@@ -147,10 +147,8 @@ nothing. The modem never sees it and is not at fault.
 
 The authority is the atcli repo, `src/daemon.rs`:
 
-```rust
-const CMD_MAX: usize = 512;                            // :35
-if cmd.is_empty() || cmd.len() > CMD_MAX { reject }    // :941
-```
+The daemon defines `CMD_MAX` as 512 bytes near line 35. Near line 941 it
+rejects commands that are empty or longer than that limit.
 
 **Enforcement lives in atcli, not here.** The client refuses an over-`CMD_MAX`
 command before it connects, exits `65`, and names the byte count on stderr.
@@ -161,7 +159,7 @@ has one home. If the exit code here ever drifts from atcli's, the cost is only
 the body line going missing, leaving the generic "no response from the modem".
 
 Two properties of that check are worth knowing, since both were once wrong
-here: the test is `>`, so exactly 512 is still sent; and `cmd.len()` is
+here: the test is `>`, so exactly 512 is still sent. And `cmd.len()` is
 **bytes**, measured after `flatten_framing`, which substitutes tab, newline
 and CR one-for-one and so never changes the length.
 
@@ -207,17 +205,18 @@ the window does not exist.
 ### What is left: the think-time race
 
 Deleting by index is inherently racy over the user's think-time, and this is
-NOT fixed by anything above. `get_sms` lists indices; the user reads the page,
+NOT fixed by anything above. `get_sms` lists indices. The user reads the page,
 decides, and clicks minutes later. If a message was deleted elsewhere and a new
 one arrived into that slot, the delete removes the new message.
 
 Nothing at the AT layer distinguishes a reused slot from the original: `+CMGD=?`
 reports occupancy, not identity. Mitigations all still race (re-list and
-intersect narrows the window; `+CMGR` before each delete doubles the traffic and
+intersect narrows the window. `+CMGR` before each delete doubles the traffic and
 still races), so this is documented rather than defended against.
 
 A chained AT line **stops dead at its first error**, so slots after a bad one
-are never attempted. Confirmed non-destructively: `AT+CMGD=<unused>;+CGMM`
+are never attempted. This was confirmed non-destructively with
+`AT+CMGD=<unused>;+CGMM`. The batch
 returns `+CMS ERROR: 321` (invalid memory index) with no `+CGMM` output
 following. A failed chunk is therefore retried one slot at a time, which
 salvages the rest.
@@ -305,7 +304,7 @@ version is the intuitive one:
 2. **"The modem's input buffer overruns, and the modem violates V.250 by
    answering nothing."** Wrong on both halves. The 512 cap is our daemon's,
    documented in our own test suite, and the modem is not involved in that
-   failure at all, so it violates nothing. The measurement was right; the
+   failure at all, so it violates nothing. The measurement was right. The
    attribution was not. Every probe ran through `atcli` -> daemon -> modem,
    and nothing in the first round of testing controlled for the two nearer
    layers.
@@ -318,7 +317,7 @@ every refusal in its `malformed` counter, visible via `atcli --status`, and
 logs the first of them (rate limited). Nothing in QuecDeck surfaces either.
 
 That counter is also the only direct evidence of the original failure. The
-diagnosis above is otherwise built from probes run after the fact; the counter
+diagnosis above is otherwise built from probes run after the fact. The counter
 recorded the real delete attempts as they were rejected, which is what ties the
 reported symptom to CMD_MAX rather than to the modem.
 
@@ -359,7 +358,7 @@ Delete both from the device afterwards.
 `_ATCLI` override, so it needs no device. That stub returns 65 because the
 test says so, which does not prove atcli returns it: only the atcli repo's own
 `host-test-atclid.sh` closes that gap. `js/sms.js` cannot be executed on the
-dev machine (no JS runtime); verify it by diff review.
+dev machine (no JS runtime). Verify it by diff review.
 
 **Real delete wall time, measured 2026-08-05.** One occupied slot was deleted
 deliberately to settle it (store went 128 used to 127, confirmed):
@@ -415,9 +414,14 @@ instead of pressing the button:
 ```sh
 # On device, as root. Erases EVERY message.
 . /usrdata/quecdeck/script/at-lib.sh
-now_cs() { read -r u _ < /proc/uptime; echo "${u%.*}${u#*.}"; }
+now_cs() {
+    read -r u _ < /proc/uptime
+    echo "${u%.*}${u#*.}"
+}
 atcmd_run 'AT+CPMS="ME","ME","ME"' 3000        # note <used> before
-t0=$(now_cs); reply=$(atcmd_run 'AT+CMGD=1,4' 30000); t1=$(now_cs)
+t0=$(now_cs)
+reply=$(atcmd_run 'AT+CMGD=1,4' 30000)
+t1=$(now_cs)
 echo "delete-all: $(( (t1 - t0) * 10 )) ms, reply: $reply"
 ```
 

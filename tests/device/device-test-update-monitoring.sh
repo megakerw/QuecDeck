@@ -87,11 +87,11 @@ case "$1" in
     prepare)
         [ -d "$QUECDECK/www" ] || { echo "FATAL: QuecDeck is not installed"; exit 1; }
         [ ! -e "${QUECDECK}.old" ] || {
-            echo "FATAL: ${QUECDECK}.old already exists; resolve the stale update backup first"
+            echo "FATAL: ${QUECDECK}.old already exists. Resolve the stale update backup first"
             exit 1
         }
         [ ! -e "$STATE_DIR" ] || {
-            echo "FATAL: an acceptance run already exists; run verify or remove $STATE_DIR"
+            echo "FATAL: an acceptance run already exists. Run verify or remove $STATE_DIR"
             exit 1
         }
         mkdir -m 700 "$STATE_DIR" || exit 1

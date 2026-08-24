@@ -162,7 +162,7 @@ function developerPage() {
       const atTimeout = Math.min(60, Math.max(1, this.atTimeout || 5));
       authFetch("/cgi-bin/user_atcommand", { method: "POST", body: new URLSearchParams({ atcmd: this.atcmd, timeout: atTimeout * 1000 }) })
         .then((res) => {
-          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+          if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
           return res.text();
         })
         .then((data) => {

@@ -167,7 +167,7 @@ while true; do
         sleep 5
         ts=$(date +%s)
         response=$(atcmd_run 'AT+QENG="servingcell"' 10000)
-        # Incomplete re-poll: skip without updating prev_*; the next cycle
+        # Incomplete re-poll: skip without updating prev_*. The next cycle
         # logs the connected event with real cell info instead.
         [ "${response##*$'\n'}" = "OK" ] || continue
         parse_qeng "$response"

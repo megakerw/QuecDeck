@@ -81,7 +81,7 @@ Scan for nearby cells and display network, provider, band, frequency, PCI, and R
 The monitoring units remain installed and boot-enabled. Their configuration determines whether monitoring is active. Disabled features exit cleanly without pinging or accessing the modem and are restarted when enabled from the UI.
 
 ### SMS
-View, read, and delete SMS messages directly from the modem's inbox, newest first. A long message is stored as several parts, so deleting one can issue many delete commands; they are sent one at a time under an overall time limit, and if any parts are left behind the page reports how many rather than showing a success that did not happen.
+View, read, and delete SMS messages directly from the modem's inbox, newest first. A long message is stored as several parts, so deleting one can issue many delete commands. They are sent one at a time under an overall time limit, and if any parts are left behind the page reports how many rather than showing a success that did not happen.
 
 ### Device Information
 - **Device & SIM:** manufacturer, model, firmware version, build time, IMEI, phone number, IMSI, and ICCID
@@ -124,11 +124,11 @@ QuecDeck started as a fork of [Simple Admin](https://github.com/iamromulan/quect
 All modem communication goes through [atcli](https://github.com/megakerw/atcli_rust) (a fork of [atcli_rust](https://github.com/1alessandro1/atcli_rust)), a Rust-based AT command CLI that emits clean newline-terminated output (modem `\r` framing is stripped at the source). That is a contract the shell side relies on rather than a convenience: nothing downstream re-strips carriage returns, so replies are parsed as they arrive.
 The release stores the binary at `quecdeck/atcli`, matching its installed path at `/usrdata/quecdeck/atcli`.
 
-- **Single gateway.** Shell code never invokes atcli directly; every caller goes through `script/at-lib.sh`, enforced by a pre-commit check.
+- **Single gateway.** Shell code never invokes atcli directly. Every caller goes through `script/at-lib.sh`, enforced by a pre-commit check.
 - **Serialization and privilege.** Serialization happens inside atcli itself. Its daemon side (`atcli --daemon`, unit `atcmd-daemon`) opens the modem port as root, drops to www-data, and serves one command per unix-socket connection, verifying each peer's uid via `SO_PEERCRED`. The atcli binary is not setuid: the daemon is the only privileged path to the modem.
 - **No silent fallback.** There is no automatic fallback to the port, so a plain invocation never bypasses the serializer. If the daemon is down, every caller (root and www-data alike) gets empty output until systemd restarts it within seconds, and the UI tolerates the gap. A root operator can still reach the modem directly for recovery by passing `--direct` explicitly.
-- **Sender lifecycle.** Commands whose sender has hung up are skipped instead of being sent to the modem; fire-and-forget senders (modem reboots) pass `--detach`.
-- **Reply completeness.** A reply cut short by a timeout is byte-for-byte a shorter complete one, so the exit status, not the output, is what says whether the modem finished. The atcli client exits 0 only when the modem terminated the reply itself; both `OK` and `ERROR` count as terminated. It exits non-zero when the modem did not, leaving whatever arrived on stdout, and non-zero with empty stdout when nothing arrived at all (timeout, or the daemon down). Callers that must not parse a truncated record check the status and drop stdout: `get_sms` refuses a short `+CMGL` listing rather than serving it as a complete inbox, `run_cell_scan` appends a `PARTIAL` marker, the developer console labels an unterminated reply, and the updater's health probe warns. A pipe masks the status, so a caller that needs it assigns first, then pipes.
+- **Sender lifecycle.** Commands whose sender has hung up are skipped instead of being sent to the modem. Fire-and-forget senders (modem reboots) pass `--detach`.
+- **Reply completeness.** A reply cut short by a timeout is byte-for-byte a shorter complete one, so the exit status, not the output, is what says whether the modem finished. The atcli client exits 0 only when the modem terminated the reply itself. Both `OK` and `ERROR` count as terminated. It exits non-zero when the modem did not, leaving whatever arrived on stdout, and non-zero with empty stdout when nothing arrived at all (timeout, or the daemon down). Callers that must not parse a truncated record check the status and drop stdout: `get_sms` refuses a short `+CMGL` listing rather than serving it as a complete inbox, `run_cell_scan` appends a `PARTIAL` marker, the developer console labels an unterminated reply, and the updater's health probe warns. A pipe masks the status, so a caller that needs it assigns first, then pipes.
 - **Caching.** Responses are cached per endpoint to reduce modem load, with TTLs tuned to how often the data actually changes: 2 seconds for signal stats, connection and SIM info, 5 seconds for network and settings data, and 1 hour for static device info like firmware version and build time. Where possible, multiple AT commands are batched into a single request to cut down on round trips.
 
 ### Firewall
@@ -142,22 +142,22 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 
 **Network exposure:** each service independently manages its own bind IP at startup (lighttpd via `lighttpd_prestart.sh`, sshd via `update_sshd_ip.sh`), so neither listens on the WAN interface even if the LAN IP changes. The firewall adds a second layer on top of this.
 
-**Privileges:** QuecDeck ships no setuid binaries. The only privileged path to the modem's serial interface (`/dev/smd11`) is the AT daemon, which systemd starts as root and which drops to www-data after opening the port; clients talk to it over a uid-checked unix socket. CGI scripts do not run as root, and the web server runs as `www-data:www-data` with no supplementary groups. Root actions available to the web tier are limited to an enumerated sudoers allowlist of argument-fixed scripts.
+**Privileges:** QuecDeck ships no setuid binaries. The only privileged path to the modem's serial interface (`/dev/smd11`) is the AT daemon, which systemd starts as root and which drops to www-data after opening the port. Clients talk to it over a uid-checked unix socket. CGI scripts do not run as root, and the web server runs as `www-data:www-data` with no supplementary groups. Root actions available to the web tier are limited to an enumerated sudoers allowlist of argument-fixed scripts.
 
 **Web application:**
 - All CGI endpoints validate the `Origin` header against the current host, blocking cross-origin requests and functioning as CSRF protection
 - All state-changing endpoints are POST-only
-- Login attempts are rate-limited with a 1-second delay per attempt and a 15-minute lockout after 5 failures; all login events are written to the access log
-- Session tokens are 64-character random strings stored in `0600` files inside a `0700` directory; cookies are flagged `HttpOnly`, `Secure`, and `SameSite=Strict`; session file writes are atomic (temp file plus rename), and the developer-unlock flag is kept in a separate per-session file to avoid write races
+- Login attempts are rate-limited with a 1-second delay per attempt and a 15-minute lockout after 5 failures. All login events are written to the access log
+- Session tokens are 64-character random strings stored in `0600` files inside a `0700` directory. Cookies are flagged `HttpOnly`, `Secure`, and `SameSite=Strict`. Session file writes are atomic (temp file plus rename), and the developer-unlock flag is kept in a separate per-session file to avoid write races
 - Passwords must be at least 8 characters and are validated before any credential check is performed
 - Path traversal is rejected in depth: lighttpd is pinned to reject encoded slashes (`%2f`) and dot-segments rather than silently decode them, and the auth layer independently rejects both literal `..` and percent-encoded (`%2e`) sequences before any access-exemption check
 
 **Data at rest:** private web runtime state follows one invariant: it is owned by
 `www-data`, directories are `0700`, and regular application-data files are
-`0600`. Shell CGIs establish that file mode with `umask 077` in `cgi-lib.sh`;
+`0600`. Shell CGIs establish that file mode with `umask 077` in `cgi-lib.sh`.
 systemd units use `UMask=0077` for Lua and standalone service writers. Modes are
 restrictive at creation time, not repaired afterward with `chmod`. IPC entries
-such as `atcli.sock` and its empty lock file use service-defined modes; their
+such as `atcli.sock` and its empty lock file use service-defined modes. Their
 `0700` parent remains the access boundary. Root can inspect all of this state
 through its normal DAC override. Password hashes are stored `root:root 600`,
 unreadable from the web tier: login checks pass the password over stdin to a
@@ -169,7 +169,7 @@ mask applies, and inspect the loaded setting and runtime tree as root:
 
 ```sh
 systemctl show lighttpd -p UMask -p MainPID
-find /tmp/quecdeck -maxdepth 3 -exec stat -c '%A %a %U:%G %n' {} \;
+find /tmp/quecdeck -maxdepth 3 -exec stat -c '%A %a %U:%G %n' {} +
 ```
 
 Files that existed before a permission-policy update retain their old mode until
@@ -216,7 +216,7 @@ The repository includes the following host and device checks. The applicable hos
 
 The pre-commit hook is enabled with `git config core.hooksPath .githooks`.
 
-**Shell performance rule** (measured on the device's single Cortex-A7): bash builtins are used only for small or fixed-size data; bulk transformation of unbounded AT responses uses `tr`/`awk`, never bash pattern replacement, whose cost scales with size times match count (48 seconds on a 44 KB SMS list, versus 20 ms for `tr`). The atcli repo's CI guards the daemon path with a large-response test.
+**Shell performance rule** (measured on the device's single Cortex-A7): bash builtins are used only for small or fixed-size data. Bulk transformation of unbounded AT responses uses `tr`/`awk`, never bash pattern replacement, whose cost scales with size times match count (48 seconds on a 44 KB SMS list, versus 20 ms for `tr`). The atcli repo's CI guards the daemon path with a large-response test.
 
 ## Credits
 

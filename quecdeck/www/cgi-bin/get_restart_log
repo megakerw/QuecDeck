@@ -12,9 +12,9 @@ lines=$(cat "$LOG" 2>/dev/null)
 [ -z "$lines" ] && { printf '[]\n'; exit 0; }
 
 # Per entry, pick the most trustworthy time source (see watchcat.sh
-# log_restart): the stored wall ts if the clock was synced at write time;
+# log_restart): the stored wall ts if the clock was synced at write time,
 # else reconstruct from uptime, which is only valid for entries from the
-# current boot (uptime restarts at 0 each boot); else ts=0 and the frontend
+# current boot because uptime restarts at 0 each boot. Otherwise ts=0 and the frontend
 # labels the entry "previous boot" rather than showing a wrong time. Row
 # order is append order, which is always true chronology.
 MIN_PLAUSIBLE_TS=1700000000

@@ -72,17 +72,17 @@ function logsPage() {
           }
           return ev.mode || '';
         case 'disconnected':
-          return 'Last mode: ' + (ev.prev_mode || '—');
+          return 'Last mode: ' + (ev.prev_mode || '-');
         case 'cell_change': {
-          const cellRef = c => c.cell_id ? c.cell_id + ':' + c.pci : '—';
+          const cellRef = c => c.cell_id ? c.cell_id + ':' + c.pci : '-';
           const modePrefix = ev.mode ? ev.mode + ' | ' : '';
           const cellStr = cellRef(ev.from) + ' → ' + cellRef(ev.to);
           const radioStr = ev.to.cell_id ? ' | Band: ' + ev.to.band + ' | EARFCN: ' + ev.to.earfcn : '';
           return modePrefix + cellStr + radioStr;
         }
         case 'mode_change': {
-          const fromMode = ev.from || '—';
-          const toMode   = ev.to   || '—';
+          const fromMode = ev.from || '-';
+          const toMode   = ev.to   || '-';
           const cellPci  = ev.cell_id ? ' | Cell: ' + ev.cell_id + ' | PCI: ' + ev.pci : '';
           return fromMode + ' → ' + toMode + cellPci;
         }
@@ -143,7 +143,7 @@ function logsPage() {
       );
     },
 
-    // One fetch serves all panels; the flags pick which parts to apply so a
+    // One fetch serves all panels. The flags pick which parts to apply so a
     // per-panel Refresh doesn't clobber the other panels' timestamps.
     refreshLogs(conn, access, atcmd) {
       if (conn) this.loadingConn = true;

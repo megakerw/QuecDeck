@@ -122,7 +122,7 @@ function networkSettings() {
       });
     },
 
-    // dir is -1 (up) or 1 (down); swaps the entry with its neighbour.
+    // dir is -1 (up) or 1 (down). Swaps the entry with its neighbour.
     moveRatAcq(index, dir) {
       const target = index + dir;
       if (target < 0 || target >= this.ratAcqModes.length) return;
@@ -366,8 +366,8 @@ function networkSettings() {
       })
         .then(text => {
           // at_result turns a failed/empty AT reply into a line containing
-          // "ERROR"; a real ack requires an OK-terminated reply, so treat
-          // anything with ERROR (incl. daemon-down "no response") as failure.
+          // "ERROR". A real ack requires an OK-terminated reply, so treat
+          // anything with ERROR (including daemon-down "no response") as failure.
           // Stop the wait countdown first: errorModal.open is a no-op while
           // the wait modal is showing, and a failed set never reboots anyway.
           if (text.includes("WARNING:")) {

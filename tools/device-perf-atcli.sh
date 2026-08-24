@@ -3,7 +3,7 @@
 # binary, and compare the two runs:
 #   /tmp/device-perf-atcli.sh                        # whatever is deployed
 #   /tmp/device-perf-atcli.sh /usrdata/quecdeck/atcli /tmp/atcli-new
-# Dev tool, not deployed; copy it to the device manually. Sends only 'AT' and
+# Dev tool, not deployed. Copy it to the device manually. Sends only 'AT' and
 # one read-only list command.
 #
 # The second form is the useful one before a deploy: the wire protocol has not
@@ -23,7 +23,7 @@
 #   big reply  bytes and elapsed for one multi-line response, so a change in
 #              the reader's line handling shows up as throughput.
 #   resident   the daemon's own memory. Flat across a run is the property that
-#              matters; the reader's channel is bounded, so growth here is a
+#              matters. The reader's channel is bounded, so growth here is a
 #              regression, not load.
 #
 # Timings are steady-state (warm page cache) because that is the state a
@@ -39,7 +39,7 @@ ATLIB=/usrdata/quecdeck/script/at-lib.sh
 EXEC_N=${EXEC_N:-200}          # execs per exec measurement
 RT_N=${RT_N:-50}               # round trips per round-trip measurement
 # Assigned in a branch, not with :-, because the default carries quotes that
-# ${BIG_CMD:-...} would strip on the way through. AT+CGDCONT? is the default
+# ${BIG_CMD:-...} would strip on the way through. AT+CGDCONT? Is the default
 # because every modem answers it, at length, and ends it with OK.
 if [ -z "${BIG_CMD:-}" ]; then BIG_CMD='AT+CGDCONT?'; fi
 # Short, because a command that never terminates costs this in full, twice over
@@ -75,7 +75,7 @@ if [ -n "${daemon_pid:-}" ] && [ -r "/proc/$daemon_pid/status" ]; then
     [ -n "${pss:-}" ] && echo "  pss:         $pss KB"
     echo "  threads:     $(awk '/^Threads:/ {print $2}' "/proc/$daemon_pid/status")"
 else
-    echo "  not running - client round trips below will fail; start atcmd-daemon"
+    echo "  not running. Client round trips below will fail. Start atcmd-daemon."
 fi
 echo
 

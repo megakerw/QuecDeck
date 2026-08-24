@@ -82,7 +82,7 @@ grep -qx 'umask 077' /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null && UMASK_DE
 [ "$DEPLOYED" = "0" ] && {
     echo ""
     echo "  !! Installed run_update.sh does not use /run/quecdeck: the split is"
-    echo "     NOT deployed. Running read-only checks only; C and D are skipped"
+    echo "     NOT deployed. Running read-only checks only. C and D are skipped"
     echo "     to avoid a misleading verdict."
 }
 
@@ -242,7 +242,7 @@ if [ -d "$FRESH" ]; then
     fi
     unset _bf_parallel _bf_results _attempt
 else
-    note "creators did not run; cgi-lib.sh may not be installed at the expected path"
+    note "creators did not run. cgi-lib.sh may not be installed at the expected path"
 fi
 rm -rf "$FRESH" 2>/dev/null
 
@@ -274,7 +274,7 @@ for _d in "$WEBDIR/sessions" "$WEBDIR/cache"; do
         fi
     done
 done
-[ "$_a3" = "0" ] && note "no session or cache files yet; log in to the UI and load the dashboard, then re-run"
+[ "$_a3" = "0" ] && note "no session or cache files yet. Log in to the UI and load the dashboard, then re-run"
 for _f in "$WEBDIR/logs"/*; do
     [ -f "$_f" ] || continue
     _lm=$(stat -c %a "$_f" 2>/dev/null)
@@ -354,7 +354,7 @@ done
 echo ""
 echo "[D] root does not follow a link planted in www-data's tree"
 if [ "$UNIT_DEPLOYED" = "0" ]; then
-    note "skipped: atcmd-daemon.service on the rootfs still writes the pre-split path; restarting would only re-prove the old bug"
+    note "skipped: atcmd-daemon.service on the rootfs still writes the pre-split path. Restarting would only re-prove the old bug"
 elif [ -d "$WEBDIR" ]; then
     printf 'CANARY\n' > /tmp/qdsplit-decoy; chmod 600 /tmp/qdsplit-decoy
     # atcmd.log.tmp is the name the OLD atcmd-daemon trim wrote through.
@@ -367,10 +367,10 @@ elif [ -d "$WEBDIR" ]; then
         rm -f "$WEBDIR/logs/atcmd.log.tmp" 2>/dev/null
         echo "  atcmd-daemon: $(systemctl is-active atcmd-daemon 2>/dev/null)"
     else
-        note "could not plant the test link; section D not exercised"
+        note "could not plant the test link. Section D not exercised"
     fi
 else
-    note "$WEBDIR absent; section D not exercised"
+    note "$WEBDIR absent. Section D not exercised"
 fi
 
 # ---- E: one-time root-home migration ------------------------------------

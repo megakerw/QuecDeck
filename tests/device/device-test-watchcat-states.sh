@@ -109,7 +109,7 @@ wait_for_change() {
 }
 
 # Miss count for one IP, including the negative sentinel. The character class
-# rather than an escaped optional: BRE support for \? is not portable across
+# rather than an escaped optional: BRE support for \? Is not portable across
 # the greps this device may ship.
 miss_for() {
     grep -o "\"ip\":\"$1\",\"miss\":[-0-9]*" "$STATS" 2>/dev/null | sed 's/.*"miss"://'

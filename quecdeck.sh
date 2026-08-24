@@ -26,7 +26,7 @@ remount_ro() {
 # entry differed, quietly breaking the console menu and password tools. Warns on
 # failure so a missed patch is visible instead of silent.
 patch_root_passwd() {
-    [ -f /opt/etc/passwd ] || { echo -e "\e[1;31mWarning: /opt/etc/passwd not found; cannot set root home.\e[0m"; return 1; }
+    [ -f /opt/etc/passwd ] || { echo -e "\e[1;31mWarning: /opt/etc/passwd not found. Cannot set root home.\e[0m"; return 1; }
     sed -i 's|^\(root:[^:]*:[^:]*:[^:]*:[^:]*:\)[^:]*:[^:]*$|\1/usrdata/root:/bin/bash|' /opt/etc/passwd
     if ! grep -q '^root:[^:]*:[^:]*:[^:]*:[^:]*:/usrdata/root:/bin/bash$' /opt/etc/passwd; then
         echo -e "\e[1;31mWarning: could not repoint root's home to /usrdata/root in /opt/etc/passwd.\e[0m"
@@ -101,7 +101,7 @@ root_home_profile() {
 ensure_entware_installed() {
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     if ! remount_rw; then
-        echo -e "\e[1;31mCannot remount / read-write; Entware setup aborted.\e[0m"
+        echo -e "\e[1;31mCannot remount / read-write. Entware setup aborted.\e[0m"
         trap - EXIT
         return 1
     fi
@@ -116,7 +116,7 @@ ensure_entware_installed() {
         _ent=/run/quecdeck/installentware.sh
         rm -f "$_ent"
         wget --timeout=30 --tries=2 -O "$_ent" "$GITROOT/installentware.sh"
-        echo "fea6ce198087f4869ef8def1a57d4f1a2a3b821c7ae86396363fc840c43493ff  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
+        echo "dd23b6fe0ce202c9f9e3c88750775940ffcc901915a247495b19a17100e4cc87  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
         echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
         # Run with the staging dir as CWD, matching the previous "cd /tmp" so a
         # relative write by the installer still lands in scratch tmpfs.
@@ -198,7 +198,7 @@ uninstall_entware() {
     if mountpoint -q /opt; then
         umount /opt \
             && result_opt_unmount="OK" \
-            || { result_opt_unmount="WARNING"; echo -e "\e[1;31mWARNING: Could not unmount /opt; a reboot may be required to complete removal.\e[0m"; }
+            || { result_opt_unmount="WARNING"; echo -e "\e[1;31mWARNING: Could not unmount /opt. A reboot may be required to complete removal.\e[0m"; }
     fi
 
     # Remove Entware data directory (/usrdata is always writable)
@@ -226,7 +226,7 @@ uninstall_entware() {
             result_login="RESTORED"
         else
             result_login="WARNING"
-            echo -e "\e[1;31mWARNING: /bin/login.shadow not found; could not restore login binary. Console login may be broken.\e[0m"
+            echo -e "\e[1;31mWARNING: /bin/login.shadow not found. Could not restore login binary. Console login may be broken.\e[0m"
         fi
     fi
 
@@ -523,7 +523,7 @@ uninstall_quecdeck_components() {
 
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     if ! remount_rw; then
-        echo -e "\e[1;31mCannot remount / read-write; uninstall aborted before removing anything.\e[0m"
+        echo -e "\e[1;31mCannot remount / read-write. Uninstall aborted before removing anything.\e[0m"
         trap - EXIT
         return 1
     fi
@@ -765,7 +765,7 @@ sshd_service() {
             ensure_rundir
             _stage=/run/quecdeck
             /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
-            echo "12f5725cbaa915a0b98fa83180b60eb179a5235a98598183799dc570ee8b4d5c  $_stage/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f $_stage/sshd.service; return; }
+            echo "e332efa5fefe99c0d7f63619834646896fa03a131f0c383ca9bed061a6aa4bab  $_stage/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f $_stage/sshd.service; return; }
             echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
             /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
             echo "dc10b79739f1d788cfcdfc805e4f84fe1f7da5df29aacc3e3f7f76f0cc1eef19  $_stage/update_sshd_ip.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_sshd_ip.sh.\e[0m"; rm -f $_stage/update_sshd_ip.sh; return; }
@@ -789,9 +789,9 @@ sshd_service() {
             # The sshd start is gated on the restart: without the port-22 rules,
             # sshd would listen unrestricted (WAN included) while the UI is down.
             if systemctl restart firewall; then
-                systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start; check 'systemctl status sshd' for details.\e[0m"; }
+                systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start. Check 'systemctl status sshd' for details.\e[0m"; }
             else
-                echo -e "\e[1;31mWARNING: firewall failed to restart; sshd NOT started so port 22 never listens unprotected.\e[0m"
+                echo -e "\e[1;31mWARNING: firewall failed to restart. Sshd was not started, so port 22 never listens unprotected.\e[0m"
                 echo -e "\e[1;31mCheck 'systemctl status firewall lighttpd', then 'systemctl start sshd' once the firewall is active.\e[0m"
             fi
             echo ""
@@ -812,7 +812,7 @@ sshd_service() {
             # Drop the port-22 rule (sshd.service removed above, so firewall.sh
             # rebuilds without it). Restart the service, not firewall.sh directly,
             # to stay fail-closed. This also cycles lighttpd through PartOf=.
-            systemctl restart firewall || echo -e "\e[1;31mWARNING: firewall failed to restart; the web UI may be down. Check 'systemctl status firewall lighttpd'.\e[0m"
+            systemctl restart firewall || echo -e "\e[1;31mWARNING: firewall failed to restart. The web UI may be down. Check 'systemctl status firewall lighttpd'.\e[0m"
             echo ""
             echo -e "\e[1;32msshd uninstalled.\e[0m"
             ;;

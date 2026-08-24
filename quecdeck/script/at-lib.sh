@@ -58,7 +58,7 @@
 # the daemon never sees the command, so nothing else records the refusal.
 _atcmd_report() {
     [ "$1" -eq "$_AT_E_TOOLONG" ] || return "$1"
-    local msg="ERROR: AT command too long for the daemon; split it"
+    local msg="ERROR: AT command too long for the daemon. Split it."
     printf '%s\n' "$msg" >&2
     printf '%s\n' "$msg"
     return "$1"

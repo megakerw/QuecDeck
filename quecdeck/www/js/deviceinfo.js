@@ -40,7 +40,7 @@ function fetchDeviceInfo() {
     quecdeckVersion: '',
 
     // Fetches the device-info snapshot and parses each section under its own
-    // try/catch; an empty section is passed through so its parser can handle
+    // try/catch. An empty section is passed through so its parser can handle
     // absent fields (e.g. the no-SIM message).
     fetchATCommand() {
       fetchText("/cgi-bin/get_deviceinfo", { method: "POST" })

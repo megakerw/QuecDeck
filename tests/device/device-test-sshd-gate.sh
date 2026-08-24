@@ -7,7 +7,7 @@
 #   2. Happy path: firewall active -> sshd starts and listens on 22.
 #   3. Gate: with the firewall failed (stubbed script), `systemctl start
 #      sshd` fails and NOTHING listens on 22.
-#   4. Recovery: restore the firewall; it self-heals (Restart=on-failure),
+#   4. Recovery: restore the firewall. It self-heals (Restart=on-failure),
 #      then sshd's own retry loop brings sshd up with no manual start.
 #   5. Session survival: a normal `systemctl restart firewall` leaves the
 #      running sshd untouched (same MainPID) -- the reason the gate is an
@@ -89,7 +89,7 @@ else
 fi
 _rsec=$(systemctl show sshd -p RestartUSec 2>/dev/null | cut -d= -f2)
 [ "$_rsec" = "10s" ] && ok "RestartSec is 10s (retry loop stays under the start-rate limiter)" \
-    || bad "RestartUSec is '$_rsec' (expected 10s); a fast loop can hit start-limit and never recover"
+    || bad "RestartUSec is '$_rsec' (expected 10s). A fast loop can hit start-limit and never recover"
 
 echo ""
 echo "[Baseline] firewall and lighttpd active"
@@ -98,14 +98,14 @@ wait_state firewall active 5 && ok "firewall is active" || { bad "firewall not a
 wait_state lighttpd active 5 && ok "lighttpd is active" || { bad "lighttpd not active"; _base_ok=0; }
 if [ "$_base_ok" != "1" ]; then
     echo ""
-    echo "Baseline not healthy; skipping the disruptive checks."
+    echo "Baseline not healthy. Skipping the disruptive checks."
     rm -rf "$DIR"
     [ "$fail" -eq 0 ] && exit 0 || exit 1
 fi
 
 if [ "$YES" != "1" ]; then
     echo ""
-    printf 'Checks 2-5 stop/start sshd and break the firewall on purpose; the\n'
+    printf 'Checks 2-5 stop/start sshd and break the firewall on purpose. The\n'
     printf 'web UI is down for up to ~60s and SSH sessions drop. Continue? [y/N] '
     read _ans
     case "$_ans" in y|Y|yes|YES) ;; *) echo "Aborted (read-only checks above still count)."; rm -rf "$DIR"; [ "$fail" -eq 0 ] && exit 0 || exit 1 ;; esac
@@ -173,7 +173,7 @@ systemctl restart firewall >/dev/null 2>&1
 wait_state lighttpd active 20
 _pid_after=$(systemctl show sshd -p MainPID 2>/dev/null | cut -d= -f2)
 if [ -n "$_pid_before" ] && [ "$_pid_before" = "$_pid_after" ] && wait_state sshd active 5; then
-    ok "sshd untouched by the firewall restart (MainPID $_pid_before unchanged; sessions survive)"
+    ok "sshd untouched by the firewall restart (MainPID $_pid_before unchanged, sessions survive)"
 else
     bad "sshd was disturbed by the firewall restart (MainPID $_pid_before -> $_pid_after)"
 fi
@@ -187,7 +187,7 @@ if [ "$fail" -eq 0 ]; then
     echo " VERDICT: gate correct: sshd never binds without the firewall,"
     echo "          recovers on its own, and firewall restarts spare sessions."
 else
-    echo " VERDICT: failures above. State restored; sshd left as found."
+    echo " VERDICT: failures above. State restored. Sshd left as found."
 fi
 echo "=================================================================="
 [ "$fail" -eq 0 ] && exit 0 || exit 1

@@ -6,12 +6,12 @@
 # caller looks fine until printf -v, which ash prints to stdout instead of
 # assigning: corrupt output rather than an error. Refuse up front.
 if [ -z "$BASH_VERSION" ]; then
-    echo "cgi-lib.sh requires bash; sourced by a non-bash shell" >&2
+    echo "cgi-lib.sh requires bash. It was sourced by a non-bash shell." >&2
     return 1 2>/dev/null || exit 1
 fi
 
 # Everything this library writes (cache, logs, lockout counters) is www-data's
-# private state, so seal it at the source. umask is a builtin, so this costs no
+# private state, so seal it at the source. Umask is a builtin, so this costs no
 # fork on the poll path, and unlike a unit's UMask= it holds no matter who
 # invokes the caller (sudo, a shell, a future unit that forgets the directive).
 # The units set UMask=0077 too, which is what covers auth.lua: it runs inside
@@ -52,7 +52,7 @@ cgi_require_post() {
     fi
 }
 
-# Read POST body into $post_data, capped at max_bytes (default 4096).
+# read POST body into $post_data, capped at max_bytes (default 4096).
 # Usage: cgi_read_post [max_bytes]
 cgi_read_post() {
     local max="${1:-4096}"
@@ -136,7 +136,7 @@ valid_ipv4() {
 # ---------------------------------------------------------------------------
 MOBILEAP_CFG=/etc/data/mobileap_cfg.xml
 
-# Read one or more tags in a SINGLE pass, setting one variable per tag:
+# read one or more tags in a SINGLE pass, setting one variable per tag:
 #   mobileap_read APIPAddr UPnP   ->   $mf_APIPAddr, $mf_UPnP
 # Absent tags are set empty. The first occurrence wins. Tag names are literals
 # supplied by CGIs, never request input.
@@ -186,7 +186,7 @@ mobileap_lan_ip() {
     fi
 }
 
-# Echo "true" if <value> equals <match>, else "false", for building JSON from
+# echo "true" if <value> equals <match>, else "false", for building JSON from
 # form fields. Usage: enabled=$(json_bool "$ENABLED" enable)
 json_bool() {
     [ "$1" = "$2" ] && echo "true" || echo "false"
@@ -367,7 +367,7 @@ bf_clear() {
 # ---------------------------------------------------------------------------
 # On-demand AT response cache.
 #
-# Read CGIs call cache_get_or_fetch: response is served from a file if fresh,
+# read CGIs call cache_get_or_fetch: response is served from a file if fresh,
 # otherwise fetched live, cached atomically via temp+mv, and returned.
 # Write CGIs call cache_invalidate on every file their change affects. The next
 # read fetches live. They do not warm the cache: only a read knows what the
@@ -496,10 +496,10 @@ at_response_ok() {
 # Turn a write command's AT reply into a result the frontend can positively
 # ack: the reply passes through on success when it ends in OK. Otherwise it becomes a
 # line CONTAINING "ERROR" (the modem's own error line, or a synthesized one for
-# an empty/timed-out reply). So an empty reply - e.g. the daemon restarting -
+# an empty/timed-out reply). So an empty reply, e.g. the daemon restarting,
 # reads as failure instead of false success. Callers that must tolerate a
 # cut-off reply (modem reboots) should skip this and print optimistically.
-# Usage: result=$(atcmd_run "AT+X"); at_result "$result"
+# Usage: result=$(atcmd_run "AT+X"). at_result "$result"
 at_result() {
     local reply="$1" err
     if at_response_ok "$reply"; then

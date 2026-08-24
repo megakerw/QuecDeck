@@ -26,7 +26,7 @@ curl.exe -k -s --rate 20/m -b "session=$TOK" -w '%{time_starttransfer}\n' \
     -o out.bin -d '' https://192.168.225.1/cgi-bin/get_dashboard   # x N
 ```
 
-**Timings at cadence are noisy; counters are not.** With n=10 the spread
+**Timings at cadence are noisy. Counters are not.** With n=10 the spread
 swallows a ~10 ms difference. For anything about cache hit rate, read the
 daemon's own counter instead and compare deltas:
 
@@ -58,7 +58,7 @@ user's first request after an idle period pays.
 | Operation | Cost | Notes |
 |---|---|---|
 | `read -r var < file` (builtin) | **150 us** | one line |
-| passing a large string to a function | **~10 ms per 49 KB** | bash copies it; window instead |
+| passing a large string to a function | **~10 ms per 49 KB** | bash copies it. Window instead |
 | whole-file read via `read -r -d ''` | **400-450 us** | includes the open |
 | `_epoch_now` (two procfs reads) | **800-1000 us** | no fork |
 | `var=$(<file)` | **1750-1800 us** | subshell, no exec |
@@ -122,7 +122,7 @@ cost every other page pays while one is in flight.
 | `AT+CSQ` | 1 | 2 ms |
 | `device_sim` (`+CIMI;+ICCID;+CNUM`) | 3 | 2 ms |
 | `modem_conn` (`+QMAP="WWANIP";+CGCONTRDP`) | 2 | 5 ms |
-| `modem_stats` (`+QTEMP;+QENG;+QCAINFO;+CSQ;…`) | 9 | **18 ms** |
+| `modem_stats` (`+QTEMP;+QENG;+QCAINFO;+CSQ;...`) | 9 | **18 ms** |
 | `get_sms` full listing (`+CMGL=4`, 128 parts, ~49 KB) | 6 | **127-136 ms** |
 
 Dropping `+CSCA?` and `+CSMP` from the SMS listing chain took it from 136 ms to
@@ -143,7 +143,7 @@ specific expensive query rather than splitting a batch.
 
 Chained deletes scale **linearly**: 21 ms per slot chained against 20 ms for a
 single slot, so batching the round trips buys nothing. QuecDeck therefore does
-**not** chain (see `tools/sms-delete-flow.md`); the chained figure is kept
+**not** chain (see `tools/sms-delete-flow.md`). The chained figure is kept
 because it is what settled that question. Both are one-shot measurements against
 real messages, which is why they were not taken sooner.
 
@@ -190,7 +190,7 @@ the cache, and `modem_conn` is 5000 against 15500. The wrapper adds roughly
 10-15 ms to a miss, including validation, time-header work and the atomic write.
 
 **Removing the `chmod` fork cut `cache_write` from 7750 us to 4900 us.** Files
-now land `0600` from `cgi-lib.sh`'s `umask 077`; www-data is the only application
+now land `0600` from `cgi-lib.sh`'s `umask 077`. www-data is the only application
 consumer and root can still inspect them through its DAC override. `mv` remains
 because it is the atomic replace that prevents torn reads.
 
@@ -210,7 +210,7 @@ sometimes served stale data.
 
 ## Where the measurements live
 
-This file is the index. Domain detail stays in its own document; don't copy
+This file is the index. Domain detail stays in its own document. Don't copy
 numbers here that already have a home.
 
 | Harness | Measures |
@@ -229,15 +229,23 @@ Host suite, no device needed: `tests/host/run-tests.sh`.
 
 Device scripts: copy to `/tmp`, run as root, delete afterwards.
 
-Ad-hoc timing loops use `/proc/uptime` for a fork-free clock; busybox `date`
+Ad-hoc timing loops use `/proc/uptime` for a fork-free clock. BusyBox `date`
 has no `%N`, so resolution is 10 ms and anything short must be timed over
 N iterations and divided:
 
 ```sh
-now_cs() { read -r u _ < /proc/uptime; echo "${u%.*}${u#*.}"; }
-t0=$(now_cs); i=0
-while [ "$i" -lt 200 ]; do thing_under_test >/dev/null 2>&1; i=$((i + 1)); done
-t1=$(now_cs); echo "$(( (t1 - t0) * 10 * 1000 / 200 )) us each"
+now_cs() {
+    read -r u _ < /proc/uptime
+    echo "${u%.*}${u#*.}"
+}
+t0=$(now_cs)
+i=0
+while [ "$i" -lt 200 ]; do
+    thing_under_test >/dev/null 2>&1
+    i=$((i + 1))
+done
+t1=$(now_cs)
+echo "$(( (t1 - t0) * 10 * 1000 / 200 )) us each"
 ```
 
 Check correctness before timing: a faster variant that returns different values

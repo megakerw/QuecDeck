@@ -32,7 +32,7 @@ cleanup() {
         rm -f "$BACKUP"
         echo "RESTORED_ORIGINAL"
     else
-        echo "FATAL: could not restore filter table; backup retained at $BACKUP" >&2
+        echo "FATAL: could not restore filter table. Backup retained at $BACKUP" >&2
     fi
 }
 trap cleanup EXIT
@@ -45,7 +45,7 @@ iptables -A "$CHAIN" -p udp --dport 53 -j DROP || exit 1
 iptables -A "$CHAIN" -p tcp --dport 53 -j DROP || exit 1
 iptables -I INPUT 1 -j "$CHAIN" || exit 1
 
-echo "READY: for ${WINDOW}s, DNS to $LAN_IP must work; DNS to any other modem address must fail"
+echo "READY: for ${WINDOW}s, DNS to $LAN_IP must work. DNS to any other modem address must fail"
 iptables -L "$CHAIN" -n -v --line-numbers
 sleep "$WINDOW"
 echo "FINAL_COUNTERS"

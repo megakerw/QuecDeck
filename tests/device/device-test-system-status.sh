@@ -71,7 +71,7 @@ batch_lines=$(printf '%s\n' "$batch" | grep -c '')
 if [ "$batch_lines" -ne "$UNIT_COUNT" ]; then
     bad "batch returned $batch_lines lines for $UNIT_COUNT units -- positional mapping is UNSAFE"
     note "the CGI's count guard catches this and falls back to per-unit calls, so"
-    note "output stays correct, but the latency win is lost; keep the guard."
+    note "output stays correct, but the latency win is lost. Keep the guard."
 else
     ok "batch returned $batch_lines lines for $UNIT_COUNT units"
     # Order matters as much as count: compare each slot to a solo query.
@@ -107,7 +107,7 @@ echo "        per-unit: ${_solo_s}s total  (~${_solo_ms}ms per call)"
 if [ "$_solo_ms" -gt "$_batch_ms" ]; then
     ok "batching saves ~$((_solo_ms - _batch_ms))ms per request"
 else
-    note "batching showed no gain -- the latency is NOT systemd IPC; look at TLS,"
+    note "batching showed no gain -- the latency is NOT systemd IPC. Look at TLS,"
     note "CGI spawn, or lighttpd before optimising this endpoint further."
 fi
 
@@ -126,11 +126,11 @@ else
         if [ "$_n" -eq 1 ]; then
             ok "<$_tag> matched exactly once: $(grep -o "<$_tag>[^<]*</$_tag>" "$CFG" | sed "s|</*$_tag>||g")"
         elif [ "$_n" -eq 0 ] && [ "$_loose" -gt 0 ]; then
-            bad "<$_tag> not matched by the strict pattern but $_loose loose match(es) exist -- attributes or different casing; mobileap_read would return nothing"
+            bad "<$_tag> not matched by the strict pattern but $_loose loose match(es) exist -- attributes or different casing. mobileap_read would return nothing"
         elif [ "$_n" -eq 0 ]; then
             note "<$_tag> absent from the config (helper returns empty, which callers handle)"
         else
-            bad "<$_tag> matched $_n times -- mobileap_read takes the first; confirm that is the right one"
+            bad "<$_tag> matched $_n times -- mobileap_read takes the first. Confirm that is the right one"
         fi
     done
 fi
@@ -185,7 +185,7 @@ if su -s /bin/sh www-data -c "true" 2>/dev/null; then
 else
     body=$("$CGI" 2>/dev/null | tail -1)
     _as="root"
-    note "could not drop to www-data; ran as root, so permission faults are NOT covered"
+    note "could not drop to www-data. Ran as root, so permission faults are NOT covered"
 fi
 echo "        (ran as $_as)"
 if [ -z "$body" ]; then
@@ -226,7 +226,7 @@ if [ "$fail" -eq 0 ]; then
     echo "          and no LAN IP is fabricated."
 else
     echo " VERDICT: failures above. A Check 1 order mismatch means the endpoint"
-    echo "          can report the WRONG service's state; a Check 4/5 failure"
+    echo "          can report the WRONG service's state. A Check 4/5 failure"
     echo "          means a guessed LAN IP can reach the settings form."
 fi
 echo "=================================================================="
