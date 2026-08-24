@@ -2,9 +2,9 @@
 # On-device verification of the atcli daemon (atcli --daemon, unit
 # atcmd-daemon). Run as root:
 #   /tmp/device-test-atclid.sh
-# Dev tool, not deployed; copy it to the device manually. Sends only fast,
+# Dev tool, not deployed. Copy it to the device manually. Sends only fast,
 # read-only AT commands. The wire contract itself is covered by the atcli
-# repo's harness; this checks what only the device can: SELinux domain
+# repo's harness. This checks what only the device can: SELinux domain
 # pairings on the live socket, the privilege drop, and systemd wiring.
 #
 # It also covers the parts of the daemon that are calibrated against a real
@@ -24,7 +24,7 @@ skp() { skip=$((skip+1)); echo "SKIP: $1"; }
 note() { echo "NOTE: $1"; }
 
 # The unit binds the socket after the privilege drop, so a restart's socket
-# appears some way into startup; every wait for it goes through here. Whole
+# appears some way into startup, and every wait for it goes through here. Whole
 # seconds only: busybox sleep here may not take a fraction, and a rejected
 # argument would spin this loop out instantly and report a daemon that never
 # bound. The socket normally appears within one.
@@ -42,6 +42,13 @@ counter() { "$_ATCLI" --status -s "$_ATCLI_SOCK" 2>/dev/null | awk -v k="$1" '$1
 
 [ -f "$ATLIB" ] || { echo "FATAL: $ATLIB missing"; exit 1; }
 . "$ATLIB"
+if [ "$_ATCLI" = "/usrdata/quecdeck/atcli" ]; then
+    ok "AT library uses the canonical binary path"
+else
+    bad "AT library uses the canonical binary path" "uses $_ATCLI"
+    echo "aborting"
+    exit 1
+fi
 
 # ---- pick a way to run shell as www-data (lighttpd's uid) ------------------
 RUNNER=""
@@ -77,6 +84,18 @@ if "$_ATCLI" --help >/dev/null 2>&1; then
 else
     bad "binary starts on this hardware" "rc=$? - wrong arch, or a libc this kernel rejects"
     echo "aborting"; exit 1
+fi
+binary_meta=$(stat -c '%U:%G %a' "$_ATCLI" 2>/dev/null)
+if [ "$binary_meta" = "root:root 755" ]; then
+    ok "binary is root-owned and executable"
+else
+    bad "binary is root-owned and executable" "is ${binary_meta:-missing}, expected root:root 755"
+fi
+console_target=$(readlink /usrdata/root/bin/atcli 2>/dev/null)
+if [ "$console_target" = "$_ATCLI" ]; then
+    ok "root console symlink uses the deployed binary"
+else
+    bad "root console symlink uses the deployed binary" "target: ${console_target:-missing}"
 fi
 # Which libc, for the record: a static glibc build carries its NSS and locale
 # tables, and 'GNU C Library' with them. Not an assertion - a glibc build is
@@ -231,7 +250,7 @@ esac
 # synthesize its body line, and the host suite can only assert that copy against
 # itself: it stubs atcli with the very code it is checking. The real client can
 # settle it, because _atcmd_report returns atcli's status untouched, so the rc
-# below is atcli's own. The literal 65 here is deliberate; asserting against
+# below is atcli's own. The literal 65 here is deliberate. Asserting against
 # $_AT_E_TOOLONG alone would be the same circular test.
 at_long="AT+CGMM"; i=0
 while [ "$i" -lt 90 ]; do at_long="$at_long;+CGMM"; i=$((i + 1)); done   # 547 chars
@@ -266,7 +285,7 @@ unset at_long at_out at_rc
 # ---- post-timeout resync -----------------------------------------------------
 # After a timeout a reply is still owed, so the daemon waits for its terminator
 # before writing the next command, bounded by DRAIN_CAP_MS (1400 ms). Past that
-# it guesses "no reply is coming" and counts the guess as `unresolved`; a wrong
+# it guesses "no reply is coming" and counts the guess as `unresolved`. A wrong
 # guess puts the owed reply in the next client's window, where its terminator
 # ends that response and shifts every reply after it.
 #
@@ -287,7 +306,7 @@ while [ "$i" -lt "$RESYNC_REPS" ]; do
     atcmd_run "$DESYNC_CMD" 1000 >/dev/null
     # The reply that must not carry the abandoned command's output. Contains
     # rather than starts-with, because command echo is on here so a reply opens
-    # with the echoed line; a shifted reply has no '+CSQ:' in it at all.
+    # with the echoed line. A shifted reply has no '+CSQ:' in it at all.
     resp=$(atcmd_run 'AT+CSQ' 3000)
     case "$resp" in
         *'+CSQ:'*OK) ;;
@@ -408,7 +427,7 @@ fi
 # alphabet. The reader substitutes bad bytes rather than failing, because a
 # read error would end the reader thread and take the daemon with it - and it
 # would restart into the same buffered bytes. Only real stored messages
-# exercise this; the host harness can only fake it with a fixed byte pair.
+# exercise this. The host harness can only fake it with a fixed byte pair.
 # Text mode is the state change that puts those bytes on the wire, so it is
 # read first and restored afterwards.
 # Anchored, because command echo puts 'AT+CMGF?' in the reply too and that line
@@ -448,7 +467,7 @@ case "$resp" in
     *)   bad "--direct with daemon stopped" "$resp" ;;
 esac
 # No implicit fallback: a plain atcmd_run must NOT reach the modem when the
-# daemon is down; it returns empty (matching the www-data experience).
+# daemon is down. It returns empty (matching the www-data experience).
 resp=$(atcmd_run 'AT')
 case "$resp" in
     '') ok "atcmd_run empty while daemon down (no implicit direct fallback)" ;;

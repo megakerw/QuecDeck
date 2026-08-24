@@ -1,5 +1,5 @@
 -- Harness for auth.lua: stubs the lighty request environment and runs the
--- real file per case via dofile. Run via host-test-authlua.sh: expects a
+-- real file per case via dofile. Run via integration/auth-lua.sh and expect a
 -- disposable root environment (CI runner/container), since auth.lua's
 -- /tmp/quecdeck and /opt/etc paths are used as-is.
 

@@ -370,7 +370,10 @@ function networkSettings() {
           // anything with ERROR (incl. daemon-down "no response") as failure.
           // Stop the wait countdown first: errorModal.open is a no-op while
           // the wait modal is showing, and a failed set never reboots anyway.
-          if (text.includes("ERROR")) {
+          if (text.includes("WARNING:")) {
+            this.$store.waitModal.stop();
+            this.$store.errorModal.open(text.trim());
+          } else if (text.includes("ERROR")) {
             this.$store.waitModal.stop();
             this.$store.errorModal.open('The modem did not apply the change: ' + text.trim());
           }
@@ -380,6 +383,5 @@ function networkSettings() {
     },
   };
 }
-
 
 

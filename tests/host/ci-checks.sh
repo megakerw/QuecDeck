@@ -24,12 +24,14 @@ hook_list() { # hook_list <ARRAY_NAME>
 for f in quecdeck.sh update_quecdeck.sh installentware.sh \
          quecdeck/script/*.sh quecdeck/console/ttyd.bash \
          quecdeck/console/menu/*.sh tools/*.sh tests/host/*.sh \
+         tests/host/suites/*.sh \
+         tests/host/guards/*.sh tests/host/integration/*.sh \
          tests/device/*.sh quecdeck/www/cgi-bin/*; do
     bash -n "$f" 2>/dev/null || err "syntax: $f fails bash -n"
 done
 
 # ---------------------------------------------------------- JS syntax ------
-# Real parse via node (present on CI runners; the dev machine has no JS
+# Real parse via node (present on CI runners, the dev machine has no JS
 # runtime, there run-tests.sh's structural check instead). Skips .min.js:
 # vendored, and any corruption is caught by the checksum manifest.
 if command -v node >/dev/null 2>&1; then
@@ -37,21 +39,21 @@ if command -v node >/dev/null 2>&1; then
         case "$f" in *.min.js) continue ;; esac
         node --check "$f" || err "syntax: $f fails node --check"
     done
-    # The SMS PDU decoder is the one piece of JS whose behaviour is worth
-    # asserting rather than just parsing: bit-level field decoding that fails
-    # as quietly wrong text rather than as an error.
-    node tests/host/test-sms-pdu.js >/dev/null || err "tests/host/test-sms-pdu.js failed (run it directly for detail)"
+    # Run the JS behavior tests that do not require a browser DOM.
+    for f in tests/host/js/*.test.js; do
+        node "$f" >/dev/null || err "$f failed (run it directly for detail)"
+    done
 else
-    echo "SKIP: node unavailable, JS syntax and the SMS PDU test not run"
+    echo "SKIP: node unavailable, JS syntax and behavior tests not run"
 fi
 
 # --------------------------------------------------------- atcli guard -----
 # Pattern and scope come from the shared file. This pass reads the working tree
 # (the pre-commit hook runs the same rules against the index).
-if [ ! -f tests/host/atcli-guard.sh ]; then
-    err "tests/host/atcli-guard.sh missing: the atcli guards cannot run"
+if [ ! -f tests/host/guards/atcli.sh ]; then
+    err "tests/host/guards/atcli.sh missing: the atcli guards cannot run"
 else
-. tests/host/atcli-guard.sh
+. tests/host/guards/atcli.sh
 
 while IFS= read -r f; do
     [ "$f" = "$ATCLI_GUARD_EXEMPT" ] && continue
@@ -73,12 +75,12 @@ fi
 
 # --------------------------------------------------- runtime-path guard ----
 # Root-context code must not name a /tmp path: root's runtime state belongs in
-# /run/quecdeck, and /tmp/quecdeck belongs to www-data. See tests/host/tmpwrite-guard.sh
-# for the four bugs this class produced.
-if [ ! -f tests/host/tmpwrite-guard.sh ]; then
-    err "tests/host/tmpwrite-guard.sh missing: the runtime-path guard cannot run"
+# /run/quecdeck, and /tmp/quecdeck belongs to www-data. See
+# tests/host/guards/runtime-path.sh for the four bugs this class produced.
+if [ ! -f tests/host/guards/runtime-path.sh ]; then
+    err "tests/host/guards/runtime-path.sh missing: the runtime-path guard cannot run"
 else
-. tests/host/tmpwrite-guard.sh
+. tests/host/guards/runtime-path.sh
 
 _tmpguard_scan() { # _tmpguard_scan <file>
     # Process substitution, not a pipe: a pipeline would run err in a subshell
@@ -86,7 +88,7 @@ _tmpguard_scan() { # _tmpguard_scan <file>
     while IFS= read -r hit; do
         err "runtime-path guard: $1:$hit"
         echo "    root-context code must write /run/quecdeck, not a world-writable dir."
-        echo "    If it is genuinely safe, add '# tmpguard-ok: <reason>' (see tests/host/tmpwrite-guard.sh)."
+        echo "    If it is genuinely safe, add '# tmpguard-ok: <reason>' (see tests/host/guards/runtime-path.sh)."
     done < <(awk -v re="$TMPGUARD_RE" "$TMPGUARD_AWK" "$1" 2>/dev/null)
 }
 _tmpguard_scope=$(tmpguard_root_scripts)

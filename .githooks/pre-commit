@@ -9,23 +9,18 @@ CHECKSUMS_FILE="quecdeck/checksums.sha256"
 
 CHECKSUMMED_FILES=(
   update_quecdeck.sh
-  quecdeck/script/create_watchcat.sh
-  quecdeck/script/remove_watchcat.sh
   quecdeck/script/watchcat.sh
+  quecdeck/script/watchcat-coord.sh
   quecdeck/script/json-lib.sh
   quecdeck/script/cgi-lib.sh
   quecdeck/script/at-lib.sh
-  quecdeck/script/create_scheduled_restart.sh
-  quecdeck/script/remove_scheduled_restart.sh
   quecdeck/script/scheduled_restart.sh
   quecdeck/script/connection_logger.sh
   quecdeck/script/lighttpd_prestart.sh
-  quecdeck/script/lean_mode.sh
   quecdeck/script/write_htpasswd.sh
   quecdeck/script/check_password.sh
   quecdeck/script/firewall.sh
   quecdeck/systemd/firewall.service
-  quecdeck/systemd/lean-mode.service
   quecdeck/systemd/lighttpd.service
   quecdeck/systemd/watchcat.service
   quecdeck/systemd/ttyd.service
@@ -36,11 +31,13 @@ CHECKSUMMED_FILES=(
   quecdeck/quecdeckpasswd
   quecdeck/quecdeckdevpasswd
   quecdeck/auth.lua
+  quecdeck/monitoring-generation
   quecdeck/console/menu/start_menu.sh
   quecdeck/www/index.html
   quecdeck/www/network.html
   quecdeck/www/settings.html
-  quecdeck/www/monitoring.html
+  quecdeck/www/watchcat.html
+  quecdeck/www/scheduled-restart.html
   quecdeck/www/logs.html
   quecdeck/www/deviceinfo.html
   quecdeck/www/scanner.html
@@ -59,6 +56,7 @@ CHECKSUMMED_FILES=(
   quecdeck/www/js/developer.js
   quecdeck/www/js/sms.js
   quecdeck/www/js/watchcat.js
+  quecdeck/www/js/scheduled-restart.js
   quecdeck/www/js/network.js
   quecdeck/www/js/logs.js
   quecdeck/www/js/setup.js
@@ -101,7 +99,7 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/get_update_log
   quecdeck/www/cgi-bin/init_setup
   quecdeck/console/.profile
-  quecdeck/bin/atcli
+  quecdeck/atcli
   quecdeck/lighttpd.conf
   quecdeck/script/run_update.sh
   quecdeck/www/update.html
@@ -133,8 +131,6 @@ PINNED_FILES=(
   optional/sshd/update_sshd_ip.sh
   quecdeck/quecdeckpasswd
   quecdeck/quecdeckdevpasswd
-  quecdeck/script/lean_mode.sh
-  quecdeck/systemd/lean-mode.service
 )
 
 # Check whether any checksummed or pinned file (or quecdeck.sh) is staged
@@ -197,7 +193,8 @@ HTML_FILES=(
   quecdeck/www/setup.html
   quecdeck/www/network.html
   quecdeck/www/settings.html
-  quecdeck/www/monitoring.html
+  quecdeck/www/watchcat.html
+  quecdeck/www/scheduled-restart.html
   quecdeck/www/logs.html
   quecdeck/www/update.html
   quecdeck/www/scanner.html
@@ -278,9 +275,9 @@ tmpguard_defs=$(mktemp) || {
   echo "ERROR: cannot create a temporary file for the staged runtime-path guard."
   exit 1
 }
-if ! git show :tests/host/tmpwrite-guard.sh > "$tmpguard_defs" 2>/dev/null; then
+if ! git show :tests/host/guards/runtime-path.sh > "$tmpguard_defs" 2>/dev/null; then
   rm -f "$tmpguard_defs"
-  echo "ERROR: tests/host/tmpwrite-guard.sh missing from the index; the runtime-path guard cannot run."
+  echo "ERROR: tests/host/guards/runtime-path.sh missing from the index. The runtime-path guard cannot run."
   echo "Commit blocked: restore and stage the file."
   exit 1
 fi
@@ -299,7 +296,7 @@ tmpguard_check() { # tmpguard_check <path-in-index>
 tmpguard_scope=$(tmpguard_root_scripts)
 if [ "$(printf '%s\n' "$tmpguard_scope" | grep -c .)" -lt 8 ]; then
   echo "ERROR: runtime-path guard scope collapsed; refusing to pass vacuously."
-  echo "Commit blocked: check tmpguard_root_scripts in tests/host/tmpwrite-guard.sh."
+  echo "Commit blocked: check tmpguard_root_scripts in tests/host/guards/runtime-path.sh."
   exit 1
 fi
 while IFS= read -r f; do
@@ -322,7 +319,7 @@ if [ "$tmpguard_errors" = "1" ]; then
   echo "  If the line is genuinely safe, declare it: '# tmpguard-ok: <reason>'"
   echo "  on the line, or on the line above for systemd units (a trailing"
   echo "  comment on a unit directive would become part of the command)."
-  echo "  See tests/host/tmpwrite-guard.sh for the four bugs this rule prevents."
+  echo "  See tests/host/guards/runtime-path.sh for the four bugs this rule prevents."
   exit 1
 fi
 
@@ -330,12 +327,12 @@ fi
 # at-lib.sh (atcmd_run/atcmd_fire), never the atcli binary. Pattern and scope
 # come from the shared file. This pass reads the index, so a staged violation
 # is caught even when the working tree is clean.
-if [ ! -f tests/host/atcli-guard.sh ]; then
-  echo "ERROR: tests/host/atcli-guard.sh missing; the atcli guards cannot run."
+if [ ! -f tests/host/guards/atcli.sh ]; then
+  echo "ERROR: tests/host/guards/atcli.sh missing. The atcli guards cannot run."
   echo "Commit blocked: restore the file."
   exit 1
 fi
-. tests/host/atcli-guard.sh
+. tests/host/guards/atcli.sh
 
 atcli_errors=0
 while IFS= read -r f; do
@@ -362,7 +359,7 @@ fi
 
 # The socket path must agree everywhere it is named, or the daemon binds one
 # path while clients hit another (total AT outage). File list and rationale in
-# The definitions come from tests/host/atcli-guard.sh, sourced above.
+# The definitions come from tests/host/guards/atcli.sh, sourced above.
 sock_paths=$( for f in $ATCLI_SOCK_FILES; do git show ":$f"; done 2>/dev/null \
               | grep -ohE '/[^ "}]*atcli\.sock' | sort -u )
 if [ "$(printf '%s\n' "$sock_paths" | grep -c .)" -ne 1 ]; then
@@ -404,7 +401,7 @@ fi
 
 # Dialect guard: bash-only code must never execute under sh. Two rules:
 # (1) any script sourcing cgi-lib.sh/at-lib.sh (bash-dialect) must declare
-#     #!/bin/bash;
+#     #!/bin/bash
 # (2) systemd Exec* lines override shebangs, so a unit's /bin/sh|/bin/bash
 #     must match the shebang of the script it launches.
 # Checked against the index so results reflect what is being committed.

@@ -5,9 +5,8 @@ cgi_check_cors
 
 cgi_output_json
 
-# Watchcat: config only. Its running state comes from the systemctl batch below.
-# It is started and stopped exclusively via systemctl (create_watchcat.sh /
-# remove_watchcat.sh), so the unit state is authoritative.
+# Watchcat configuration determines whether monitoring should be live. The
+# boot-enabled unit exits cleanly when this configuration is absent or disabled.
 # read -d '' rather than $(cat): a builtin against a subshell plus an exec
 # (tools/device-costs.md). It keeps the trailing newline write_json_config
 # writes, hence the strip.
@@ -33,7 +32,7 @@ fi
 # tests/device/device-test-system-status.sh.
 # The list is fixed (not filtered by what is installed) so the line count is
 # constant and the guard below can trust it.
-SERVICE_UNITS="ttyd atcmd-daemon connection-logger lean-mode firewall sshd watchcat"
+SERVICE_UNITS="ttyd atcmd-daemon connection-logger firewall sshd watchcat scheduled_restart"
 unit_states=()
 while IFS= read -r state; do
     unit_states+=("$state")
@@ -64,15 +63,10 @@ done
 [ "$state_ttyd" = "active" ] && ttyd_running="true" || ttyd_running="false"
 [ "$state_atcmd_daemon" = "active" ] && atcmd_running="true" || atcmd_running="false"
 [ "$state_connection_logger" = "active" ] && connlog_running="true" || connlog_running="false"
-[ "$state_watchcat" = "active" ] && watchcat_running="true" || watchcat_running="false"
-
-# Lean mode (optional, null if not enabled via install menu)
-if [ -L /lib/systemd/system/multi-user.target.wants/lean-mode.service ]; then
-    [ "$state_lean_mode" = "active" ] && lean_active="true" || lean_active="false"
-    lean_mode_json="{\"active\":$lean_active}"
-else
-    lean_mode_json="null"
-fi
+watchcat_running="false"
+watchcat_config_enabled "$watchcat_config" && [ "$state_watchcat" = "active" ] && watchcat_running="true"
+scheduled_running="false"
+watchcat_config_enabled "$sched_config" && [ "$state_scheduled_restart" = "active" ] && scheduled_running="true"
 
 # Firewall (optional, null if not installed)
 if [ -f /lib/systemd/system/firewall.service ]; then
@@ -111,5 +105,5 @@ quecdeck_version=""
 quecdeck_version=${quecdeck_version%$'\r'}
 [ -z "$quecdeck_version" ] && quecdeck_version="unknown"
 
-printf '{"watchcat":{"running":%s,"config":%s},"scheduled_restart":%s,"ttyd":{"running":%s},"atcmd_daemon":{"running":%s},"connection_logger":{"running":%s},"lean_mode":%s,"firewall":%s,"sshd":%s,"upnp":%s,"lan_ip":%s,"quecdeck_version":"%s"}\n' \
-    "$watchcat_running" "$watchcat_config" "$sched_config" "$ttyd_running" "$atcmd_running" "$connlog_running" "$lean_mode_json" "$firewall_json" "$sshd_json" "$upnp_enabled" "$lan_ip_json" "$quecdeck_version"
+printf '{"watchcat":{"running":%s,"config":%s},"scheduled_restart":{"running":%s,"config":%s},"ttyd":{"running":%s},"atcmd_daemon":{"running":%s},"connection_logger":{"running":%s},"firewall":%s,"sshd":%s,"upnp":%s,"lan_ip":%s,"quecdeck_version":"%s"}\n' \
+    "$watchcat_running" "$watchcat_config" "$scheduled_running" "$sched_config" "$ttyd_running" "$atcmd_running" "$connlog_running" "$firewall_json" "$sshd_json" "$upnp_enabled" "$lan_ip_json" "$quecdeck_version"

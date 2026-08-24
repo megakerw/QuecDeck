@@ -13,7 +13,7 @@ LOG_RESTARTS=$(get_post_param LOG_RESTARTS)
 
 # Collect and validate IPs
 TRACK_IPS_COLON=""
-for i in 1 2 3 4 5; do
+for i in 1 2 3 4 5 6; do
     ip=$(get_post_param "TRACK_IP_${i}")
     if [ -n "$ip" ]; then
         if valid_ipv4 "$ip"; then
@@ -53,20 +53,18 @@ if ! [[ "$PING_INTERVAL" =~ ^[0-9]+$ ]] || [ "$PING_INTERVAL" -lt 10 ] || [ "$PI
     cgi_error "Ping interval must be between 10 and 600 seconds."
 fi
 
-if ! [[ "$PING_FAILURE_COUNT" =~ ^[0-9]+$ ]] || [ "$PING_FAILURE_COUNT" -lt 2 ] || [ "$PING_FAILURE_COUNT" -gt 10 ]; then
-    cgi_error "Failure count must be between 2 and 10."
+if ! [[ "$PING_FAILURE_COUNT" =~ ^[0-9]+$ ]] || [ "$PING_FAILURE_COUNT" -lt 3 ] || [ "$PING_FAILURE_COUNT" -gt 10 ]; then
+    cgi_error "Failure count must be between 3 and 10."
 fi
 
 if ! [[ "$DISABLE_ON_NO_SIM" =~ ^[01]$ ]]; then
     cgi_error "DISABLE_ON_NO_SIM must be 0 or 1."
 fi
 
-cgi_output_text
-
-rm -f /usrdata/quecdeck/var/watchcat_reboot_state.json
-# Stale stats from the previous run would show against the new config until
-# the restarted daemon's first write (after its settle sleep).
-rm -f /tmp/quecdeck/watchcat_stats.json
+# Bash arithmetic treats a leading zero as octal, while JSON numbers cannot
+# have leading zeroes. Normalize validated decimal input before either use.
+PING_INTERVAL=$((10#$PING_INTERVAL))
+PING_FAILURE_COUNT=$((10#$PING_FAILURE_COUNT))
 
 # Build JSON array of IPs
 ips_space=$(echo "$TRACK_IPS_COLON" | tr ':' ' ')
@@ -83,17 +81,40 @@ backoff_val=$(json_bool "$REBOOT_BACKOFF" 1)
 log_val=$(json_bool "$LOG_RESTARTS" 1)
 enabled_val=$(json_bool "$WATCHCAT_ENABLED" enable)
 
-# Write config JSON atomically. The static watchcat.sh in script/ reads this at startup
-write_json_config /usrdata/quecdeck/var/watchcat.json \
-    "{\"enabled\": $enabled_val, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}"
+CONFIG=/usrdata/quecdeck/var/watchcat.json
+new_config="{\"enabled\": $enabled_val, \"track_ips\": $ips_json, \"ping_interval\": $PING_INTERVAL, \"ping_failure_count\": $PING_FAILURE_COUNT, \"disable_on_no_sim\": $sim_val, \"reboot_backoff\": $backoff_val, \"log_restarts\": $log_val}"
 
+# Command substitution strips the trailing newline written by write_json_config,
+# so this compares like for like.
+config_changed=0
+[ "$(cat "$CONFIG" 2>/dev/null)" != "$new_config" ] && config_changed=1
+
+# Kept separate from the restart decision below. Both files are
+# per-configuration state, and the reboot streak in particular must survive a
+# restart that only happened because the worker was down: wiping it there would
+# drop an escalated backoff back to its base and start the flash-wear
+# escalation over.
+if [ "$config_changed" = "1" ]; then
+    # Commit the new configuration before discarding the old configuration's
+    # safety state. A failed write must leave its reboot backoff intact.
+    write_json_config "$CONFIG" "$new_config"
+    rm -f /usrdata/quecdeck/var/watchcat_reboot_state.json
+    rm -f /tmp/quecdeck/watchcat_stats.json
+fi
+
+# Every explicit save reloads the worker. If a previous restart failed while
+# the old process remained active, the file already contains the requested
+# config and change detection alone cannot tell that the process is stale.
+# Disabled workers start, read the disabled config and exit cleanly.
+/opt/bin/sudo /bin/systemctl reset-failed watchcat >/dev/null 2>&1
+if ! /opt/bin/sudo /bin/systemctl restart watchcat; then
+    cgi_error "Failed to reload Watchcat settings."
+fi
+
+cgi_output_text
 if [ "$WATCHCAT_ENABLED" = "enable" ]; then
-    # Enable and restart watchcat service (systemd ops need root)
-    /opt/bin/sudo /usrdata/quecdeck/script/create_watchcat.sh
     echo "Watchcat started. Targets: $ips_space | Interval: ${PING_INTERVAL}s | Failures: $PING_FAILURE_COUNT | SIM check: $DISABLE_ON_NO_SIM"
 else
-    # Stop and disable watchcat service (systemd ops need root)
-    /opt/bin/sudo /usrdata/quecdeck/script/remove_watchcat.sh
     echo "Watchcat disabled."
 fi
 

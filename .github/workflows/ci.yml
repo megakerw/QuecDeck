@@ -17,7 +17,7 @@ jobs:
       - name: auth.lua tests
         run: |
           sudo apt-get install -y -qq lua5.1
-          sudo bash tests/host/host-test-authlua.sh
+          sudo bash tests/host/integration/auth-lua.sh
 
       - name: Repository integrity checks
         run: bash tests/host/ci-checks.sh

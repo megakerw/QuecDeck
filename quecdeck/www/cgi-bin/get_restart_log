@@ -27,7 +27,6 @@ first=1
 printf '['
 while IFS= read -r line; do
     [ -z "$line" ] && continue
-    reason=$(json_get "$line" reason)
     detail=$(json_get "$line" detail)
     ts=$(json_get "$line" ts)
     case "$ts" in ''|*[!0-9]*) ts=0 ;; esac
@@ -42,6 +41,6 @@ while IFS= read -r line; do
         fi
     fi
     [ "$first" = "1" ] && first=0 || printf ','
-    printf '{"ts":%d,"reason":"%s","detail":"%s"}' "$ts" "$reason" "$detail"
+    printf '{"ts":%d,"detail":"%s"}' "$ts" "$detail"
 done <<< "$lines"
 printf ']\n'

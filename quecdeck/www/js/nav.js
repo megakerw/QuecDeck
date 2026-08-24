@@ -26,8 +26,10 @@
         + 'M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M12.5 3.5l-1.1 1.1M4.6 11.4l-1.1 1.1"/>') },
     ] },
     { label: 'Services', links: [
-      { href: '/monitoring.html', label: 'Monitoring', icon: icon(
+      { href: '/watchcat.html', label: 'Watchcat', icon: icon(
         '<path d="M1.8 9.6h2.6l2-5.2 2.8 8 1.9-3.4h3.1"/>') },
+      { href: '/scheduled-restart.html', label: 'Scheduled Restart', icon: icon(
+        '<circle cx="8" cy="8" r="5.7"/><path d="M8 4.8v3.5l2.4 1.4"/>') },
       { href: '/sms.html', label: 'SMS', icon: icon(
         '<path d="M2.2 3.6h11.6v7.2H6.6L3.6 13.6v-2.8H2.2z"/>') },
     ] },
@@ -79,8 +81,8 @@
       + '<span>' + escapeText(link.label) + '</span></a>';
   }
 
-  // Above 992px each labelled group is a dropdown; below it the menu is forced
-  // open and static (see styles.css) so the drawer still shows all ten at once.
+  // Above 992px each labelled group is a dropdown. Below it the menu is forced
+  // open and static (see styles.css) so the drawer still shows all eleven.
   function renderLinks() {
     return groups.map(function (group) {
       if (!group.label) {

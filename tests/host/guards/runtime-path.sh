@@ -3,8 +3,8 @@
 #
 # THE RULE: a directory's owner is the only uid that writes inside it.
 #
-#   /run/quecdeck   root:root 0755   everything ROOT writes; www-data reads
-#   /tmp/quecdeck   www-data 0700    everything WWW-DATA writes; root stays out
+#   /run/quecdeck   root:root 0755   everything ROOT writes, www-data reads
+#   /tmp/quecdeck   www-data 0700    everything WWW-DATA writes, root stays out
 #
 # Enforced as ONE check: root-context code may not name a path in a
 # world-writable directory unless the line carries a written justification.
@@ -39,8 +39,8 @@ TMPGUARD_UNIT_DIR='quecdeck/systemd'
 TMPGUARD_SEED='quecdeck.sh update_quecdeck.sh installentware.sh'
 
 # Everything else is DERIVED rather than listed. A hand-maintained list is the
-# part that rots: the first version of this guard silently omitted all six
-# scripts in the sudoers rule, which are the highest-risk files in the tree
+# part that rots: the first version of this guard silently omitted the scripts
+# in the sudoers rule, which are the highest-risk files in the tree
 # (reachable from the web tier AND running as root). Both sources below already
 # declare "this runs as root", so read them instead of restating them:
 #

@@ -91,17 +91,18 @@ t "the header is centiseconds, not seconds" "ok" \
 # ---- freshness boundaries ----------------------------------------------------
 echo "--- freshness"
 mk() { _epoch_now; printf '%s\n%s' "$(( _NOW_CS - $1 ))" "$payload" > "$F"; }
-cache_is_fresh "$F" 60; t "fresh right after write" "0" "$?"
-cache_is_fresh "$F" 0;  t "ttl 0 forces a miss"     "1" "$?"
+is_fresh() { _cache_load "$1" && _cache_ts_fresh "$2"; }
+is_fresh "$F" 60; t "fresh right after write" "0" "$?"
+is_fresh "$F" 0;  t "ttl 0 forces a miss"     "1" "$?"
 # A 3 s dashboard poll reads ~290 cs old. That is fresh at ttl 3 (so the page
 # would re-render the previous snapshot) and stale at ttl 2, which is the whole
 # reason the TTL sits below the poll interval.
-mk 290; cache_is_fresh "$F" 3; t "290cs fresh at ttl 3" "0" "$?"
-mk 290; cache_is_fresh "$F" 2; t "290cs stale at ttl 2" "1" "$?"
-mk 150; cache_is_fresh "$F" 2; t "150cs fresh at ttl 2" "0" "$?"
-mk -100000; cache_is_fresh "$F" 10; t "a future header reads stale" "1" "$?"
+mk 290; is_fresh "$F" 3; t "290cs fresh at ttl 3" "0" "$?"
+mk 290; is_fresh "$F" 2; t "290cs stale at ttl 2" "1" "$?"
+mk 150; is_fresh "$F" 2; t "150cs fresh at ttl 2" "0" "$?"
+mk -100000; is_fresh "$F" 10; t "a future header reads stale" "1" "$?"
 printf '+QTEMP: 42\nOK' > "$F"
-cache_is_fresh "$F" 10; t "a headerless file reads stale" "1" "$?"
+is_fresh "$F" 10; t "a headerless file reads stale" "1" "$?"
 t "and yields no payload" "" "$(cache_read "$F" 2>/dev/null)"
 cache_read "$D/nosuch" 2>/dev/null; t "cache_read on a missing file" "1" "$?"
 

@@ -21,6 +21,8 @@ umask 077
 
 # AT access layer (atcmd_run, atcmd_fire), used by the cache helpers below.
 . /usrdata/quecdeck/script/at-lib.sh
+# Watchcat pause markers, used by modem-disrupting CGIs.
+. /usrdata/quecdeck/script/watchcat-coord.sh
 
 # Reject cross-origin requests. Doubles as CSRF protection: browsers always send
 # the Origin header on cross-origin requests (including form POSTs), so a
@@ -201,6 +203,37 @@ write_json_config() {
     chmod 640 "$path"
 }
 
+# Serve a JSON file, or <fallback> when it is missing or empty. Emptiness is
+# checked, not just existence: a zero-byte file cat'd under a JSON content type
+# is an empty body, which the page reads as a failed request rather than as
+# "nothing published yet". Usage: cgi_serve_json_file <path> <fallback json>
+# Builtin read, not cat: get_watchcat_stats is polled every 2s while the page is
+# open and the payload is a few hundred bytes, so the fork+exec cost more than the
+# work. Same idiom get_system_status uses. See tools/device-costs.md.
+cgi_serve_json_file() {
+    cgi_output_json
+    if [ -s "$1" ]; then
+        local _body
+        IFS= read -r -d '' _body < "$1"
+        printf '%s' "$_body"
+    else
+        printf '%s\n' "$2"
+    fi
+}
+
+# True when <watchcat_config> turns monitoring on. The watchcat unit is
+# boot-enabled but exits cleanly when disabled, so configuration and unit state
+# answer different questions. Substring match rather than json_get: this runs on polled and
+# hot paths and json_get costs up to three grep forks (tools/device-costs.md).
+# Both spacings are matched: the makers write ": true", the defaults ":false".
+# Usage: watchcat_config_enabled "$config_json"
+watchcat_config_enabled() {
+    case "$1" in
+        *'"enabled":true'*|*'"enabled": true'*) return 0 ;;
+    esac
+    return 1
+}
+
 # Verify a web password via the check_password.sh sudo helper. The htpasswd
 # files are root:root 600 and unreadable from the web tier. The helper (root via
 # sudo) is the only credential-check path. Password goes over stdin, never
@@ -234,6 +267,10 @@ log_access_event() {
 BF_MAX_ATTEMPTS=5
 BF_LOCKOUT_SECS=900
 
+cgi_flock_available() {
+    command -v flock >/dev/null 2>&1
+}
+
 # Sanitized client IP, safe to embed in a filename or JSON. Never empty.
 cgi_client_ip() {
     local ip
@@ -253,49 +290,77 @@ _bf_file() {
     local dir="$1" ip="$2"
     # The umask seals the /tmp/quecdeck parent as well as the leaf. See cache_write.
     [ -d "$dir" ] || { ( umask 077; mkdir -p "$dir" ); chmod 700 "$dir"; }
-    [ $(( RANDOM % 100 )) -eq 0 ] && find "$dir" -maxdepth 1 -type f -mtime +1 -delete 2>/dev/null
+    [ $(( RANDOM % 100 )) -eq 0 ] && find "$dir" -maxdepth 1 -type f ! -name '*.lock' -mtime +1 -delete 2>/dev/null
     printf '%s/%s' "$dir" "${ip//:/_}"
 }
 
+# Serialize one client's complete authentication decision. Lock files remain
+# for the life of the tmpfs so pruning cannot replace an inode that is locked or
+# has waiters. Keep the lock across password validation and state updates.
+bf_lock() {
+    local dir="$1" ip="$2" lock_file
+    BF_LOCK_DIR=
+    BF_LOCK_IP=
+    _bf_file "$dir" probe >/dev/null || return 1
+    lock_file="$(_bf_file "$dir" "$ip").lock"
+    if ! exec 9>>"$lock_file" || ! flock -x 9; then
+        exec 9>&-
+        return 1
+    fi
+    BF_LOCK_DIR=$dir
+    BF_LOCK_IP=$ip
+}
+
+bf_unlock() {
+    BF_LOCK_DIR=
+    BF_LOCK_IP=
+    exec 9>&-
+}
+
+_bf_lock_held() {
+    [ -n "${BF_LOCK_DIR:-}" ] && [ "$BF_LOCK_DIR" = "$1" ] \
+        && [ -n "${BF_LOCK_IP:-}" ] && [ "$BF_LOCK_IP" = "$2" ]
+}
+
 # Returns 0 if <ip> is currently locked out under <dir>.
+# The caller must hold bf_lock for <dir>.
 # Usage: bf_locked <dir> <ip>
 bf_locked() {
     local f lockout_until
+    _bf_lock_held "$1" "$2" || return 0
     f=$(_bf_file "$1" "$2")
     [ -f "$f" ] || return 1
     lockout_until=$(grep '^lockout_until=' "$f" | cut -d= -f2)
     [ -n "$lockout_until" ] && [ "$lockout_until" -gt "$(date +%s)" ]
 }
 
-# Records a failed attempt for <ip> under <dir>, after a 1s delay. Echoes
-# "locked" if this attempt triggered the lockout, else "failed".
-# Usage: result=$(bf_fail <dir> <ip>)
+# Records a failed attempt for <ip> under <dir>, after a 1s delay. Sets
+# BF_FAIL_RESULT to "locked" if this attempt triggered the lockout, otherwise
+# "failed". The caller must hold bf_lock for <dir>.
+# Usage: bf_fail <dir> <ip>, then read BF_FAIL_RESULT
 bf_fail() {
     local f count now
+    BF_FAIL_RESULT=locked
+    _bf_lock_held "$1" "$2" || return 1
     f=$(_bf_file "$1" "$2")
     sleep 1
-    # flock the record: parallel failures must not undercount. All writers are
-    # www-data CGIs, so uid is the only boundary in play. BusyBox flock has no
-    # BusyBox flock has no -w. Development environments without flock use the
-    # unlocked fallback.
-    exec 9>>"$f"
-    command -v flock >/dev/null 2>&1 && flock -x 9
-    count=$(grep '^count=' "$f" | cut -d= -f2)
+    count=$(grep '^count=' "$f" 2>/dev/null | cut -d= -f2)
     count=$(( ${count:-0} + 1 ))
     now=$(date +%s)
     if [ "$count" -ge "$BF_MAX_ATTEMPTS" ]; then
         printf 'count=0\nlockout_until=%s\n' "$(( now + BF_LOCKOUT_SECS ))" > "$f"
-        echo "locked"
+        BF_FAIL_RESULT=locked
     else
         printf 'count=%s\nlockout_until=0\n' "$count" > "$f"
-        echo "failed"
+        BF_FAIL_RESULT=failed
     fi
-    exec 9>&-
 }
 
 # Clears the failure record for <ip> under <dir>. Call on a successful auth.
+# The caller must hold bf_lock for <dir>.
 # Usage: bf_clear <dir> <ip>
 bf_clear() {
+    _bf_lock_held "$1" "$2" || return 1
     rm -f "$(_bf_file "$1" "$2")"
 }
 
@@ -327,6 +392,25 @@ _CACHE_NEIGHBOUR="$_CACHE_DIR/neighbour_cells"
 _CACHE_SETTINGS="$_CACHE_DIR/settings"
 _CACHE_NETWORK="$_CACHE_DIR/network"
 _CACHE_MODEM_CONN="$_CACHE_DIR/modem_conn"
+QSCAN_GUARD_SECS=300
+
+# True while the monotonic cell-scan guard is live. Invalid and expired markers
+# are removed. If uptime cannot be read, fail safe: preserving the guard is less
+# harmful than sending an AT command into a scan that may still be running.
+qscan_is_active() {
+    [ -f /tmp/quecdeck/qscan.active ] || return 1
+    local expiry="" now
+    read -r expiry < /tmp/quecdeck/qscan.active 2>/dev/null || true
+    case "$expiry" in
+        ''|*[!0-9]*) rm -f /tmp/quecdeck/qscan.active; return 1 ;;
+    esac
+    now=$(watchcat_uptime) || return 0
+    if [ "$expiry" -gt "$now" ] && [ "$expiry" -le "$((now + QSCAN_GUARD_SECS))" ]; then
+        return 0
+    fi
+    rm -f /tmp/quecdeck/qscan.active
+    return 1
+}
 
 # Sets $_NOW_CS (epoch centiseconds) and $_NOW (epoch seconds) from /proc/uptime
 # and /proc/stat's btime. Assigns rather than echoes: a command substitution
@@ -397,16 +481,6 @@ _cache_ts_fresh() {
     # Negative age = btime moved = the clock stepped backwards (NITZ re-sync
     # after a modem reboot). Must read stale, or caches pin until reboot.
     [ "$age" -ge 0 ] && [ "$age" -lt $(( $1 * 100 )) ]
-}
-
-# Returns 0 if the cache file exists and is younger than ttl seconds. Header,
-# not stat(1)'s mtime, which costs ~8x more (tools/device-costs.md).
-#
-# Use only when the answer alone is wanted. Pairing it with cache_read reads the
-# file twice. To also serve the payload, call _cache_load once and test with
-# _cache_ts_fresh, as cache_get_or_fetch does. Leaves both globals populated.
-cache_is_fresh() {
-    _cache_load "$1" && _cache_ts_fresh "$2"
 }
 
 # Returns 0 if an AT response is valid (last non-empty line is exactly OK).
@@ -493,15 +567,9 @@ cache_get_or_fetch() {
     # One load serves the scan path and the freshness check. The fallback after
     # a failed fetch deliberately re-reads instead. See that function for details.
     _cache_load "$f" && cached=1
-    if [ -f /tmp/quecdeck/qscan.active ]; then
-        # Treat as stale if older than 5 minutes (max scan is 215 s), so a
-        # flag this old means the scan process was killed without cleanup.
-        if find /tmp/quecdeck/qscan.active -mmin +5 2>/dev/null | grep -q .; then
-            rm -f /tmp/quecdeck/qscan.active
-        else
-            [ "$cached" -eq 1 ] && printf '%s' "$_CACHE_PAYLOAD"
-            return
-        fi
+    if qscan_is_active; then
+        [ "$cached" -eq 1 ] && printf '%s' "$_CACHE_PAYLOAD"
+        return
     fi
     if [ "$cached" -eq 1 ] && _cache_ts_fresh "$ttl"; then
         printf '%s' "$_CACHE_PAYLOAD"

@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=71ebd6dd" />
-    <link rel="stylesheet" href="css/styles.css?v=71ebd6dd" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=9b50a139" />
+    <link rel="stylesheet" href="css/styles.css?v=9b50a139" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=71ebd6dd"></script>
-    <script src="js/utils.js?v=71ebd6dd"></script>
-    <script src="js/alpinejs.min.js?v=71ebd6dd" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=9b50a139"></script>
+    <script src="js/utils.js?v=9b50a139"></script>
+    <script src="js/alpinejs.min.js?v=9b50a139" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="logsPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=71ebd6dd"></script>
+        <script src="js/nav.js?v=9b50a139"></script>
 
         <div class="alert alert-warning small mt-4 mb-0" x-show="clockUnsynced" x-cloak>
           Device clock appears unsynced. Timestamps below may be inaccurate until it syncs (e.g. once connected to a cell tower).
@@ -92,10 +92,10 @@
           <div class="col-12 col-lg-6">
             <div class="panel-section" style="height:100%">
               <div class="panel-title d-flex align-items-center gap-2 mb-3">
-                Watchcat Restarts
+                Watchcat Reboot Activity
                 <button type="button" class="btn btn-sm btn-danger ms-auto" @click="clearRestartLog()">Clear</button>
               </div>
-              <div x-show="restartEvents.length === 0 && !loadingRestart" class="text-muted small" x-cloak>No watchcat restarts recorded yet.</div>
+              <div x-show="restartEvents.length === 0 && !loadingRestart" class="text-muted small" x-cloak>No Watchcat reboot activity recorded yet.</div>
               <div x-show="restartEvents.length > 0" style="max-height:420px; overflow-y:auto" x-cloak>
                 <table class="table table-sm mb-0">
                   <thead>
@@ -114,7 +114,7 @@
                   </tbody>
                 </table>
               </div>
-              <div x-show="restartEvents.length > 0" class="small mt-auto pt-2" x-cloak>Last 50 entries. Persists across reboots.<span x-show="restartEvents.some(e => e.detail.includes('reboot streak'))" x-cloak> Streak # resets after sustained connectivity.</span></div>
+              <div x-show="restartEvents.length > 0" class="small mt-auto pt-2" x-cloak>Up to 100 entries. Old history is cleared when the limit is exceeded. Persists across reboots.<span x-show="restartEvents.some(e => e.detail.includes('attempt #'))" x-cloak> The attempt count resets after sustained connectivity.</span></div>
             </div>
           </div>
 
@@ -153,6 +153,6 @@
       </div>
     </main>
 
-    <script src="js/logs.js?v=71ebd6dd"></script>
+    <script src="js/logs.js?v=9b50a139"></script>
   </body>
 </html>

@@ -1,5 +1,5 @@
 # Shared definitions for the two atcli guards: .githooks/pre-commit and
-# tests/host/ci-checks.sh. Only the pattern and the file/dir scope live here. The
+# tests/host/ci-checks.sh. Only the pattern and file scope live here. The
 # iteration deliberately does not: the hook reads the git index (what is being
 # committed), ci-checks reads the working tree, and collapsing that difference
 # would let the hook pass on unstaged content.

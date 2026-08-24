@@ -38,7 +38,7 @@ report_install_outcome() { # report_install_outcome <status> <systemctl-rc>
             return 0
             ;;
         failed:rollback_ok)
-            echo -e "\e[1;31mQuecDeck update failed; the previous version was restored.\e[0m"
+            echo -e "\e[1;31mQuecDeck update failed. The previous version was restored.\e[0m"
             return 1
             ;;
         failed:rollback_failed)
@@ -71,6 +71,7 @@ STAGE_DIR="${QUECDECK_DIR}.new"
 RELEASE_TARBALL=/run/quecdeck/release.tar.gz
 RELEASE_EXTRACT_DIR=/run/quecdeck/release-extract
 OLD_DIR="${QUECDECK_DIR}.old"
+_monitoring_rollback_supported=0
 export HOME=/usrdata/root
 
 # ttyd does not publish checksums, so pin the hash of the known-good binary.
@@ -140,7 +141,7 @@ normalize_stage_modes() {
 # reads state via 'systemctl is-active'. No lock or PID file needed.
 if ! echo "running" > "${STATUS_FILE}.tmp" || ! chmod 644 "${STATUS_FILE}.tmp" || ! mv "${STATUS_FILE}.tmp" "$STATUS_FILE"; then
     rm -f "${STATUS_FILE}.tmp"
-    echo "FATAL: cannot record update status; refusing to install." >&2
+    echo "FATAL: cannot record update status. Refusing to install." >&2
     exit 1
 fi
 
@@ -162,20 +163,28 @@ _persist_log() {
     cp -f "$LOG_FILE" "$PERSIST_LOG" 2>/dev/null && chmod 600 "$PERSIST_LOG" 2>/dev/null
 }
 _update_cleanup() {
+    local _cleanup_restart_monitoring=0
     # A SIGTERM mid-swap (TimeoutStartSec expiry, systemctl stop) unwinds the
     # shell past the main flow's failure handling, which would leave the new
     # release half-configured with no rollback. Detect that here: the swap
     # started, but neither success nor a rollback attempt was recorded.
     if [ "${_swap_committed:-0}" = "1" ] && [ "${result_quecdeck:-}" != "OK" ] && [ "${result_rollback:-N/A}" = "N/A" ]; then
-        echo "Install interrupted mid-swap; attempting rollback."
-        _revert_swap && _update_status="failed:rollback_ok" || _update_status="failed:rollback_failed"
+        echo "Install interrupted mid-swap. Attempting rollback."
+        if _revert_swap; then
+            _update_status="failed:rollback_ok"
+            [ "${_monitoring_rollback_supported:-0}" = "1" ] && _cleanup_restart_monitoring=1
+        else
+            _update_status="failed:rollback_failed"
+        fi
     fi
     _write_status "$_update_status"
     _persist_log
     # Staging is finished by every path that reaches here, so this only ever
     # collects what a kill mid-download/extract left on tmpfs. No-op otherwise.
     rm -rf "$RELEASE_TARBALL" "$RELEASE_EXTRACT_DIR"
-    remount_ro
+    if remount_ro; then
+        [ "$_cleanup_restart_monitoring" = "1" ] && _restart_monitoring_workers
+    fi
 }
 trap '_update_cleanup' EXIT
 # Convert SIGTERM/SIGINT (systemd stop, TimeoutStartSec expiry) into a normal
@@ -185,17 +194,12 @@ trap '_update_cleanup' EXIT
 trap 'exit 1' INT TERM
 
 if ! remount_rw; then
-    echo "FATAL: could not remount / read-write; refusing to install." >&2
+    echo "FATAL: could not remount / read-write. Refusing to install." >&2
     exit 1
 fi
 
-# Preserve lean mode, watchcat, and scheduled restart state across updates
-lean_mode_was_installed=0
-[ -L /lib/systemd/system/multi-user.target.wants/lean-mode.service ] && lean_mode_was_installed=1
-watchcat_was_installed=0
-[ -L /lib/systemd/system/multi-user.target.wants/watchcat.service ] && watchcat_was_installed=1
-scheduled_restart_was_installed=0
-[ -L /lib/systemd/system/multi-user.target.wants/scheduled_restart.service ] && scheduled_restart_was_installed=1
+# No individual monitoring state is captured here. The explicit release
+# generation marker determines whether rollback can restore the static services.
 
 # --- Pure helpers, unit-tested in tests/host/run-tests.sh ---
 
@@ -296,6 +300,42 @@ preflight_check() {
     return 0
 }
 
+_stage_persistent_state() {
+    local source_var="$QUECDECK_DIR/var" staged_var="$STAGE_DIR/var"
+
+    mkdir -p "$staged_var" || {
+        echo -e "\e[1;31mFATAL: Could not create the staged state directory.\e[0m"
+        return 1
+    }
+    if [ -d "$source_var" ]; then
+        cp -rf "$source_var/." "$staged_var/" 2>/dev/null || {
+            echo -e "\e[1;31mFATAL: Could not preserve the existing QuecDeck state.\e[0m"
+            return 1
+        }
+    fi
+
+    # Preserve monitoring state only when both releases declare the same
+    # service and state contract.
+    if [ -s "$QUECDECK_DIR/monitoring-generation" ] \
+        && cmp -s "$QUECDECK_DIR/monitoring-generation" "$STAGE_DIR/monitoring-generation"; then
+        _monitoring_rollback_supported=1
+    else
+        if ! rm -f "$staged_var/watchcat.json" \
+                   "$staged_var/watchcat_reboot_state.json" \
+                   "$staged_var/scheduled_restart.json" \
+                   "$staged_var/restart_log.jsonl"; then
+            echo -e "\e[1;31mFATAL: Could not remove incompatible monitoring state from the staged release.\e[0m"
+            return 1
+        fi
+        [ -d "$source_var" ] && echo "Legacy monitoring configuration and history were not carried into the new implementation."
+    fi
+
+    if ! chown -R www-data "$staged_var" || ! chmod 700 "$staged_var"; then
+        echo -e "\e[1;31mFATAL: Could not secure the staged QuecDeck state.\e[0m"
+        return 1
+    fi
+}
+
 stage_release() {
     echo -e "\e[1;32mDownloading new release (ref: $GITTREE)...\e[0m"
 
@@ -350,16 +390,6 @@ stage_release() {
     cp -a "$_top_dir/quecdeck/." "$STAGE_DIR/"
     rm -rf "$RELEASE_EXTRACT_DIR"
 
-    # bin/atcli is staged directly at $STAGE_DIR/atcli (no bin/ subdir) so it is
-    # reachable without a PATH entry outside the root console.
-    [ -f "$STAGE_DIR/bin/atcli" ] && mv "$STAGE_DIR/bin/atcli" "$STAGE_DIR/atcli"
-    # rmdir (not rm -rf): abort if bin/ ever gains a second file, instead of
-    # silently discarding or installing something the relocation did not expect.
-    rmdir "$STAGE_DIR/bin" || {
-        echo -e "\e[1;31mFATAL: Unexpected file remains in the staged bin directory.\e[0m"
-        return 1
-    }
-
     # ttyd files are intentionally not part of the staged release:
     # install_ttyd() fetches ttyd.bash/ttyd.service itself after the swap. One
     # list drives both this removal and the verify loop's "expected missing"
@@ -402,9 +432,8 @@ stage_release() {
     # www-data can never replace a privileged entry point, 700 since nothing
     # unprivileged runs or reads them. The rest of script/ stays 755: www-data
     # sources or executes those.
-    for _s in create_watchcat.sh remove_watchcat.sh create_scheduled_restart.sh \
-              remove_scheduled_restart.sh lighttpd_prestart.sh write_htpasswd.sh \
-              check_password.sh run_update.sh firewall.sh lean_mode.sh; do
+    for _s in lighttpd_prestart.sh write_htpasswd.sh \
+              check_password.sh run_update.sh firewall.sh; do
         chown root:root "$STAGE_DIR/script/$_s"
         chmod 700 "$STAGE_DIR/script/$_s"
     done
@@ -435,18 +464,13 @@ stage_release() {
         # Map the repository-relative path to its staged path. Skip entries outside quecdeck/.
         rel=${key#*quecdeck/}
         [ "$rel" = "$key" ] && continue
-        # atcli is staged at $STAGE_DIR/atcli, not $STAGE_DIR/bin/atcli (see
-        # stage_release). Remap it so its hash is checked here too.
-        case "$rel" in
-            bin/atcli) file="$STAGE_DIR/atcli"; staged_rel=atcli ;;
-            *)         file="$STAGE_DIR/$rel"; staged_rel=$rel ;;
-        esac
+        file="$STAGE_DIR/$rel"
         # The two post-swap ttyd fetches are deliberately absent from this
         # staged tree. Every other manifest entry contributes to the reverse
         # inventory check below.
         case " $_STAGE_EXEMPT " in
             *" $rel "*) ;;
-            *) printf '%s\n' "$staged_rel" >> "$_manifest_inventory" ;;
+            *) printf '%s\n' "$rel" >> "$_manifest_inventory" ;;
         esac
         if [ -f "$file" ]; then
             actual=$(sha256sum "$file" | awk '{print $1}')
@@ -494,15 +518,9 @@ stage_release() {
     fi
     echo "All checksums verified OK."
 
-    # Carry forward state that lives outside the downloaded release: watchcat/
-    # scheduled-restart config, lan_ip, and the TLS certificate (so HTTPS clients
-    # don't have to re-trust a brand-new cert on every update).
-    mkdir -p "$STAGE_DIR/var"
-    if [ -d "$QUECDECK_DIR/var" ]; then
-        cp -rf "$QUECDECK_DIR/var/." "$STAGE_DIR/var/" 2>/dev/null || true
-    fi
-    chown -R www-data "$STAGE_DIR/var"
-    chmod 700 "$STAGE_DIR/var"
+    # Copy persistent state into the staged tree. Monitoring compatibility is
+    # filtered below. lan_ip and the TLS certificate remain valid across releases.
+    _stage_persistent_state || return 1
     [ -f "$QUECDECK_DIR/server.crt" ] && cp -f "$QUECDECK_DIR/server.crt" "$STAGE_DIR/server.crt"
     [ -f "$QUECDECK_DIR/server.key" ] && cp -f "$QUECDECK_DIR/server.key" "$STAGE_DIR/server.key"
 
@@ -574,6 +592,55 @@ stage_release() {
     return 0
 }
 
+# Stop monitoring workers from the installed release before its tree is moved.
+# Missing units are normal on a first install. A known unit must both accept the
+# stop and report a terminal inactive state. Otherwise an old worker could keep
+# executing the old script, or reboot the modem, while the new release is being
+# swapped into place.
+stop_monitoring_for_swap() {
+    local unit state unit_file failed=0
+    for unit in watchcat scheduled_restart; do
+        unit_file="${MONITORING_UNIT_DIR:-/lib/systemd/system}/${unit}.service"
+        # A missing file plus an inactive unit is a normal first install. Check
+        # both: systemd can retain a loaded/running unit after its file vanished.
+        if [ ! -f "$unit_file" ] && ! systemctl is-active "$unit" >/dev/null 2>&1; then
+            continue
+        fi
+        if ! systemctl stop "$unit" 2>/dev/null; then
+            echo -e "\e[1;31mFATAL: Could not stop legacy ${unit}. The existing installation was not changed.\e[0m"
+            failed=1
+            continue
+        fi
+        state=$(systemctl is-active "$unit" 2>/dev/null)
+        case "$state" in
+            inactive|failed) ;;
+            *)
+                echo -e "\e[1;31mFATAL: Legacy ${unit} is still ${state:-in an unknown state}. The existing installation was not changed.\e[0m"
+                failed=1
+                ;;
+        esac
+    done
+    [ "$failed" = "0" ]
+}
+
+_restore_pre_swap_services() {
+    local unit
+    for unit in $_pre_swap_active_units; do
+        systemctl start "$unit" 2>/dev/null || \
+            echo -e "\e[1;33mWARNING: Could not restore previously active ${unit}. Re-run the installer from ADB or SSH.\e[0m"
+    done
+}
+
+_restart_monitoring_workers() {
+    local unit
+    for unit in watchcat scheduled_restart; do
+        systemctl reset-failed "$unit" >/dev/null 2>&1
+        systemctl restart "$unit" || \
+            echo -e "\e[1;33mWARNING: ${unit} did not start. Re-save its settings from the web UI.\e[0m"
+    done
+    return 0
+}
+
 swap_in_release() {
     _had_previous=0
     [ -d "$QUECDECK_DIR/www" ] && _had_previous=1
@@ -636,23 +703,45 @@ swap_in_release() {
     fi
 
     echo "Preparing for swap..."
+    # Accepted limitation: a concurrent monitoring-settings request can restart
+    # a worker after this check. Avoiding that rare operator race would require
+    # interrupting the UI for every update or coordinating locks with old CGIs.
+    # Restore exactly the services that were active if anything fails before
+    # the first successful release-tree rename makes rollback available.
+    _pre_swap_active_units=""
+    for _u in watchcat scheduled_restart lighttpd atcmd-daemon connection-logger ttyd; do
+        systemctl is-active "$_u" >/dev/null 2>&1 && _pre_swap_active_units="$_pre_swap_active_units $_u"
+    done
+    if ! stop_monitoring_for_swap; then
+        _restore_pre_swap_services
+        return 1
+    fi
     [ "$_need_lighttpd_restart" = "1" ] && systemctl stop lighttpd 2>/dev/null
-    systemctl stop watchcat 2>/dev/null
-    systemctl stop scheduled_restart 2>/dev/null
     systemctl stop atcmd-daemon 2>/dev/null
     systemctl stop connection-logger 2>/dev/null
     systemctl stop ttyd 2>/dev/null
-    systemctl stop lean-mode 2>/dev/null
 
-    rm -rf "$OLD_DIR"
+    if ! rm -rf "$OLD_DIR"; then
+        echo -e "\e[1;31mFailed to clear the previous rollback directory. Aborting swap.\e[0m"
+        _restore_pre_swap_services
+        return 1
+    fi
     if [ "$_had_previous" = "1" ]; then
-        mv "$QUECDECK_DIR" "$OLD_DIR" || { echo -e "\e[1;31mFailed to move aside the current installation. Aborting swap; the existing site was not touched.\e[0m"; return 1; }
+        if ! mv "$QUECDECK_DIR" "$OLD_DIR"; then
+            echo -e "\e[1;31mFailed to move aside the current installation. Aborting swap. The existing files were not changed.\e[0m"
+            _restore_pre_swap_services
+            return 1
+        fi
         _swap_committed=1
     elif [ -e "$QUECDECK_DIR" ]; then
         # Stale/partial directory from a previous failed run (no /www, so
         # nothing worth preserving). Clear it so the rename below replaces
         # rather than nests inside it.
-        rm -rf "$QUECDECK_DIR"
+        if ! rm -rf "$QUECDECK_DIR"; then
+            echo -e "\e[1;31mFailed to remove the incomplete installation. Aborting swap.\e[0m"
+            _restore_pre_swap_services
+            return 1
+        fi
     fi
     mv "$STAGE_DIR" "$QUECDECK_DIR" || { echo -e "\e[1;31mFailed to move the new release into place.\e[0m"; return 1; }
     _swap_committed=1
@@ -707,7 +796,13 @@ swap_in_release() {
     # restored release's CGIs.
     _sudoers_prev=$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)
 
-    _sudoers_rule="www-data ALL = (root) NOPASSWD: /usrdata/quecdeck/script/create_watchcat.sh, /usrdata/quecdeck/script/remove_watchcat.sh, /usrdata/quecdeck/script/create_scheduled_restart.sh, /usrdata/quecdeck/script/remove_scheduled_restart.sh, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /bin/systemctl start watchcat, /bin/systemctl stop watchcat, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/check_password.sh, /usrdata/quecdeck/script/run_update.sh"
+    # No start/stop watchcat here: modem operations pause it with a marker file
+    # instead of stopping the unit, so the web tier never needs that privilege.
+    # reset-failed is paired with each restart: five saves inside systemd's start
+    # limit window park the unit in failed, where plain restart keeps refusing
+    # until the failed state is cleared. It only clears that state, so it cannot
+    # start, stop or reconfigure anything the rule does not already permit.
+    _sudoers_rule="www-data ALL = (root) NOPASSWD: /bin/systemctl restart watchcat, /bin/systemctl reset-failed watchcat, /bin/systemctl restart scheduled_restart, /bin/systemctl reset-failed scheduled_restart, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/check_password.sh, /usrdata/quecdeck/script/run_update.sh"
     _sudoers_mode=$(stat -c '%a' /opt/etc/sudoers.d/www-data 2>/dev/null)
     if [ "$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)" != "$_sudoers_rule" ] || [ "$_sudoers_mode" != "440" ]; then
         # On a from-scratch install, the sudo package (which would normally
@@ -728,7 +823,6 @@ swap_in_release() {
     rm -f /lib/systemd/system/atcmd-daemon.service /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service
     rm -f /lib/systemd/system/connection-logger.service /lib/systemd/system/multi-user.target.wants/connection-logger.service
     rm -f /lib/systemd/system/ttyd.service /lib/systemd/system/multi-user.target.wants/ttyd.service
-    rm -f /lib/systemd/system/lean-mode.service /lib/systemd/system/multi-user.target.wants/lean-mode.service
     rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
     rm -f /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
     if ! cp -rf "$QUECDECK_DIR/systemd/"* /lib/systemd/system/; then
@@ -736,21 +830,20 @@ swap_in_release() {
         return 1
     fi
 
-    ln -sf /lib/systemd/system/lighttpd.service /lib/systemd/system/multi-user.target.wants/lighttpd.service
-    ln -sf /lib/systemd/system/firewall.service /lib/systemd/system/multi-user.target.wants/firewall.service
-    ln -sf /lib/systemd/system/atcmd-daemon.service /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service
-    ln -sf /lib/systemd/system/connection-logger.service /lib/systemd/system/multi-user.target.wants/connection-logger.service
-    ln -sf /usrdata/quecdeck/console/ttyd /bin
-
-    if [ "$lean_mode_was_installed" = "1" ]; then
-        ln -sf /lib/systemd/system/lean-mode.service /lib/systemd/system/multi-user.target.wants/lean-mode.service
+    if ! ln -sf /lib/systemd/system/lighttpd.service /lib/systemd/system/multi-user.target.wants/lighttpd.service ||
+       ! ln -sf /lib/systemd/system/firewall.service /lib/systemd/system/multi-user.target.wants/firewall.service ||
+       ! ln -sf /lib/systemd/system/atcmd-daemon.service /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service ||
+       ! ln -sf /lib/systemd/system/connection-logger.service /lib/systemd/system/multi-user.target.wants/connection-logger.service ||
+       ! ln -sf /usrdata/quecdeck/console/ttyd /bin; then
+        echo -e "\e[1;31mFATAL: Could not enable systemd units.\e[0m"
+        return 1
     fi
-    if [ "$watchcat_was_installed" = "1" ] && [ -s "$QUECDECK_DIR/var/watchcat.json" ]; then
-        ln -sf /lib/systemd/system/watchcat.service /lib/systemd/system/multi-user.target.wants/watchcat.service
-    fi
-    if [ "$scheduled_restart_was_installed" = "1" ] && [ -s "$QUECDECK_DIR/var/scheduled_restart.json" ]; then
-        ln -sf /lib/systemd/system/scheduled_restart.service /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
-    fi
+    for _m in watchcat scheduled_restart; do
+        if ! ln -sf "/lib/systemd/system/${_m}.service" "/lib/systemd/system/multi-user.target.wants/${_m}.service"; then
+            echo -e "\e[1;31mFATAL: Could not enable ${_m} at boot.\e[0m"
+            return 1
+        fi
+    done
 
     # Whether lighttpd packages need installing was already determined (and
     # the opkg index already refreshed if so) back in stage_release, while
@@ -802,23 +895,14 @@ swap_in_release() {
     if systemctl is-active atcmd-daemon >/dev/null 2>&1 &&        ( . "$QUECDECK_DIR/script/at-lib.sh" && atcmd_run 'AT' 3000 ) >/dev/null 2>&1; then
         echo "AT daemon serving."
     else
-        echo -e "\e[1;33mWARNING: AT daemon not serving; AT data will be unavailable until it recovers.\e[0m"
+        echo -e "\e[1;33mWARNING: AT daemon not serving. AT data will be unavailable until it recovers.\e[0m"
         echo "Check /run/quecdeck/atcmd.log for the reason."
     fi
     systemctl restart connection-logger
 
-    if [ "$lean_mode_was_installed" = "1" ]; then
-        systemctl start --no-block lean-mode
-        echo "Lean Mode preserved."
-    fi
-    if [ "$watchcat_was_installed" = "1" ] && [ -s "$QUECDECK_DIR/var/watchcat.json" ]; then
-        systemctl restart watchcat
-        echo "Watchcat preserved and restarted."
-    fi
-    if [ "$scheduled_restart_was_installed" = "1" ] && [ -s "$QUECDECK_DIR/var/scheduled_restart.json" ]; then
-        systemctl restart scheduled_restart
-        echo "Scheduled restart preserved and restarted."
-    fi
+    # Monitoring stays stopped until the complete update transaction, including
+    # the health check and optional ttyd work, has finished. Neither an expected
+    # network interruption nor a scheduled minute may reboot the modem here.
 
     # A modem-local HTTPS request enters INPUT through lo, not bridge0, and is
     # intentionally rejected by the LAN-ingress firewall policy. Check the
@@ -863,7 +947,7 @@ swap_in_release() {
                 _health_ok=1
                 break
             fi
-            echo "Probe attempt $_i failed; retrying..."
+            echo "Probe attempt $_i failed. Retrying..."
             sleep 2
         done
         [ "$_health_ok" = "1" ] && echo "lighttpd stayed up through the swap."
@@ -912,6 +996,16 @@ _revert_swap() {
         echo "Re-run the installer via ADB or SSH to recover."
         return 1
     fi
+    # Stop the monitoring workers before the tree moves back, mirroring the
+    # forward swap. Otherwise a new-release worker keeps running against the
+    # restored installation.
+    systemctl stop watchcat 2>/dev/null
+    systemctl stop scheduled_restart 2>/dev/null
+
+    # Failure paths deliberately leave the workers stopped. A failed rollback
+    # needs manual ADB/SSH recovery, and a watchdog reboot would fight it. Until
+    # the explicit disablement below, existing enablement links are untouched.
+
     rm -rf "$QUECDECK_DIR" || return 1
     mv "$OLD_DIR" "$QUECDECK_DIR" || {
         echo "Failed to restore the previous installation directory."
@@ -950,6 +1044,19 @@ _revert_swap() {
         systemctl stop "$_u" 2>/dev/null
         rm -f "/lib/systemd/system/$_u" "/lib/systemd/system/multi-user.target.wants/$_u"
     done
+    # Restore monitoring only when both releases declared the same contract.
+    # Legacy releases stay disabled. No old worker or state format is inspected.
+    if [ "${_monitoring_rollback_supported:-0}" = "1" ]; then
+        for _m in watchcat scheduled_restart; do
+            ln -sf "/lib/systemd/system/${_m}.service" "/lib/systemd/system/multi-user.target.wants/${_m}.service" \
+                || echo -e "\e[1;33mWARNING: Could not restore ${_m} boot enablement. Re-run the installer from ADB or SSH.\e[0m"
+        done
+    else
+        for _m in watchcat scheduled_restart; do
+            rm -f "/lib/systemd/system/multi-user.target.wants/${_m}.service"
+        done
+        echo -e "\e[1;33mLegacy monitoring was left disabled after rollback.\e[0m"
+    fi
     if ! ln -sf /lib/systemd/system/lighttpd.service /lib/systemd/system/multi-user.target.wants/lighttpd.service ||
        ! ln -sf /lib/systemd/system/firewall.service /lib/systemd/system/multi-user.target.wants/firewall.service ||
        ! ln -sf /lib/systemd/system/atcmd-daemon.service /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service ||
@@ -972,18 +1079,9 @@ _revert_swap() {
     }
     systemctl restart atcmd-daemon 2>/dev/null
     systemctl restart connection-logger 2>/dev/null
-    if [ "$lean_mode_was_installed" = "1" ]; then
-        ln -sf /lib/systemd/system/lean-mode.service /lib/systemd/system/multi-user.target.wants/lean-mode.service
-        systemctl start --no-block lean-mode 2>/dev/null
-    fi
-    if [ "$watchcat_was_installed" = "1" ] && [ -s "$QUECDECK_DIR/var/watchcat.json" ]; then
-        ln -sf /lib/systemd/system/watchcat.service /lib/systemd/system/multi-user.target.wants/watchcat.service
-        systemctl start watchcat 2>/dev/null || true
-    fi
-    if [ "$scheduled_restart_was_installed" = "1" ] && [ -s "$QUECDECK_DIR/var/scheduled_restart.json" ]; then
-        ln -sf /lib/systemd/system/scheduled_restart.service /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
-        systemctl start scheduled_restart 2>/dev/null || true
-    fi
+    # Compatible monitoring is restarted only after the updater has persisted
+    # its rollback result, removed the transient unit and remounted / read-only.
+    # Until then both workers remain unable to interrupt recovery.
     echo -e "\e[1;32mRollback complete. Previous version restored.\e[0m"
     return 0
 }
@@ -1104,11 +1202,21 @@ _persist_log
 # rw window, so the /lib rm succeeds.
 rm -f "$SERVICE_FILE" /lib/systemd/system/install_quecdeck.service
 systemctl daemon-reload
+_root_remounted=1
 if ! remount_ro; then
+    _root_remounted=0
     echo -e "\e[1;31mFATAL: installation finished, but / could not be remounted read-only.\e[0m" >&2
     _update_status="failed"
     _install_rc=1
     _write_status "$_update_status"
+fi
+# Warnings do not fail an otherwise good release or rollback: monitoring is
+# optional and remains boot-enabled, so a later reboot also retries it. This is
+# deliberately after status persistence, transient-unit cleanup and the
+# read-only remount. Neither worker can interrupt the update transaction.
+if [ "$_root_remounted" = "1" ] && { [ "$result_quecdeck" = "OK" ] \
+    || { [ "$result_rollback" = "OK" ] && [ "${_monitoring_rollback_supported:-0}" = "1" ]; }; }; then
+    _restart_monitoring_workers
 fi
 exit "$_install_rc"
 fi
@@ -1174,7 +1282,7 @@ touch "$LOG_FILE" && chmod 644 "$LOG_FILE" || _bootstrap_abort "Cannot prepare t
 # this run's result.
 if ! echo "running" > "${STATUS_FILE}.tmp" || ! chmod 644 "${STATUS_FILE}.tmp" || ! mv "${STATUS_FILE}.tmp" "$STATUS_FILE"; then
     rm -f "${STATUS_FILE}.tmp"
-    echo -e "\e[1;31mCannot record update status; refusing to start the install service.\e[0m"
+    echo -e "\e[1;31mCannot record update status. Refusing to start the install service.\e[0m"
     exit 1
 fi
 

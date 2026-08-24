@@ -1,190 +1,235 @@
 #!/bin/bash
-# Watchcat ping watchdog. Reads config from watchcat.json at startup.
-# systemd runs this as www-data. The watchcat_maker CGI writes its configuration.
-
-. /usrdata/quecdeck/script/json-lib.sh
-. /usrdata/quecdeck/script/at-lib.sh
+# Ping watchdog. Configuration is loaded at startup. The maker CGI restarts the
+# unit after every explicit save.
 
 CONFIG=/usrdata/quecdeck/var/watchcat.json
 REBOOT_STATE=/usrdata/quecdeck/var/watchcat_reboot_state.json
-# ~2h of pings between capped reboots keeps a worst-case continuous outage
-# well under Quectel's ~20 reboots/day flash-wear guidance.
+STATS_PATH=/tmp/quecdeck/watchcat_stats.json
+RESTART_LOG=/usrdata/quecdeck/var/restart_log.jsonl
+PING_TIMEOUT=3
 MAX_REBOOT_INTERVAL=7200
+REBOOT_SETTLE=300
 
-if [ ! -s "$CONFIG" ]; then
-    echo "watchcat: config not found or empty: $CONFIG" >&2
-    exit 1
-fi
+for _lib in json-lib.sh at-lib.sh watchcat-coord.sh; do
+    . "/usrdata/quecdeck/script/$_lib" || exit 1
+done
 
-# Parse config
+inactive() {
+    echo "watchcat: $1" >&2
+    exit 0
+}
+
+[ -s "$CONFIG" ] || inactive "config not found or empty: $CONFIG"
 config_json=$(cat "$CONFIG")
-enabled=$(json_get "$config_json" enabled)
-TRACK_IPS=$(json_get "$config_json" track_ips | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | tr '\n' ' ')
+[ "$(json_get "$config_json" enabled)" = "true" ] || inactive "disabled in config"
+
+TRACK_IPS=$(json_get "$config_json" track_ips | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -6 | tr '\n' ' ')
 PING_INTERVAL=$(json_get "$config_json" ping_interval)
 PING_FAILURE_COUNT=$(json_get "$config_json" ping_failure_count)
 sim=$(json_get "$config_json" disable_on_no_sim)
 backoff=$(json_get "$config_json" reboot_backoff)
 log=$(json_get "$config_json" log_restarts)
-[ "$enabled" = "false" ] && { echo "watchcat: disabled in config, exiting." >&2; exit 0; }
-[ "$sim" = "true" ] && DISABLE_ON_NO_SIM=1 || DISABLE_ON_NO_SIM=0
-[ "$backoff" = "false" ] && REBOOT_BACKOFF=0 || REBOOT_BACKOFF=1
-[ "$log" = "false" ] && LOG_RESTARTS=0 || LOG_RESTARTS=1
 
-# Validate
-case "$PING_INTERVAL" in
-    ''|0|*[!0-9]*) echo "watchcat: invalid ping_interval in config" >&2; exit 1 ;;
-esac
-case "$PING_FAILURE_COUNT" in
-    ''|0|*[!0-9]*) echo "watchcat: invalid ping_failure_count in config" >&2; exit 1 ;;
-esac
-[ -z "$TRACK_IPS" ] && { echo "watchcat: no track_ips in config" >&2; exit 1; }
+case "$PING_INTERVAL" in ''|*[!0-9]*) inactive "invalid ping_interval" ;; esac
+case "$PING_FAILURE_COUNT" in ''|*[!0-9]*) inactive "invalid ping_failure_count" ;; esac
+[ "$PING_INTERVAL" -ge 10 ] && [ "$PING_INTERVAL" -le 600 ] || inactive "ping_interval out of range"
+[ "$PING_FAILURE_COUNT" -ge 3 ] && [ "$PING_FAILURE_COUNT" -le 10 ] || inactive "ping_failure_count out of range"
+[ -n "$TRACK_IPS" ] || inactive "no track_ips in config"
+case "$sim" in true) DISABLE_ON_NO_SIM=1 ;; false) DISABLE_ON_NO_SIM=0 ;; *) inactive "invalid disable_on_no_sim" ;; esac
+case "$backoff" in true) REBOOT_BACKOFF=1 ;; false) REBOOT_BACKOFF=0 ;; *) inactive "invalid reboot_backoff" ;; esac
+case "$log" in true) LOG_RESTARTS=1 ;; false) LOG_RESTARTS=0 ;; *) inactive "invalid log_restarts" ;; esac
 
-STATS_PATH=/tmp/quecdeck/watchcat_stats.json
-RESTART_LOG=/usrdata/quecdeck/var/restart_log.jsonl
+# TRACK_IPS contains only dotted decimal tokens by this point, so intentional
+# word splitting is safe here.
+TRACK_IPS_ARRAY=($TRACK_IPS)
+target_count=${#TRACK_IPS_ARRAY[@]}
 BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
 failures=0
 successes=0
+reboot_count=0
+next_attempt_uptime=0
+paused=false
+round_start=0
+
+get_uptime() {
+    watchcat_uptime
+}
 
 log_restart() {
-    local reason="$1" detail="$2"
-    # json-lib.sh's parser can't handle embedded quotes/backslashes, and a raw
-    # A newline would split the JSONL entry, so strip newlines for every caller.
-    reason=$(printf '%s' "$reason" | tr -d '"\\' | tr '\n\r' '  ')
-    detail=$(printf '%s' "$detail" | tr -d '"\\' | tr '\n\r' '  ')
-    # umask, not a bare mkdir: this can be the first creator of the var dir, so
-    # the mode must not come from whatever umask the unit inherited.
-    [ -d "$(dirname "$RESTART_LOG")" ] || ( umask 077; mkdir -p "$(dirname "$RESTART_LOG")" )
-    # Store wall ts, uptime AND boot_id: the wall clock may never sync, and
-    # uptime is only meaningful within its own boot. The get_restart_log function picks
-    # whichever source is trustworthy at read time.
-    printf '{"ts":%d,"uptime":%d,"boot_id":"%s","reason":"%s","detail":"%s"}\n' \
-        "$(date +%s)" "$(get_uptime)" "$BOOT_ID" "$reason" "$detail" >> "$RESTART_LOG"
-    local count
-    count=$(wc -l < "$RESTART_LOG" 2>/dev/null || echo 0)
-    if [ "$count" -gt 50 ]; then
-        tail -50 "$RESTART_LOG" > "${RESTART_LOG}.tmp" && mv "${RESTART_LOG}.tmp" "$RESTART_LOG"
-    fi
+    [ "$LOG_RESTARTS" = "1" ] || return 0
+    local detail entry count
+    detail=$(printf '%s' "$1" | tr -d '"\\' | tr '\n\r' '  ')
+    [ -d "$(dirname "$RESTART_LOG")" ] || (umask 077; mkdir -p "$(dirname "$RESTART_LOG")") || return 1
+    entry=$(printf '{"ts":%d,"uptime":%d,"boot_id":"%s","detail":"%s"}' \
+        "$(date +%s)" "$(get_uptime)" "$BOOT_ID" "$detail")
+    printf '%s\n' "$entry" >> "$RESTART_LOG" || return 1
+    count=$(wc -l < "$RESTART_LOG" 2>/dev/null) || return 0
+    # Normal logging is append-only. Once the limit is exceeded, keep only the
+    # event that crossed it. This avoids rewriting the whole persistent log on
+    # every event while still preventing unbounded growth.
+    [ "$count" -le 100 ] || watchcat_atomic_write "$RESTART_LOG" "$entry"
 }
 
-get_uptime() { awk '{print int($1)}' /proc/uptime; }
-
-# Consecutive failures required before the next reboot: doubles per reboot,
-# capped at roughly MAX_REBOOT_INTERVAL worth of pings, never below the
-# configured base. Throttling is failure-denominated on purpose: no clock or
-# uptime source is involved, so it cannot be affected by time sync.
-calc_threshold() {
-    # Clamp the shift: bash wraps at 64 bits, which would cycle the threshold
-    # back to base during a very long outage. 2^20 already exceeds any cap.
-    shift_n=$reboot_count
+calc_backoff_delay() {
+    backoff_delay=0
+    [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ] || return 0
+    local shift_n=$reboot_count
     [ "$shift_n" -gt 20 ] && shift_n=20
-    threshold=$((PING_FAILURE_COUNT * (1 << shift_n)))
-    max_threshold=$((MAX_REBOOT_INTERVAL / PING_INTERVAL))
-    [ "$max_threshold" -lt "$PING_FAILURE_COUNT" ] && max_threshold=$PING_FAILURE_COUNT
-    [ "$threshold" -gt "$max_threshold" ] && threshold=$max_threshold
-    echo "$threshold"
+    backoff_delay=$((PING_FAILURE_COUNT * PING_INTERVAL * (1 << shift_n)))
+    [ "$backoff_delay" -gt "$MAX_REBOOT_INTERVAL" ] && backoff_delay=$MAX_REBOOT_INTERVAL
 }
 
-# Read persistent reboot state
-reboot_count=0
-if [ "$REBOOT_BACKOFF" = "1" ] && [ -f "$REBOOT_STATE" ]; then
-    reboot_count=$(json_get "$(cat "$REBOOT_STATE")" reboot_count)
+save_reboot_state() {
+    watchcat_atomic_write "$REBOOT_STATE" \
+        "{\"reboot_count\":$reboot_count,\"boot_id\":\"$BOOT_ID\",\"not_before\":$next_attempt_uptime}"
+}
+
+# Backoff state is relevant only when the option is enabled. Same-boot service
+# restarts keep the exact monotonic deadline. A modem reboot starts a fresh
+# delay from the new boot's uptime. Wall-clock time is never used here.
+if [ "$REBOOT_BACKOFF" = "1" ] && [ -s "$REBOOT_STATE" ]; then
+    state_json=$(cat "$REBOOT_STATE")
+    reboot_count=$(json_get "$state_json" reboot_count)
+    state_not_before=$(json_get "$state_json" not_before)
+    state_boot_id=$(json_get "$state_json" boot_id)
     case "$reboot_count" in ''|*[!0-9]*) reboot_count=0 ;; esac
+    case "$state_not_before" in ''|*[!0-9]*) state_not_before=0 ;; esac
+    if [ "$state_boot_id" = "$BOOT_ID" ]; then
+        next_attempt_uptime=$state_not_before
+    elif [ "$reboot_count" -gt 0 ]; then
+        calc_backoff_delay
+        next_attempt_uptime=$(($(get_uptime) + backoff_delay))
+    fi
 fi
 
-# Wait for the system to settle before starting to ping.
-# Skipped if the system has been up for more than 65 seconds (e.g. during install/update).
-uptime_secs=$(get_uptime)
-[ "$uptime_secs" -lt 65 ] && { sleep 65 & wait $!; }
+# Wait only for the remainder of the initial boot-settle period.
+uptime_secs=$(get_uptime) || exit 1
+[ "$uptime_secs" -lt 65 ] && { sleep "$((65 - uptime_secs))" & wait $!; }
 
-# Per-IP miss counters stored in temp files
-MISS_DIR=/tmp/quecdeck/watchcat_miss
-rm -rf "$MISS_DIR"
-mkdir -p "$MISS_DIR"
-# Lock the base dir if this daemon created it before lighttpd's ExecStartPre did.
-chmod 700 /tmp/quecdeck "$MISS_DIR" 2>/dev/null
-trap 'rm -rf $MISS_DIR' EXIT
+mkdir -p /tmp/quecdeck || exit 1
+chmod 700 /tmp/quecdeck 2>/dev/null
 trap 'exit' INT TERM
-_miss_file() { echo "${MISS_DIR}/miss_${1}"; }
-_get_miss()  { cat "$(_miss_file "$1")" 2>/dev/null || echo 0; }
-_set_miss()  { echo "$2" > "$(_miss_file "$1")"; }
 
-i=1
-for ip in $TRACK_IPS; do
-    _set_miss "$i" 0
-    i=$((i+1))
-done
+# -1 means that a target has not been contacted yet. A successful response ends
+# the round, so later targets may legitimately remain unknown.
+misses=()
+for i in "${!TRACK_IPS_ARRAY[@]}"; do misses[$i]=-1; done
 
 check_sim() {
-    atcmd_run 'AT+QSIMSTAT?' | grep -qE '^\+QSIMSTAT: [0-9]+,1$'
+    local reply rc state
+    reply=$(atcmd_run 'AT+QSIMSTAT?')
+    rc=$?
+    [ "$rc" -eq 0 ] || return 2
+    printf '%s\n' "$reply" | grep -qx 'OK' || return 2
+    state=$(printf '%s\n' "$reply" | sed -n 's/^+QSIMSTAT: [0-9]\+,\([01]\)$/\1/p')
+    case "$state" in 1) return 0 ;; 0) return 1 ;; *) return 2 ;; esac
 }
 
 write_stats() {
-    stats="["
-    first_stat=1
-    i=1
-    for ip in $TRACK_IPS; do
-        count=$(_get_miss "$i")
-        [ "$first_stat" = "1" ] && first_stat=0 || stats="$stats,"
-        stats="${stats}{\"ip\":\"$ip\",\"miss\":$count}"
-        i=$((i+1))
+    local stats="[" first=1 i now remaining=0
+    for i in "${!TRACK_IPS_ARRAY[@]}"; do
+        [ "$first" = "1" ] && first=0 || stats="$stats,"
+        stats="${stats}{\"ip\":\"${TRACK_IPS_ARRAY[$i]}\",\"miss\":${misses[$i]}}"
     done
     stats="$stats]"
+    now=$(get_uptime) || return 1
+    [ "$next_attempt_uptime" -gt "$now" ] && remaining=$((next_attempt_uptime - now))
+    watchcat_atomic_write "$STATS_PATH" \
+        "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"failure_threshold\":$PING_FAILURE_COUNT,\"retry_after\":$remaining,\"paused\":$paused}"
+}
 
-    echo "{\"stats\":$stats,\"consecutive_failures\":$failures,\"reboot_count\":$reboot_count,\"failure_threshold\":$(calc_threshold)}" > "$STATS_PATH"
+ping_round() {
+    local offset i ip
+    overall_success=0
+    for ((offset=0; offset<target_count; offset++)); do
+        i=$(((round_start + offset) % target_count))
+        ip=${TRACK_IPS_ARRAY[$i]}
+        if ping -c 1 -W "$PING_TIMEOUT" "$ip" >/dev/null 2>&1; then
+            misses[$i]=0
+            overall_success=1
+            round_start=$(((round_start + 1) % target_count))
+            return 0
+        fi
+        [ "${misses[$i]}" -lt 0 ] && misses[$i]=0
+        misses[$i]=$((misses[$i] + 1))
+    done
+    round_start=$(((round_start + 1) % target_count))
+}
+
+attempt_reboot() {
+    local now sim_state=0 detail outcome
+    # A pause is checked at the start of the round and again below after the SIM
+    # query. A marker arriving after the final check may not stop this attempt.
+    if watchcat_is_paused; then
+        paused=true failures=0 successes=0
+        return 0
+    fi
+    now=$(get_uptime) || return 1
+    [ "$REBOOT_BACKOFF" = "1" ] && [ "$now" -lt "$next_attempt_uptime" ] && return 0
+
+    if [ "$DISABLE_ON_NO_SIM" = "1" ]; then
+        check_sim
+        sim_state=$?
+    fi
+    if [ "$sim_state" = "1" ]; then
+        echo "watchcat: reboot suppressed because the SIM is absent" >&2
+        failures=0
+        return 0
+    fi
+    [ "$sim_state" = "2" ] && echo "watchcat: SIM status unavailable. Continuing with reboot" >&2
+
+    # Re-check after the SIM query, which may itself take several seconds.
+    if watchcat_is_paused; then
+        paused=true failures=0 successes=0
+        return 0
+    fi
+
+    reboot_count=$((reboot_count + 1))
+    calc_backoff_delay
+    next_attempt_uptime=$((now + backoff_delay))
+    if [ "$REBOOT_BACKOFF" = "1" ] && ! save_reboot_state; then
+        reboot_count=$((reboot_count - 1))
+        next_attempt_uptime=0
+        failures=0
+        log_restart "reboot withheld: could not persist backoff state"
+        return 0
+    fi
+
+    detail="$failures consecutive failed rounds (attempt #$reboot_count)"
+    log_restart "$detail"
+    sync
+    atcmd_fire 'AT+CFUN=1,1' 10000 && outcome="modem stayed up" || outcome="dispatch failed"
+    sleep "$REBOOT_SETTLE" & wait $!
+    log_restart "no reboot after $detail: $outcome"
+    failures=0
 }
 
 while :; do
-    overall_success=0
-    i=1
-    for ip in $TRACK_IPS; do
-        if ping -c 1 -W 5 "$ip" > /dev/null 2>&1; then
-            overall_success=1
-            break
-        fi
-        _set_miss "$i" $(( $(_get_miss "$i") + 1 ))
-        i=$((i+1))
-    done
-
-    # Reset all per-IP miss counts on any success (network is up)
-    if [ "$overall_success" = "1" ]; then
-        i=1; for ip in $TRACK_IPS; do _set_miss "$i" 0; i=$((i+1)); done
+    if watchcat_is_paused; then
+        paused=true
+        failures=0
+        successes=0
+        write_stats
+        sleep "$PING_INTERVAL" & wait $!
+        continue
     fi
+    paused=false
+    ping_round
 
     if [ "$overall_success" = "1" ]; then
         failures=0
         successes=$((successes + 1))
-        if [ "$REBOOT_BACKOFF" = "1" ] && [ "$reboot_count" -gt 0 ] && [ "$successes" -ge "$PING_FAILURE_COUNT" ]; then
+        if [ "$reboot_count" -gt 0 ] && [ "$successes" -ge "$PING_FAILURE_COUNT" ]; then
             reboot_count=0
-            printf '{"reboot_count":0}\n' > "$REBOOT_STATE"
+            next_attempt_uptime=0
+            [ "$REBOOT_BACKOFF" = "1" ] && save_reboot_state
         fi
     else
-        failures=$((failures + 1))
+        [ "$failures" -lt "$PING_FAILURE_COUNT" ] && failures=$((failures + 1))
         successes=0
     fi
 
-    if [ "$failures" -ge "$(calc_threshold)" ]; then
-        if [ "$DISABLE_ON_NO_SIM" = "1" ] && ! check_sim; then
-            echo "uptime $(get_uptime)s: reboot suppressed, SIM check failed ($failures ping failures)"
-            failures=0
-        else
-            if [ "$REBOOT_BACKOFF" = "1" ]; then
-                reboot_count=$((reboot_count + 1))
-                printf '{"reboot_count":%d}\n' "$reboot_count" > "$REBOOT_STATE"
-                detail="$failures consecutive ping failures (reboot streak #$reboot_count)"
-            else
-                detail="$failures consecutive ping failures"
-            fi
-            [ "$LOG_RESTARTS" = "1" ] && log_restart "watchcat" "$detail"
-            sync
-            sleep 2
-            echo "uptime $(get_uptime)s: $detail"
-            # The reboot must survive this script exiting. See at-lib.sh.
-            atcmd_fire 'AT+CFUN=1,1' 10000
-            exit 0
-        fi
-    fi
-
+    [ "$failures" -ge "$PING_FAILURE_COUNT" ] && attempt_reboot
     write_stats
-
     sleep "$PING_INTERVAL" & wait $!
 done

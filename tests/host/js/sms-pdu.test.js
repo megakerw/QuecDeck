@@ -1,5 +1,5 @@
 // Unit test for the SMS PDU decoder in quecdeck/www/js/sms.js.
-//   node tests/host/test-sms-pdu.js
+//   node tests/host/js/sms-pdu.test.js
 // Run by tests/host/ci-checks.sh where node exists. It loads the shipped file, so
 // what is tested is what is served.
 //
@@ -11,7 +11,7 @@ const path = require('path');
 // eval returns the bindings explicitly: a `const` inside eval is not visible
 // outside it, unlike the function declaration. The parse path touches no DOM.
 // Renamed on the way out, or they collide with eval's own declarations.
-const src = fs.readFileSync(path.join(__dirname, '..', '..', 'quecdeck', 'www', 'js', 'sms.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'quecdeck', 'www', 'js', 'sms.js'), 'utf8');
 const { fetchSMS: makeSMS, SMS_GSM7_BASIC: gsm7Table,
         deleteFailureText: failureText } =
   eval(`${src}\n;({ fetchSMS, SMS_GSM7_BASIC, deleteFailureText })`);
@@ -44,7 +44,7 @@ const gsm7Concat = deliver('00', '09', udh(0x2b, 2, 1) + '9069', true);
 const gsm7Single = deliver('00', '02', 'C834', false);
 
 // Per 27.005 <length> counts the TPDU only, excluding the SMSC octets. The
-// decoder ignores the field; the fixtures state it right to stay a reference.
+// decoder ignores the field, but the fixtures state it correctly to stay a reference.
 const tpduLength = pdu => pdu.length / 2 - (1 + parseInt(pdu.slice(0, 2), 16));
 
 const listing = entries => entries
@@ -111,7 +111,7 @@ check('reused-reference messages keep their own parts',
   JSON.stringify(collided.messages.map(m => m.text)));
 
 // Real listings are separated by blank lines and wrapped in the echoed command
-// and its terminator; none of that may displace the PDU that follows a header.
+// and its terminator. None of that may displace the PDU that follows a header.
 const framed = makeSMS();
 framed.parseSMSData(`AT+CMGL=4\n\n+CSCA: "+99900000000",145\n\n+CMGL: 4,1,,${tpduLength(gsm7Single)}\n\n${gsm7Single}\n\nOK\n`);
 check('blank lines and surrounding output do not lose the PDU',
@@ -152,7 +152,7 @@ check('mixed-alphabet parts join in sequence order',
 // A PDU declaring more user data than it carries. The septet unpacker reads
 // past the end as 0, which is "@" in GSM-7, so without the length check this
 // decodes as the real text followed by a run of @ - wrong text, no error.
-// UDL 6 septets needs ceil(6 * 7 / 8) = 6 octets; the fixture supplies 2.
+// UDL 6 septets needs ceil(6 * 7 / 8) = 6 octets. The fixture supplies 2.
 const shortUd = deliver('00', '06', 'C834', false);
 const shortLog = [];
 const realErrorShort = console.error;

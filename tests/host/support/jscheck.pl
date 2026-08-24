@@ -1,7 +1,7 @@
 #!/usr/bin/perl
-# Structural checker for the project's vanilla JS: bracket balance aware of
+# Structural checker for the project's vanilla JS. Bracket balance is aware of
 # strings, template literals (with nested ${}), comments, and regex literals.
-# Not a parser; catches unbalanced brackets and unterminated strings, which
+# Not a parser. Catches unbalanced brackets and unterminated strings, which
 # are the realistic hand-edit failures. Dev tool, not deployed (no node on
 # the dev machine, so this is the only host-side JS check available).
 use strict; use warnings;
@@ -56,7 +56,7 @@ sub check {
         if ($c eq '/' && ($prev eq '' || $prev =~ /[=(,\[!&|?:;{}\n]/)) {
             # Heuristic regex scan. If no closing / before the newline, this
             # was division after all (e.g. the / that ENDS /x{2}/, where prev
-            # is '}'); consume one char and continue instead of erroring.
+            # is '}'). Consume one char and continue instead of erroring.
             my $j = $i + 1; my $in_class = 0; my $found = 0;
             while ($j < $n) {
                 my $d = substr($src, $j, 1);

@@ -12,10 +12,24 @@ const WATCHCAT_DEFAULTS = {
 // Reboot-window severity levels, each with its badge label and class. The
 // severity getter maps the current window onto one of these.
 const WATCHCAT_SEVERITY = Object.freeze({
-  RECKLESS:   { label: 'Reckless',   cls: 'text-bg-danger' },
-  AGGRESSIVE: { label: 'Aggressive', cls: 'text-bg-warning text-dark' },
-  RELAXED:    { label: 'Relaxed',    cls: 'text-bg-primary' },
+  RECKLESS:   { label: 'Very frequent', cls: 'text-bg-danger' },
+  AGGRESSIVE: { label: 'Frequent',      cls: 'text-bg-warning text-dark' },
+  RELAXED:    { label: 'Slow recovery', cls: 'text-bg-primary' },
   BALANCED:   { label: 'Balanced',   cls: 'text-bg-success' },
+});
+
+// Failed attempts before a target is called unresponsive. Fixed rather than
+// pingFailureCount, which is the mid-edit form value and governs
+// rounds-to-reboot, a different question.
+const WATCHCAT_STALE_MISSES = 3;
+
+// Per-target reachability, each with its badge label and class. targetState()
+// maps a stats row onto one of these. MISSING relabels itself with the count.
+const WATCHCAT_TARGET_STATE = Object.freeze({
+  UNTESTED:   { label: 'Not checked',    cls: 'text-bg-secondary' },
+  RESPONDING: { label: 'Responding',     cls: 'text-bg-success' },
+  MISSING:    { label: 'Missing',        cls: 'text-bg-warning text-dark' },
+  STALE:      { label: 'Not responding', cls: 'text-bg-danger' },
 });
 
 function quecdeckWatchCat() {
@@ -25,8 +39,8 @@ function quecdeckWatchCat() {
     ips: [...WATCHCAT_DEFAULTS.ips],
     pingInterval: WATCHCAT_DEFAULTS.pingInterval,
     pingFailureCount: WATCHCAT_DEFAULTS.pingFailureCount,
-    // The running daemon's current (possibly escalated) failure threshold;
-    // the stats panel compares against this, not the mid-edit form value.
+    // The running daemon's failure-evidence threshold. Reboot frequency is
+    // limited separately by retryAfter once an attempt has been made.
     failureThreshold: WATCHCAT_DEFAULTS.pingFailureCount,
     disableOnNoSim: WATCHCAT_DEFAULTS.disableOnNoSim,
     rebootBackoff: WATCHCAT_DEFAULTS.rebootBackoff,
@@ -36,33 +50,19 @@ function quecdeckWatchCat() {
     response: '',
     stats: [],
     consecutiveFailures: 0,
+    paused: false,
     rebootCount: 0,
+    retryAfter: 0,
     statsUpdatedAt: '',
     statsTimer: null,
     statsFetching: false,
     responseTimer: null,
 
-    // Scheduled restart
-    srEnabled: false,
-    srType: 'daily',
-    srDay: 1,
-    srHour: 3,
-    srMinute: 0,
-    srLoading: false,
-    srResponse: '',
-    srServiceActive: false,
-    srDeviceTzOffsetMins: 0,
-    srResponseTimer: null,
-
-    get capExceeded() {
-      // Must match MAX_REBOOT_INTERVAL in watchcat.sh.
-      return this.pingInterval * this.pingFailureCount > 7200;
-    },
-
-    // Seconds from the first missed ping to a reboot; the summary labels this
-    // "without response".
+    // Guaranteed minimum from the first failed round to the reboot attempt.
+    // A failed ping can return immediately (for example, network unreachable),
+    // so only the configured gaps between rounds are a dependable safety bound.
     get rebootWindowSec() {
-      return this.pingInterval * this.pingFailureCount;
+      return Math.max(0, this.pingFailureCount - 1) * this.pingInterval;
     },
 
     // Human-readable reboot window, e.g. "90 sec" or "3 min".
@@ -71,7 +71,16 @@ function quecdeckWatchCat() {
       return s >= 60 ? Math.round(s / 60) + ' min' : s + ' sec';
     },
 
-    // Under 40s from first miss to reboot: a brief blip reboots the modem.
+    get retryAfterLabel() {
+      const seconds = Math.max(0, Number(this.retryAfter) || 0);
+      if (seconds < 60) return `${seconds} sec`;
+      if (seconds < 3600) return `${Math.ceil(seconds / 60)} min`;
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.ceil((seconds % 3600) / 60);
+      return minutes > 0 ? `${hours} hr ${minutes} min` : `${hours} hr`;
+    },
+
+    // Under 40s from the first failed round to reboot.
     get reckless() {
       return this.rebootWindowSec < 40;
     },
@@ -87,9 +96,13 @@ function quecdeckWatchCat() {
     },
 
     // Smallest interval that reaches a full 60s window at the current failure
-    // count, so the warning can point at a concrete safer value.
+    // count and target list, so the warning can point at a concrete safer
+    // value. Never below the form's own floor, or it would suggest a setting
+    // that cannot be saved.
     get safeInterval() {
-      return Math.ceil(60 / this.pingFailureCount);
+      const rounds = this.pingFailureCount;
+      const gaps = Math.max(1, rounds - 1);
+      return Math.max(10, Math.ceil(60 / gaps));
     },
 
     // Severity badge shown beside the summary heading.
@@ -100,84 +113,69 @@ function quecdeckWatchCat() {
       return WATCHCAT_SEVERITY.BALANCED;
     },
 
+    // Reachability of one stats row. STALE requires the link to be up now
+    // (consecutiveFailures 0), so a real outage marks no target dead and the
+    // reboot path owns it. A single configured target therefore never reaches
+    // STALE: if it is down, the whole round is down.
+    targetState(row) {
+      const miss = Number(row.miss);
+      // Negative is the daemon's "not contacted yet" sentinel, and a value we
+      // cannot read is equally not evidence. Neither may claim Responding.
+      if (!Number.isFinite(miss) || miss < 0) return WATCHCAT_TARGET_STATE.UNTESTED;
+      if (miss === 0) return WATCHCAT_TARGET_STATE.RESPONDING;
+      if (this.consecutiveFailures === 0 && miss >= WATCHCAT_STALE_MISSES) {
+        return WATCHCAT_TARGET_STATE.STALE;
+      }
+      return WATCHCAT_TARGET_STATE.MISSING;
+    },
+
+    // Only MISSING carries its count: there it says how close the target is to
+    // the cutoff. Once a target is declared unresponsive the number stops being
+    // actionable, so the badge stands alone.
+    targetLabel(row) {
+      const state = this.targetState(row);
+      if (state !== WATCHCAT_TARGET_STATE.MISSING) return state.label;
+      const miss = Number(row.miss) || 0;
+      return miss === 1 ? '1 miss' : `${miss} misses`;
+    },
+
+    isValidIp(ip) {
+      const parts = ip.trim().split('.');
+      return parts.length === 4 && parts.every((part) => (
+        part !== '' && /^\d+$/.test(part) && Number(part) <= 255
+      ));
+    },
+
     get validIps() {
-      return this.ips.filter((ip) => /^(\d{1,3}\.){3}\d{1,3}$/.test(ip.trim()));
+      return this.ips.filter((ip) => this.isValidIp(ip));
+    },
+
+    get allIpsValid() {
+      return this.ips.every((ip) => ip.trim() === '' || this.isValidIp(ip));
     },
 
     canAddIp() {
       if (this.ips.length >= 6) return false;
-      const parts = this.ips[this.ips.length - 1].trim().split('.');
-      return parts.length === 4 && parts.every(o => o !== '' && +o >= 0 && +o <= 255);
+      return this.isValidIp(this.ips[this.ips.length - 1]);
     },
 
     get canSave() {
       if (!this.enabled) return true;
       return (
         this.validIps.length > 0 &&
+        this.allIpsValid &&
         this.pingInterval >= 10 &&
         this.pingInterval <= 600 &&
-        this.pingFailureCount >= 2 &&
+        this.pingFailureCount >= 3 &&
         this.pingFailureCount <= 10
       );
-    },
-
-    // Parse "+0530" or "-0500" → offset in minutes from UTC
-    parseTzOffset(str) {
-      if (!str || str.length < 5) return 0;
-      const sign = str[0] === '-' ? -1 : 1;
-      const h = parseInt(str.slice(1, 3), 10);
-      const m = parseInt(str.slice(3, 5), 10);
-      return sign * (h * 60 + m);
-    },
-
-    // Shift (hour, minute, day) by deltaMins, wrapping across midnight.
-    shiftTime(hour, minute, day, deltaMins) {
-      let total = hour * 60 + minute + deltaMins;
-      let dayShift = 0;
-      if (total < 0)    { total += 1440; dayShift = -1; }
-      if (total >= 1440) { total -= 1440; dayShift = 1; }
-      return {
-        hour: Math.floor(total / 60),
-        minute: total % 60,
-        day: ((day - 1 + dayShift + 7) % 7) + 1,
-      };
-    },
-
-    // Convert device-local (hour, minute, day) → browser-local
-    deviceToLocal(hour, minute, day) {
-      const userOffsetMins = -new Date().getTimezoneOffset();
-      return this.shiftTime(hour, minute, day, userOffsetMins - this.srDeviceTzOffsetMins);
-    },
-
-    // Convert browser-local (hour, minute, day) → device-local
-    localToDevice(hour, minute, day) {
-      const userOffsetMins = -new Date().getTimezoneOffset();
-      return this.shiftTime(hour, minute, day, this.srDeviceTzOffsetMins - userOffsetMins);
-    },
-
-    get srCanSave() {
-      return (
-        this.srHour >= 0 && this.srHour <= 23 &&
-        this.srMinute >= 0 && this.srMinute <= 59
-      );
-    },
-
-    get srTime() {
-      return String(this.srHour).padStart(2, '0') + ':' + String(this.srMinute).padStart(2, '0');
-    },
-
-    set srTime(val) {
-      if (!val) return;
-      const [h, m] = val.split(':').map(Number);
-      this.srHour = isNaN(h) ? 0 : h;
-      this.srMinute = isNaN(m) ? 0 : m;
     },
 
     addIp() {
       if (this.ips.length < 6) this.ips.push('');
     },
 
-    // Resets the form fields only; the enable switch is untouched and nothing
+    // Resets the form fields only. The enable switch is untouched and nothing
     // is applied until Save.
     restoreDefaults() {
       this.ips = [...WATCHCAT_DEFAULTS.ips];
@@ -216,7 +214,10 @@ function quecdeckWatchCat() {
           this.isLoading = false;
           if (response.ok) {
             this.response = this.enabled ? 'Saved.' : 'Disabled.';
-            this.rebootCount = 0;
+            // The streak is not zeroed here. The maker only clears it when the
+            // config actually changed, so a re-save of identical settings (the
+            // repair path) would blank a count the daemon still holds. The stats
+            // poll is the one source of truth for it.
             this.fetchSettings();
             this.responseTimer = setTimeout(() => { this.response = ''; }, 4000);
           } else {
@@ -234,7 +235,7 @@ function quecdeckWatchCat() {
         .then((data) => {
           if (data && Object.keys(data).length > 0) {
             this.enabled = data.enabled === true;
-            this.serviceActive = data.enabled === true;
+            this.serviceActive = data.service_active === true;
             this.ips = data.track_ips && data.track_ips.length > 0 ? data.track_ips : [...WATCHCAT_DEFAULTS.ips];
             this.pingInterval = data.ping_interval || WATCHCAT_DEFAULTS.pingInterval;
             this.pingFailureCount = data.ping_failure_count || WATCHCAT_DEFAULTS.pingFailureCount;
@@ -242,7 +243,6 @@ function quecdeckWatchCat() {
             this.failureThreshold = this.pingFailureCount;
             this.disableOnNoSim = data.disable_on_no_sim !== false;
             this.rebootBackoff = data.reboot_backoff !== false;
-            if (this.capExceeded) this.rebootBackoff = false;
             this.logRestarts = data.log_restarts !== false;
           }
         });
@@ -253,6 +253,18 @@ function quecdeckWatchCat() {
       this.statsFetching = true;
       fetchWithTimeout(fetchJSON, '/cgi-bin/get_watchcat_stats', 4000)
         .then((data) => {
+          // The daemon holds off while a cell scan or APN reconnect has the
+          // connection down on purpose. Without this the panel just freezes
+          // mid-scan with no explanation for the stalled counters.
+          // Assigned outside the guard below: the maker deletes the stats file on
+          // every config change, so an absent payload means no round has finished
+          // yet, not that a pause is still in force. Left inside, a save made
+          // during a scan would strand the banner until the next round lands.
+          this.paused = !!(data && data.paused === true);
+          // A config change removes the old stats file. Clear the displayed
+          // deadline with that empty payload instead of carrying a stale block
+          // notice until the daemon finishes its first new round.
+          this.retryAfter = (data && data.retry_after) || 0;
           if (data && data.stats) {
             this.stats = data.stats;
             this.consecutiveFailures = data.consecutive_failures || 0;
@@ -278,70 +290,16 @@ function quecdeckWatchCat() {
       }
     },
 
-    fetchScheduledRestart(signal) {
-      return fetchJSON('/cgi-bin/get_scheduled_restart', signal ? { signal } : {})
-        .then((data) => {
-          if (data) {
-            this.srEnabled = data.enabled === true;
-            this.srServiceActive = data.enabled === true;
-            this.srType = data.type || 'daily';
-            this.srDeviceTzOffsetMins = this.parseTzOffset(data.device_tz_offset || '+0000');
-            const local = this.deviceToLocal(
-              data.hour !== undefined ? data.hour : 3,
-              data.minute !== undefined ? data.minute : 0,
-              data.day || 1
-            );
-            this.srHour = local.hour;
-            this.srMinute = local.minute;
-            this.srDay = local.day;
-          }
-        });
-    },
-
-    saveScheduledRestart() {
-      this.srLoading = true;
-      this.srResponse = '';
-      clearTimeout(this.srResponseTimer);
-      const device = this.localToDevice(this.srHour, this.srMinute, this.srDay);
-      const params = {
-        ENABLED: this.srEnabled ? 'enable' : 'disable',
-        TYPE: this.srType,
-        DAY: device.day,
-        HOUR: device.hour,
-        MINUTE: device.minute,
-      };
-      authFetch('/cgi-bin/scheduled_restart_maker', { method: 'POST', body: new URLSearchParams(params) })
-        .then((response) => response.text().then((text) => {
-          this.srLoading = false;
-          if (response.ok) {
-            this.srResponse = this.srEnabled ? 'Saved.' : 'Disabled.';
-            this.fetchScheduledRestart();
-            this.srResponseTimer = setTimeout(() => { this.srResponse = ''; }, 4000);
-          } else {
-            this.$store.errorModal.open(text.trim());
-          }
-        }))
-        .catch(() => {
-          this.srLoading = false;
-          this.$store.errorModal.open('Failed to save scheduled restart settings. Please try again.');
-        });
-    },
-
     init() {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 4000);
-      Promise.all([
-        this.fetchSettings(controller.signal),
-        this.fetchScheduledRestart(controller.signal),
-      ]).then(() => {
+      this.fetchSettings(controller.signal).then(() => {
         clearTimeout(timer);
         if (this.serviceActive) this.startStatsPolling();
       }).catch(() => {
         clearTimeout(timer);
         this.$store.errorModal.open('Failed to load settings.');
       });
-      this.$watch('pingInterval', () => { if (this.capExceeded) this.rebootBackoff = false; });
-      this.$watch('pingFailureCount', () => { if (this.capExceeded) this.rebootBackoff = false; });
       this.$watch('serviceActive', (value) => {
         if (value) {
           this.startStatsPolling();

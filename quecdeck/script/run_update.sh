@@ -7,7 +7,7 @@ TAG="${1:-}"
 umask 022
 # Root-owned runtime state lives in /run/quecdeck, never in /tmp: www-data
 # cannot plant a name there, so these writes need no symlink ceremony.
-# Rule and rationale: tests/host/tmpwrite-guard.sh.
+# Rule and rationale: tests/host/guards/runtime-path.sh.
 RUNDIR=/run/quecdeck
 LOG="$RUNDIR/install.log"
 STATUS_FILE="$RUNDIR/update.status"

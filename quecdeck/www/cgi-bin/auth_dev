@@ -74,8 +74,17 @@ wan_ip=$(cgi_wan_ip)
 FAILURE_DIR="/tmp/quecdeck/dev_auth_failures"
 
 # Reject immediately if locked out.
+if ! cgi_flock_available; then
+    _json '{"unlocked":false,"error":"locked"}'
+    exit 0
+fi
+if ! bf_lock "$FAILURE_DIR" "$client_ip"; then
+    _json '{"unlocked":false,"error":"locked"}'
+    exit 0
+fi
 if bf_locked "$FAILURE_DIR" "$client_ip"; then
     log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+    bf_unlock
     _json '{"unlocked":false,"error":"locked"}'
     exit 0
 fi
@@ -83,11 +92,15 @@ fi
 if validate_password dev devadmin "$password"; then
     # Success: clear failures, mark dev-unlocked (own file, temp+rename, no lock).
     bf_clear "$FAILURE_DIR" "$client_ip"
+    bf_unlock
     (umask 077; printf 'dev_unlocked=1\n' > "${DEV_FILE}.tmp.$$") && mv "${DEV_FILE}.tmp.$$" "$DEV_FILE"
     log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_success\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
     _json '{"unlocked":true}'
 else
-    if [ "$(bf_fail "$FAILURE_DIR" "$client_ip")" = "locked" ]; then
+    bf_fail "$FAILURE_DIR" "$client_ip"
+    result=$BF_FAIL_RESULT
+    bf_unlock
+    if [ "$result" = "locked" ]; then
         log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_locked\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
         _json '{"unlocked":false,"error":"locked"}'
     else

@@ -61,16 +61,22 @@ cache_invalidate "$_CACHE_MODEM_ALL" "$_CACHE_NETWORK" "$_CACHE_MODEM_CONN"
 # Only reconnect/reboot if the setting actually applied. A failed AT command
 # must not trigger a disruptive modem reset.
 if at_response_ok "$result" && [ "$action" = "reconnect" ]; then
+    # Establish the guard before returning. The APN setting remains applied if
+    # this fails, but the requested reconnect must not proceed unprotected.
+    _pause_id="apn.$$"
+    if ! watchcat_pause_for_disruption "$_pause_id" 90; then
+        echo "WARNING: Settings saved, but the modem reconnect was skipped because Watchcat could not be paused."
+        exit 0
+    fi
     (
+        # The expiry covers both the reconnect and registration recovery, even
+        # if this subprocess is killed. Per-request names keep overlapping
+        # reconnect pauses independent.
         sleep 2
-        wc_running=0
-        /bin/systemctl is-active watchcat >/dev/null 2>&1 && wc_running=1
-        [ "$wc_running" = "1" ] && /opt/bin/sudo /bin/systemctl stop watchcat
         atcmd_run 'AT+CFUN=0'
         sleep 10
         atcmd_run 'AT+CFUN=1'
         sleep 20
-        [ "$wc_running" = "1" ] && /opt/bin/sudo /bin/systemctl start watchcat
     ) >/dev/null 2>&1 &
     disown $!
 elif at_response_ok "$result" && [ "$action" != "simswap" ]; then

@@ -226,7 +226,7 @@ salvages the rest.
 
 The slots *before* the one that aborted the chain **were deleted**. Retrying the
 whole chunk therefore re-issues `+CMGD=` for slots that are now empty, and an
-empty slot answers `+CMS ERROR: 321` — the same code a slot that never held a
+empty slot answers `+CMS ERROR: 321`, the same code a slot that never held a
 message gives. Counting that as failure reports the chain's own successes as
 failures: a chunk of 10 with a stale 5th slot deletes 9 of them and then claims
 5 failed, which opens the error modal on what was very nearly a clean run.
@@ -237,9 +237,9 @@ deleting a slot the listing no longer matches is no longer an error, and that is
 correct: the message is gone either way.
 
 This is not reachable with a stub that answers `OK` to any well-formed line. The
-suite's stub models the store — it remembers what it deleted and aborts at the
-first bad slot — because the earlier wire-level stub could not represent
-deleting the same slot twice and so could not see this.
+suite's stub models the store, remembering what it deleted and aborting at the
+first bad slot. The earlier wire-level stub could not represent deleting the same
+slot twice, so it could not see this.
 
 ### The one that still binds: a 45 s wall-clock budget
 

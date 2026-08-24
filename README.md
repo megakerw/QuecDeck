@@ -50,7 +50,7 @@ cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDe
 
 Select **Install/Update QuecDeck** from the menu. On first access, a setup wizard will guide you through setting your passwords.
 
-To update, run the same command and select **Install/Update QuecDeck** again, or use the Update page in the web UI. Your settings and service state are preserved across updates.
+To update, run the same command and select **Install/Update QuecDeck** again, or use the Update page in the web UI. Settings from the current implementation are preserved across updates. The monitoring migration exception is described below.
 
 ## Features
 
@@ -68,15 +68,17 @@ Real-time overview of the modem's current status: signal strength, temperature, 
 - NR5G mode control (NSA/SA)
 
 ### Cell Scan
-Scan for nearby cells and display network, provider, band, frequency, PCI, and RSRP. The modem reports nothing until the sweep finishes, so results appear all at once at the end rather than filling in as cells are found. While a scan is in progress, a banner is shown across the UI and all modem data is served from cache to avoid interfering with the scan. Watchcat is temporarily disabled during the scan to prevent false reboots, and completed scans are logged in the Logs page.
+Scan for nearby cells and display network, provider, band, frequency, PCI, and RSRP. The modem reports nothing until the sweep finishes, so results appear all at once at the end rather than filling in as cells are found. While a scan is in progress, a banner is shown across the UI and all modem data is served from cache to avoid interfering with the scan. Watchcat is paused for the duration of the scan to prevent false reboots, staying running but not counting failures, and completed scans are logged in the Logs page.
 
 ### Settings
 - LAN IP and DHCP range configuration
 - One-click utilities: reboot, onboard DNS IPv4/IPv6 proxy, IP Passthrough (IPPT), auto-connect (QMAPWAC), GNSS toggle, and SIM hot-swap detection
 
 ### Monitoring
-- **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics, consecutive failure tracking, and a persistent reboot history log. If a reboot doesn't restore connectivity, Watchcat waits progressively longer before trying again instead of rebooting in a tight loop
-- **Scheduled Restart:** schedule daily or weekly reboots at a specified time
+- **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics, consecutive failure tracking, and a persistent reboot-activity log. Each round rotates which configured target is checked first and stops at the first response. A reboot requires at least three rounds where every target fails. If a reboot doesn't restore connectivity, Watchcat waits progressively longer before trying again instead of rebooting in a tight loop
+- **Scheduled Restart:** schedule daily or weekly reboots at a specified time. The schedule follows the modem's own clock and remains held until that clock contains a plausible date and time
+
+The monitoring units remain installed and boot-enabled. Their configuration determines whether monitoring is active. Disabled features exit cleanly without pinging or accessing the modem and are restarted when enabled from the UI.
 
 ### SMS
 View, read, and delete SMS messages directly from the modem's inbox, newest first. A long message is stored as several parts, so deleting one can issue many delete commands; they are sent one at a time under an overall time limit, and if any parts are left behind the page reports how many rather than showing a success that did not happen.
@@ -84,12 +86,12 @@ View, read, and delete SMS messages directly from the modem's inbox, newest firs
 ### Device Information
 - **Device & SIM:** manufacturer, model, firmware version, build time, IMEI, phone number, IMSI, and ICCID
 - **Network:** LAN IP, WWAN IPv4/IPv6, primary/secondary DNS (IPv4 and IPv6 shown separately), and UPnP status
-- **Services:** live status overview of all QuecDeck services (AT Daemon, Firewall, Connection Logger, Watchcat, Scheduled Restart, SSH, Lean Mode, and ttyd)
+- **Services:** live status overview of all QuecDeck services (AT Daemon, Firewall, Connection Logger, Watchcat, Scheduled Restart, SSH, and ttyd)
 
 ### Logs
 - **Connection Events:** timestamped log of connection changes and failures. Keeps the last 500 entries, cleared on reboot.
 - **Access Events:** timestamped log of UI access activity. Keeps the last 500 entries, cleared on reboot.
-- **Watchcat Restarts:** timestamped log of watchcat-triggered reboots, including the failure count and reboot streak number (when backoff is enabled). Keeps the last 50 entries and persists across reboots.
+- **Watchcat Reboot Activity:** timestamped log of Watchcat reboot attempts and related failures, including the failure count and attempt number. Keeps up to 100 persistent entries, then clears the old history when the next event is recorded.
 
 ### Update
 Check the installed version against the latest GitHub release and trigger an in-place update directly from the web UI. The update log streams in real time. If the update fails, the previous installation is automatically restored.
@@ -120,6 +122,7 @@ QuecDeck started as a fork of [Simple Admin](https://github.com/iamromulan/quect
 
 ### AT Command Layer
 All modem communication goes through [atcli](https://github.com/megakerw/atcli_rust) (a fork of [atcli_rust](https://github.com/1alessandro1/atcli_rust)), a Rust-based AT command CLI that emits clean newline-terminated output (modem `\r` framing is stripped at the source). That is a contract the shell side relies on rather than a convenience: nothing downstream re-strips carriage returns, so replies are parsed as they arrive.
+The release stores the binary at `quecdeck/atcli`, matching its installed path at `/usrdata/quecdeck/atcli`.
 
 - **Single gateway.** Shell code never invokes atcli directly; every caller goes through `script/at-lib.sh`, enforced by a pre-commit check.
 - **Serialization and privilege.** Serialization happens inside atcli itself. Its daemon side (`atcli --daemon`, unit `atcmd-daemon`) opens the modem port as root, drops to www-data, and serves one command per unix-socket connection, verifying each peer's uid via `SO_PEERCRED`. The atcli binary is not setuid: the daemon is the only privileged path to the modem.
@@ -197,18 +200,17 @@ Updates can be triggered from the Update page in the web UI or by re-running `qu
 2. Stages the new version alongside the running install, then moves the old install aside and swaps the new one in atomically.
 3. Verifies that lighttpd owns the configured LAN HTTPS listener and that the authentication CGI executes correctly after the swap, rolling back to the previous version automatically if either check fails.
 
-State (watchcat config, scheduled restarts, lean mode) is preserved across updates.
+Watchcat and Scheduled Restart settings are preserved between releases that use the current monitoring implementation. When upgrading from an earlier implementation, its monitoring settings and history are removed and the new services start unconfigured. If a compatible update fails after the switch begins, rollback restores monitoring boot enablement and attempts to restart both workers.
 
 ### Optional Components
 - **SSH:** OpenSSH server. A pre-start script (`update_sshd_ip.sh`) updates `sshd_config`'s `ListenAddress` to the current LAN IP before the daemon starts, restricting it to LAN only. Requires a root password to be set first.
-- **Lean Mode:** disables the GPS/location stack on boot to free up resources when location services are not needed
 
 ## Development
 
 The repository includes the following host and device checks. The applicable host checks run on every push and pull request through GitHub Actions:
 
-- **Test suite** (`tests/host/run-tests.sh`): host-side unit tests for the pure shell functions (JSON parsing, CGI helpers, watchcat backoff math) and JS structure checks. It runs on the development machine with no device needed. Pass `--slow` to include tests that sleep, such as the login-lockout tests. The fast set also runs from the pre-commit hook.
-- **Integration tests** (`tests/host/host-test-authlua.sh`): runs the real auth.lua against a stubbed lighttpd request environment. It uses disposable root paths, so it runs only on Linux and skips itself elsewhere. The AT layer's integration tests live in the [atcli repo](https://github.com/megakerw/atcli_rust), where the daemon and client run end to end against a fake modem on a pty.
+- **Test suite** (`tests/host/run-tests.sh`): host-side tests are grouped by domain under `tests/host/suites/` and share the small `tests/host/testlib.sh` harness. Run every suite or name selected suites such as `monitoring` or `sms`. Pass `--slow` to include timing-dependent cases such as login lockout. The fast set also runs from the pre-commit hook.
+- **Integration tests** (`tests/host/integration/`): the auth.lua harness runs against a stubbed lighttpd request environment. It uses disposable root paths, so it runs only on Linux and skips itself elsewhere. The AT layer's integration tests live in the [atcli repo](https://github.com/megakerw/atcli_rust), where the daemon and client run end to end against a fake modem on a pty.
 - **Repository integrity checks** (`tests/host/ci-checks.sh`): shell syntax, JS syntax, the atcli access guard and socket path consistency, the developer-page dev-gate guard, a shell dialect guard (shebangs match what sources cgi-lib/at-lib and what systemd units exec), checksum manifest and pinned bootstrap hashes, and asset version tokens. These mirror the pre-commit hook, so CI catches commits made without the hook configured. Assumes an LF checkout, so on Windows run the test suite instead.
 - **On-device scripts** (`tests/device/device-test-*.sh`): copied to the device manually for behavior that host tests cannot verify, including firmware networking, firewall behavior, privilege dropping, socket permissions, and real modem timing. Run the relevant tests before tagging a release. Individual headers identify disruptive cases.
 
@@ -220,14 +222,14 @@ The pre-commit hook is enabled with `git config core.hooksPath .githooks`.
 
 QuecDeck is based on [quectel-rgmii-toolkit](https://github.com/iamromulan/quectel-rgmii-toolkit) by [iamromulan](https://github.com/iamromulan), with contributions from:
 
-- [Nate Carlson](https://github.com/natecarlson) — original telnet daemon/socat bridge and RGMII notes
-- [aesthernr](https://github.com/aesthernr) — original Simple Admin
-- [rbflurry](https://github.com/rbflurry/) — initial Simple Admin fixes
-- [dr-dolomite](https://github.com/dr-dolomite) — major stat page improvements
-- [tarunVreddy](https://github.com/tarunVreddy) — band aggregation parsing
+- [Nate Carlson](https://github.com/natecarlson) - original telnet daemon/socat bridge and RGMII notes
+- [aesthernr](https://github.com/aesthernr) - original Simple Admin
+- [rbflurry](https://github.com/rbflurry/) - initial Simple Admin fixes
+- [dr-dolomite](https://github.com/dr-dolomite) - major stat page improvements
+- [tarunVreddy](https://github.com/tarunVreddy) - band aggregation parsing
 
 ### Projects
 
-- [Entware/opkg](https://github.com/Entware/Entware) — package manager
-- [TTYd](https://github.com/tsl0922/ttyd) — browser-based terminal
-- [atcli_rust](https://github.com/1alessandro1/atcli_rust) by [1alessandro1](https://github.com/1alessandro1) — AT command CLI, forked by [megakerw](https://github.com/megakerw/atcli_rust)
+- [Entware/opkg](https://github.com/Entware/Entware) - package manager
+- [TTYd](https://github.com/tsl0922/ttyd) - browser-based terminal
+- [atcli_rust](https://github.com/1alessandro1/atcli_rust) by [1alessandro1](https://github.com/1alessandro1) - AT command CLI, forked by [megakerw](https://github.com/megakerw/atcli_rust)

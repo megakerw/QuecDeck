@@ -37,8 +37,15 @@ if [ -z "$password" ] || [ "${#password}" -gt 256 ]; then
 fi
 
 # Reject immediately if locked out
+if ! cgi_flock_available; then
+    json_error "locked"; exit 0
+fi
+if ! bf_lock "$FAILURE_DIR" "$client_ip"; then
+    json_error "locked"; exit 0
+fi
 if bf_locked "$FAILURE_DIR" "$client_ip"; then
     log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+    bf_unlock
     json_error "locked"; exit 0
 fi
 
@@ -49,7 +56,10 @@ if validate_password admin "$username" "$password"; then
 fi
 
 if [ -z "$role" ]; then
-    if [ "$(bf_fail "$FAILURE_DIR" "$client_ip")" = "locked" ]; then
+    bf_fail "$FAILURE_DIR" "$client_ip"
+    result=$BF_FAIL_RESULT
+    bf_unlock
+    if [ "$result" = "locked" ]; then
         log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
         json_error "locked"
     else
@@ -61,6 +71,7 @@ fi
 
 # Successful login: clear failure record
 bf_clear "$FAILURE_DIR" "$client_ip"
+bf_unlock
 
 # Create session. Directory must be 700 so other local users cannot list tokens.
 # Use umask to set permissions atomically on creation rather than a separate chmod.

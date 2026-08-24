@@ -6,6 +6,8 @@ cgi_check_cors
 cgi_output_json
 
 device_tz_offset=$(date '+%z')
+service_active=false
+systemctl is-active scheduled_restart >/dev/null 2>&1 && service_active=true
 
 CONFIG=/usrdata/quecdeck/var/scheduled_restart.json
 if [ -s "$CONFIG" ]; then
@@ -15,4 +17,4 @@ else
 fi
 
 printf '%s' "${base%\}}"
-printf ', "device_tz_offset": "%s"}' "$device_tz_offset"
+printf ', "device_tz_offset": "%s", "service_active": %s}' "$device_tz_offset" "$service_active"

@@ -412,6 +412,69 @@ install_quecdeck() {
     fi
 }
 
+# Remove one monitoring service without making uninstall transactional. Unit
+# files and enablement links are always removed even when systemd cannot stop
+# the worker. A surviving process is force-killed and, if it still cannot be
+# confirmed gone, the caller reports that a reboot is required.
+remove_monitoring_unit() { # remove_monitoring_unit <unit>
+    local unit="$1" unit_dir unit_file wants_link state remaining had_unit=0 remove_failed=0
+    unit_dir="${MONITORING_UNIT_DIR:-/lib/systemd/system}"
+    unit_file="${unit_dir}/${unit}.service"
+    wants_link="${unit_dir}/multi-user.target.wants/${unit}.service"
+    monitoring_remove_result="SKIPPED"
+    monitoring_remove_reboot_required=0
+
+    [ -e "$unit_file" ] || [ -L "$unit_file" ] ||
+        [ -e "$wants_link" ] || [ -L "$wants_link" ] && had_unit=1
+    state=$(systemctl is-active "$unit" 2>/dev/null)
+    case "$state" in
+        inactive|failed|unknown) ;;
+        *) had_unit=1 ;;
+    esac
+
+    systemctl stop "$unit" >/dev/null 2>&1
+    state=$(systemctl is-active "$unit" 2>/dev/null)
+    case "$state" in
+        inactive|failed|unknown) ;;
+        *) systemctl kill --kill-who=all --signal=KILL "$unit" >/dev/null 2>&1 ;;
+    esac
+
+    # These removals are deliberately unconditional: uninstall never restores
+    # a service merely because its old worker was difficult to terminate.
+    rm -f "$unit_file" "$wants_link" || remove_failed=1
+    systemctl daemon-reload >/dev/null 2>&1
+
+    state=$(systemctl is-active "$unit" 2>/dev/null)
+    case "$state" in
+        inactive|failed|unknown) ;;
+        *)
+            systemctl kill --kill-who=all --signal=KILL "$unit" >/dev/null 2>&1
+            # systemctl kill sends the signal but does not wait for the unit's
+            # state transition. Poll for at most four seconds to avoid reporting
+            # a reboot merely because systemd still says "deactivating".
+            remaining=5
+            while [ "$remaining" -gt 0 ]; do
+                state=$(systemctl is-active "$unit" 2>/dev/null)
+                case "$state" in inactive|failed|unknown) break ;; esac
+                remaining=$((remaining - 1))
+                [ "$remaining" -gt 0 ] && sleep 1
+            done
+            ;;
+    esac
+
+    if [ "$state" != inactive ] && [ "$state" != failed ] && [ "$state" != unknown ]; then
+        monitoring_remove_reboot_required=1
+    fi
+
+    if [ "$remove_failed" = "1" ]; then
+        monitoring_remove_result="FAILED"
+    elif [ "$monitoring_remove_reboot_required" = "1" ]; then
+        monitoring_remove_result="REBOOT REQUIRED"
+    elif [ "$had_unit" = "1" ]; then
+        monitoring_remove_result="REMOVED"
+    fi
+}
+
 # Function to Uninstall QuecDeck and dependencies
 uninstall_quecdeck_components() {
     echo -e "\e[1;31mThis will completely uninstall QuecDeck and all its components.\e[0m"
@@ -420,6 +483,19 @@ uninstall_quecdeck_components() {
         y|Y) ;;
         *) echo -e "\e[1;33mUninstallation cancelled.\e[0m"; return ;;
     esac
+
+    # An already-loaded transient unit keeps running after its file is removed.
+    # Refuse the destructive teardown instead of deleting the release tree from
+    # underneath an update that was started from the web UI.
+    for _update_unit in install_quecdeck install_quecdeck_fetch; do
+        _update_state=$(systemctl is-active "$_update_unit" 2>/dev/null)
+        case "$_update_state" in
+            active|activating|deactivating|reloading)
+                echo -e "\e[1;31mAn update is currently running. Wait for it to finish before uninstalling.\e[0m"
+                return 1
+                ;;
+        esac
+    done
 
     echo -e "\e[1;32mUninstalling QuecDeck...\e[0m"
 
@@ -435,7 +511,6 @@ uninstall_quecdeck_components() {
 
     result_watchcat="SKIPPED"
     result_scheduled_restart="SKIPPED"
-    result_lean_mode="SKIPPED"
     result_atcmd="SKIPPED"
     result_connection_logger="SKIPPED"
     result_firewall="SKIPPED"
@@ -444,6 +519,7 @@ uninstall_quecdeck_components() {
     result_files="SKIPPED"
     result_runtime_state="SKIPPED"
     firewall_reboot_required=0
+    monitoring_reboot_required=0
 
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     if ! remount_rw; then
@@ -452,29 +528,25 @@ uninstall_quecdeck_components() {
         return 1
     fi
 
+    # Close the web control plane before removing any service. This is useful
+    # for current releases too: no new settings request can race the one-way
+    # teardown below.
+    systemctl stop lighttpd > /dev/null 2>&1
+
     # Remove any transient update unit. Newer installs write it to /run. Older
     # ones wrote it to /lib, where a failed update could strand it. Harmless if
     # absent.
     rm -f /run/systemd/system/install_quecdeck.service /lib/systemd/system/install_quecdeck.service
     rm -f /run/systemd/system/install_quecdeck_fetch.service
 
-    # Uninstall watchcat
-    systemctl stop watchcat > /dev/null 2>&1
-    [ -f /lib/systemd/system/watchcat.service ] && result_watchcat="REMOVED"
-    rm -f /lib/systemd/system/watchcat.service
-    rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
-
-    # Uninstall scheduled restart
-    systemctl stop scheduled_restart > /dev/null 2>&1
-    [ -f /lib/systemd/system/scheduled_restart.service ] && result_scheduled_restart="REMOVED"
-    rm -f /lib/systemd/system/scheduled_restart.service
-    rm -f /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
-
-    # Uninstall lean mode
-    systemctl stop lean-mode 2>/dev/null
-    [ -f /lib/systemd/system/lean-mode.service ] && result_lean_mode="REMOVED"
-    rm -f /lib/systemd/system/lean-mode.service
-    rm -f /lib/systemd/system/multi-user.target.wants/lean-mode.service
+    # Uninstall both the legacy opt-in units and the new always-installed,
+    # idle-capable units. Failure to stop a worker never restores its files.
+    remove_monitoring_unit watchcat
+    result_watchcat="$monitoring_remove_result"
+    [ "$monitoring_remove_reboot_required" = "1" ] && monitoring_reboot_required=1
+    remove_monitoring_unit scheduled_restart
+    result_scheduled_restart="$monitoring_remove_result"
+    [ "$monitoring_remove_reboot_required" = "1" ] && monitoring_reboot_required=1
 
     # Uninstall atcmd daemon
     systemctl stop atcmd-daemon > /dev/null 2>&1
@@ -490,10 +562,8 @@ uninstall_quecdeck_components() {
 
     # Uninstall firewall
     # Ordinary service stops intentionally leave the policy in place. Remove
-    # owned chains only here. Stop lighttpd explicitly as a backstop in case
-    # the firewall unit or its loaded PartOf= relationship is already missing.
+    # owned chains only here. The UI was already stopped before service teardown.
     systemctl stop firewall > /dev/null 2>&1
-    systemctl stop lighttpd > /dev/null 2>&1
     _firewall_helper=/usrdata/quecdeck/script/firewall.sh
     if [ -f "$_firewall_helper" ] &&
        grep -qx 'QUECDECK_FIREWALL_REMOVE_API=1' "$_firewall_helper"; then
@@ -523,7 +593,6 @@ uninstall_quecdeck_components() {
 
     # Check if Lighttpd service is installed and remove it if present
     if [ -f "/lib/systemd/system/lighttpd.service" ]; then
-        systemctl stop lighttpd 2>/dev/null
         # Remove only lighttpd: --force-removal-of-dependent-packages cascades to
         # the lighttpd-mod-* packages (they depend on it). Listing them explicitly
         # is redundant and prints harmless "Package ... is not installed" errors,
@@ -593,7 +662,6 @@ uninstall_quecdeck_components() {
     echo "============================================"
     _show_uninstall_result "Watchcat"           "$result_watchcat"
     _show_uninstall_result "Scheduled restart"  "$result_scheduled_restart"
-    _show_uninstall_result "Lean mode"          "$result_lean_mode"
     _show_uninstall_result "atcmd daemon"       "$result_atcmd"
     _show_uninstall_result "Connection logger"  "$result_connection_logger"
     _show_uninstall_result "Firewall"           "$result_firewall"
@@ -605,6 +673,10 @@ uninstall_quecdeck_components() {
     if [ "$firewall_reboot_required" = "1" ]; then
         echo ""
         echo -e "\e[1;33mREBOOT REQUIRED: restart the modem to clear the remaining firewall rules.\e[0m"
+    fi
+    if [ "$monitoring_reboot_required" = "1" ]; then
+        echo ""
+        echo -e "\e[1;33mREBOOT REQUIRED: restart the modem to terminate a remaining monitoring process.\e[0m"
     fi
 }
 
@@ -752,81 +824,31 @@ sshd_service() {
     esac
 }
 
-lean_mode_service() {
-    if [ -L /lib/systemd/system/multi-user.target.wants/lean-mode.service ]; then
-        echo -e "\e[1;32mLean Mode is currently: INSTALLED\e[0m"
-    else
-        echo -e "\e[1;31mLean Mode is currently: NOT INSTALLED\e[0m"
-    fi
-    echo "Lean Mode stops the GPS and location stack on boot (loc_launcher,"
-    echo "location_hal_daemon, edgnss-daemon). These services are not needed"
-    echo "for data-only RGMII operation. Freeing them reduces background"
-    echo "resource usage and may improve stability."
-    echo -e "\e[1;32m1) Install Lean Mode\e[0m"
-    echo -e "\e[1;31m2) Uninstall Lean Mode\e[0m"
-    echo -e "\e[1;33m3) Cancel\e[0m"
-    read -p "Enter your choice (1-3): " lean_choice
-
-    case $lean_choice in
-        1)
-            echo -e "\e[1;32mInstalling Lean Mode...\e[0m"
-            mkdir -p /usrdata/quecdeck/script /usrdata/quecdeck/systemd
-            /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/script/lean_mode.sh "$GITROOT/quecdeck/script/lean_mode.sh" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
-            echo "1289206e9c115c3e20e66f5fb4ca92bb230a1be1a2ad06d1c23e0583d3995f42  /usrdata/quecdeck/script/lean_mode.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean_mode.sh.\e[0m"; rm -f /usrdata/quecdeck/script/lean_mode.sh; return; }
-            echo -e "\e[1;32mIntegrity verified: lean_mode.sh\e[0m"
-            /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/quecdeck/systemd/lean-mode.service "$GITROOT/quecdeck/systemd/lean-mode.service" || { echo -e "\e[1;31mDownload failed.\e[0m"; return; }
-            echo "e4700f2d27ef2fceaa80e8519bfd46cdae6c3fc09583ef0c781d573518108bd8  /usrdata/quecdeck/systemd/lean-mode.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for lean-mode.service.\e[0m"; rm -f /usrdata/quecdeck/systemd/lean-mode.service; return; }
-            echo -e "\e[1;32mIntegrity verified: lean-mode.service\e[0m"
-            chmod +x /usrdata/quecdeck/script/lean_mode.sh
-            trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
-            remount_rw
-            cp -f /usrdata/quecdeck/systemd/lean-mode.service /lib/systemd/system/lean-mode.service
-            ln -sf /lib/systemd/system/lean-mode.service /lib/systemd/system/multi-user.target.wants/lean-mode.service
-            remount_ro
-            trap - EXIT
-            systemctl daemon-reload
-            echo ""
-            echo -e "\e[1;32mLean Mode installed. Takes effect on next reboot.\e[0m"
-            ;;
-        2)
-            echo -e "\e[1;32mUninstalling Lean Mode...\e[0m"
-            trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
-            remount_rw
-            rm -f /lib/systemd/system/lean-mode.service
-            rm -f /lib/systemd/system/multi-user.target.wants/lean-mode.service
-            remount_ro
-            trap - EXIT
-            systemctl daemon-reload
-            echo ""
-            echo -e "\e[1;32mLean Mode uninstalled.\e[0m"
-            ;;
-        3)
-            ;;
-        *)
-            echo -e "\e[1;31mInvalid option\e[0m"
-            ;;
-    esac
-}
-
 disable_monitoring_services() {
     echo -e "\e[1;32mDisabling monitoring services...\e[0m"
-    systemctl stop watchcat 2>/dev/null
-    systemctl stop scheduled_restart 2>/dev/null
-
-    trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
-    remount_rw
-
-    rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
-    rm -f /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
-
-    remount_ro
-    trap - EXIT
-
-    rm -f /usrdata/quecdeck/var/watchcat.json
-    rm -f /usrdata/quecdeck/var/watchcat_reboot_state.json
-    rm -f /usrdata/quecdeck/var/scheduled_restart.json
-    systemctl daemon-reload
+    local disable_failed=0
+    rm -f /usrdata/quecdeck/var/watchcat.json \
+          /usrdata/quecdeck/var/watchcat_reboot_state.json \
+          /usrdata/quecdeck/var/scheduled_restart.json || disable_failed=1
+    # Legacy workers require their removal helper. Current boot-enabled workers
+    # disable themselves from the missing configuration after a restart.
+    _disable_worker() {
+        local unit="$1" legacy="/usrdata/quecdeck/script/remove_${1}.sh"
+        if [ -x "$legacy" ]; then
+            "$legacy"
+            return
+        fi
+        # A missing unit is already disabled.
+        systemctl cat "$unit" >/dev/null 2>&1 || return 0
+        systemctl restart "$unit" 2>/dev/null
+    }
+    _disable_worker watchcat || disable_failed=1
+    _disable_worker scheduled_restart || disable_failed=1
     echo ""
+    if [ "$disable_failed" = "1" ]; then
+        echo -e "\e[1;31mMonitoring could not be fully disabled. Check the service status and configuration files.\e[0m"
+        return 1
+    fi
     echo -e "\e[1;32mWatchcat and scheduled restart disabled.\e[0m"
 }
 
@@ -851,15 +873,14 @@ while true; do
     echo -e "\e[93m1) Install/Update QuecDeck (latest release)\e[0m"
     echo -e "\e[93m2) Install/Update QuecDeck (main branch)\e[0m"
     echo -e "\e[93m3) SSH server (install/uninstall)\e[0m"
-    echo -e "\e[33m4) Lean Mode (install/uninstall) [EXPERIMENTAL]\e[0m"
-    echo -e "\e[91m5) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m"
-    echo -e "\e[91m6) Uninstall QuecDeck\e[0m"
-    echo -e "\e[91m7) Uninstall Entware/OPKG\e[0m"
-    echo -e "\e[95m8) Set QuecDeck (admin) password\e[0m"
-    echo -e "\e[95m9) Set Developer access (devadmin) password\e[0m"
-    echo -e "\e[94m10) Set Console/ttyd (root) password\e[0m"
-    echo -e "\e[91m11) Reboot\e[0m"
-    echo -e "\e[93m12) Exit\e[0m"
+    echo -e "\e[91m4) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m"
+    echo -e "\e[91m5) Uninstall QuecDeck\e[0m"
+    echo -e "\e[91m6) Uninstall Entware/OPKG\e[0m"
+    echo -e "\e[95m7) Set QuecDeck (admin) password\e[0m"
+    echo -e "\e[95m8) Set Developer access (devadmin) password\e[0m"
+    echo -e "\e[94m9) Set Console/ttyd (root) password\e[0m"
+    echo -e "\e[91m10) Reboot\e[0m"
+    echo -e "\e[93m11) Exit\e[0m"
     read -p "Enter your choice: " choice
 
     case $choice in
@@ -877,9 +898,6 @@ while true; do
             sshd_service
             ;;
         4)
-            lean_mode_service
-            ;;
-        5)
             echo -e "\e[1;31mThis will disable Watchcat and Scheduled Restart.\e[0m"
             read -p "Are you sure? (y/n): " confirm
             case "$confirm" in
@@ -887,14 +905,14 @@ while true; do
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        6)
+        5)
             uninstall_quecdeck_components
             ;;
-        7)
+        6)
             if [ -d "$QUECDECK_DIR/www" ]; then
                 echo -e "\e[1;31mWARNING: QuecDeck is still installed.\e[0m"
                 echo -e "\e[1;31mUninstalling Entware will break QuecDeck and all its services.\e[0m"
-                echo -e "\e[1;31mRun option 6 to uninstall QuecDeck first.\e[0m"
+                echo -e "\e[1;31mRun option 5 to uninstall QuecDeck first.\e[0m"
                 read -p "Continue anyway? (y/n): " quecdeck_warn_confirm
                 case "$quecdeck_warn_confirm" in
                     y|Y) ;;
@@ -912,28 +930,28 @@ while true; do
                     ;;
             esac
             ;;
-        8)
+        7)
             read -p "Set QuecDeck (admin) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_adminpasswd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        9)
+        8)
             read -p "Set Developer access (devadmin) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_devpasswd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        10)
+        9)
             read -p "Set Console/ttyd (root) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_root_passwd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        11)
+        10)
             read -p "Reboot the modem? (y/n): " reboot_confirm
             case "$reboot_confirm" in
                 y|Y)
@@ -946,7 +964,7 @@ while true; do
                 *) echo -e "\e[1;33mReboot cancelled.\e[0m" ;;
             esac
             ;;
-        12)
+        11)
             echo -e "\e[1;32mGoodbye!\e[0m"
             break
             ;;

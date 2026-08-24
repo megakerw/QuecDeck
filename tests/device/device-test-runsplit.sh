@@ -1,6 +1,6 @@
 #!/bin/sh
-# Runtime assertion of the ownership rule that tests/host/tmpwrite-guard.sh enforces
-# in source form. The guard reads code, while this checks the live filesystem.
+# Runtime assertion of the ownership rule that tests/host/guards/runtime-path.sh
+# enforces in source form. The guard reads code, this checks the filesystem.
 #
 # THE RULE: a directory's owner is the only uid that writes inside it.
 #
@@ -94,7 +94,7 @@ done
 
 # ---- U: loaded service masks ---------------------------------------------
 # Source checks prove the unit files contain UMask=. This proves systemd has
-# parsed and loaded the policy on the device; a copied unit without a matching
+# parsed and loaded the policy on the device. A copied unit without a matching
 # daemon-reload would otherwise pass CI but leave the running service loose.
 echo ""
 echo "[U] loaded www-data service masks"
@@ -177,7 +177,7 @@ echo ""
 echo "[A2] www-data creators seal a fresh parent (not just the existing one)"
 FRESH=/tmp/qdfresh
 $SUDO -u www-data rm -rf "$FRESH" 2>/dev/null; rm -rf "$FRESH" 2>/dev/null
-# cache_write and bf_fail are the two shipped file creators. Run them as
+# Exercise the cache and authentication-state creators as www-data. Run them
 # www-data with their targets redirected, so a missing umask shows up as a
 # loose parent or file. bf_fail deliberately sleeps for one second as part of
 # the production brute-force path. Exercising it here avoids a vacuous glob
@@ -186,7 +186,8 @@ $SUDO -u www-data bash -c "
     . /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null
     _CACHE_DIR=$FRESH/cache
     cache_write \"\$_CACHE_DIR/probe\" 'x' >/dev/null 2>&1
-    bf_fail $FRESH/auth_failures 10.0.0.1 >/dev/null 2>&1
+    bf_lock $FRESH/auth_failures 10.0.0.1 && bf_fail $FRESH/auth_failures 10.0.0.1
+    bf_unlock
 " >/dev/null 2>&1
 if [ -d "$FRESH" ]; then
     for _d in "$FRESH" "$FRESH/cache" "$FRESH/auth_failures"; do
@@ -217,6 +218,29 @@ if [ -d "$FRESH" ]; then
             bad "fresh $_f came out $_ffm, expected 600: cgi-lib.sh lost its 'umask 077', so the mode now depends on which unit invoked the caller"
         fi
     done
+
+    # Two requests from one address must serialize around both the lockout
+    # check and counter update. Without the transaction lock both can record a
+    # first failure and the threshold is bypassed.
+    _bf_parallel="$FRESH/auth_parallel"
+    for _attempt in 1 2; do
+        $SUDO -u www-data bash -c "
+            . /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null
+            BF_MAX_ATTEMPTS=2
+            bf_lock $_bf_parallel 10.0.0.2 || exit 1
+            bf_fail $_bf_parallel 10.0.0.2
+            printf '%s\\n' \"\$BF_FAIL_RESULT\" > $_bf_parallel/result.$_attempt
+            bf_unlock
+        " &
+    done
+    wait
+    _bf_results=$(cat "$_bf_parallel"/result.* 2>/dev/null | sort)
+    if [ "$_bf_results" = "$(printf 'failed\nlocked')" ]; then
+        ok "parallel failures from one client serialize and trigger lockout"
+    else
+        bad "parallel failures produced '$(printf '%s' "$_bf_results")', expected one failed and one locked"
+    fi
+    unset _bf_parallel _bf_results _attempt
 else
     note "creators did not run; cgi-lib.sh may not be installed at the expected path"
 fi

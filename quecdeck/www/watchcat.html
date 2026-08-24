@@ -6,23 +6,23 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=71ebd6dd" />
-    <link rel="stylesheet" href="css/styles.css?v=71ebd6dd" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=9b50a139" />
+    <link rel="stylesheet" href="css/styles.css?v=9b50a139" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=71ebd6dd"></script>
-    <script src="js/utils.js?v=71ebd6dd"></script>
-    <script src="js/alpinejs.min.js?v=71ebd6dd" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=9b50a139"></script>
+    <script src="js/utils.js?v=9b50a139"></script>
+    <script src="js/alpinejs.min.js?v=9b50a139" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="quecdeckWatchCat()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=71ebd6dd"></script>
+        <script src="js/nav.js?v=9b50a139"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
 
-          <!-- Left column: Watchcat -->
-          <div class="col-md-6">
+          <!-- Watchcat -->
+          <div class="col-lg-8 col-xl-7 mx-auto">
 
             <div class="panel-section mb-3">
               <div class="panel-title d-flex justify-content-between align-items-center">
@@ -30,7 +30,7 @@
                 <span
                   class="badge"
                   :class="serviceActive ? 'text-bg-success' : 'text-bg-secondary'"
-                  x-text="serviceActive ? 'Enabled' : 'Disabled'"
+                  x-text="serviceActive ? 'Active' : 'Inactive'"
                 ></span>
               </div>
 
@@ -38,7 +38,7 @@
                 <div class="d-flex justify-content-between align-items-start mb-2">
                   <div>
                     <div class="fw-semibold mb-1" style="font-size: 0.875rem">Enable Watchcat</div>
-                    <div class="text-muted small" x-show="enabled" x-cloak>Reboots the modem if all ping targets fail.</div>
+                    <div class="text-muted small" x-show="enabled" x-cloak>Reboots the modem after every ping target fails for the configured number of rounds.</div>
                     <div class="text-muted small" x-show="!enabled" x-cloak>Currently disabled.</div>
                   </div>
                   <div class="form-check form-switch ms-3">
@@ -59,7 +59,7 @@
                   <div class="d-flex justify-content-between align-items-start mb-4">
                     <div>
                       <div class="fw-semibold mb-1" style="font-size: 0.875rem">Disable if no SIM detected</div>
-                      <div class="text-muted small">Resets the failure counter when no SIM is detected, preventing reboots when the SIM card is removed.</div>
+                      <div class="text-muted small">Skips the reboot when the modem confirms there is no SIM. If the SIM status can't be read, it reboots anyway.</div>
                     </div>
                     <div class="form-check form-switch ms-3">
                       <input class="form-check-input" type="checkbox" role="switch" x-model="disableOnNoSim" />
@@ -74,17 +74,16 @@
                         <div class="text-muted small">Gradually spaces out reboots if the connection stays down, reducing modem flash wear.</div>
                       </div>
                       <div class="form-check form-switch ms-3">
-                        <input class="form-check-input" type="checkbox" role="switch" x-model="rebootBackoff" :disabled="capExceeded" />
+                        <input class="form-check-input" type="checkbox" role="switch" x-model="rebootBackoff" />
                       </div>
                     </div>
-                    <div class="text-warning small mt-1" x-show="capExceeded" x-cloak>Your cycle time exceeds 2 hours, so this setting has no effect.</div>
                   </div>
 
                   <div class="mb-4">
                     <div class="d-flex justify-content-between align-items-start">
                       <div>
                         <div class="fw-semibold mb-1" style="font-size: 0.875rem">Log reboot events</div>
-                        <div class="text-muted small">Record watchcat-triggered reboots to a persistent log viewable on the Logs page.</div>
+                        <div class="text-muted small">Records every reboot attempt, including attempts the modem did not complete, on the Logs page.</div>
                       </div>
                       <div class="form-check form-switch ms-3">
                         <input class="form-check-input" type="checkbox" role="switch" x-model="logRestarts" />
@@ -97,10 +96,9 @@
                   <!-- IP Addresses -->
                   <div class="mb-4">
                     <label class="form-label fw-semibold">Ping Targets</label>
-                    <div class="text-muted small mb-2">At least one IP is required. Success if any IP responds.</div>
+                    <div class="text-muted small mb-2">At least one is required. Each round rotates which target is tried first and stops when one replies.</div>
                     <template x-for="(ip, index) in ips" :key="index">
                       <div class="d-flex gap-2 mb-2 align-items-center">
-                        <span class="text-muted small" style="width:1.2rem;text-align:right" x-text="index + 1 + '.'"></span>
                         <input
                           type="text"
                           class="form-control input-mw-180"
@@ -128,7 +126,7 @@
                   <!-- Interval and Failure count -->
                   <div class="row">
                     <div class="col-sm-6 mb-3">
-                      <label class="form-label fw-semibold">Time Between Tries (seconds)</label>
+                      <label class="form-label fw-semibold">Delay Between Rounds (seconds)</label>
                       <input
                         type="number"
                         class="form-control"
@@ -142,39 +140,39 @@
                       <div class="text-danger small mt-1" x-show="pingInterval < 10 || pingInterval > 600" x-cloak>Must be between 10 and 600 seconds.</div>
                     </div>
                     <div class="col-sm-6 mb-3">
-                      <label class="form-label fw-semibold">Failures Before Reboot</label>
+                      <label class="form-label fw-semibold">Failed Rounds Before Reboot</label>
                       <input
                         type="number"
                         class="form-control"
-                        :class="pingFailureCount < 2 || pingFailureCount > 10 ? 'is-invalid' : (canSave && tooAggressive ? 'is-aggressive' : '')"
+                        :class="pingFailureCount < 3 || pingFailureCount > 10 ? 'is-invalid' : (canSave && tooAggressive ? 'is-aggressive' : '')"
                         x-model.number="pingFailureCount"
-                        min="2"
+                        min="3"
                         max="10"
-                        placeholder="2 – 10"
+                        placeholder="3 – 10"
                       />
-                      <div class="text-muted small mt-1" x-show="pingFailureCount >= 2 && pingFailureCount <= 10" x-cloak>Between 2 and 10 consecutive failures.</div>
-                      <div class="text-danger small mt-1" x-show="pingFailureCount < 2 || pingFailureCount > 10" x-cloak>Must be between 2 and 10.</div>
+                      <div class="text-muted small mt-1" x-show="pingFailureCount >= 3 && pingFailureCount <= 10" x-cloak>Between 3 and 10 consecutive failed rounds.</div>
+                      <div class="text-danger small mt-1" x-show="pingFailureCount < 3 || pingFailureCount > 10" x-cloak>Must be between 3 and 10.</div>
                     </div>
                   </div>
-                  <hr x-show="canSave" / x-cloak>
+                  <hr x-show="canSave" x-cloak />
                   <div class="d-flex align-items-center gap-2 mb-1" x-show="canSave" x-cloak>
                     <span class="fw-semibold" style="font-size: 0.875rem">Configuration summary</span>
                     <span class="badge" :class="severity.cls" x-text="severity.label"></span>
                   </div>
                   <ul class="text-muted small mb-0 ps-3" x-show="canSave" x-cloak>
                     <li>
-                      Reboots the modem after <span class="fw-semibold" x-text="pingFailureCount"></span> failed pings in a row
-                      (~<span class="fw-semibold" x-text="rebootWindowLabel"></span> without response).
+                      Reboots the modem after <span class="fw-semibold" x-text="pingFailureCount"></span> failed rounds in a row
+                      (in as little as <span class="fw-semibold" x-text="rebootWindowLabel"></span>; failed pings can return immediately).
                     </li>
-                    <li x-show="rebootBackoff && !capExceeded" x-cloak>
-                      If the link stays down, each reboot needs <span class="fw-semibold">twice</span> the failed-ping streak of the last, up to a ~2-hour gap between reboots.
+                    <li x-show="rebootBackoff" x-cloak>
+                      If the link stays down, the minimum wait after each reboot attempt <span class="fw-semibold">doubles</span>, up to two hours. Ping failures during that wait do not trigger another reboot.
                     </li>
                     <li x-show="logRestarts" x-cloak>
-                      Reboots are recorded on the <span class="fw-semibold">Logs</span> page.
+                      Reboot attempts are recorded on the <span class="fw-semibold">Logs</span> page.
                     </li>
                     <li x-show="tooAggressive" :class="reckless ? 'text-danger' : 'text-warning'" x-cloak>
                       <span class="fw-semibold" x-text="severity.label + ':'"></span>
-                      reboots after only <span class="fw-semibold" x-text="rebootWindowSec"></span> seconds without a response, so a brief network blip can trigger an unnecessary reboot. Raise the interval to at least <span class="fw-semibold" x-text="safeInterval"></span> seconds, or add more failures, to keep a full-minute margin.
+                      the configured retry window is only ~<span class="fw-semibold" x-text="rebootWindowSec"></span> seconds, so a brief network blip can trigger an unnecessary reboot. Raise the interval to at least <span class="fw-semibold" x-text="safeInterval"></span> seconds, or allow more failed rounds, to keep a full-minute margin.
                     </li>
                   </ul>
 
@@ -204,11 +202,13 @@
                 <span>Ping Statistics</span>
                 <span class="text-muted small" x-text="statsUpdatedAt ? 'Updated ' + statsUpdatedAt : ''"></span>
               </div>
+                <div class="text-muted small mb-2">Each target's count increases when it is tried and does not reply. A target can fail while the connection remains healthy because any other target's reply makes the round successful.</div>
+                <div class="alert alert-secondary py-2 px-3 mb-2 small" x-show="paused" x-cloak>Paused during a cell scan or APN reconnect. Nothing counts towards a reboot until it finishes.</div>
                 <table class="table table-sm mb-0">
                   <thead>
                     <tr>
                       <th class="fw-semibold" style="font-size: 0.875rem">IP Address</th>
-                      <th class="fw-semibold" style="font-size: 0.875rem">Missed Pings</th>
+                      <th class="fw-semibold" style="font-size: 0.875rem">Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -219,8 +219,7 @@
                       <tr>
                         <td x-text="row.ip"></td>
                         <td>
-                          <span x-text="row.miss"></span>
-                          <span x-show="row.miss > 0" class="ms-1 text-danger small" x-cloak>&#9679;</span>
+                          <span class="badge" :class="targetState(row).cls" x-text="targetLabel(row)"></span>
                         </td>
                       </tr>
                     </template>
@@ -228,7 +227,7 @@
                 </table>
               <div class="mt-auto pt-3">
                 <div class="d-flex justify-content-between small text-muted mb-1">
-                  <span>Consecutive failures</span>
+                  <span>Consecutive failed rounds</span>
                   <span x-text="consecutiveFailures + ' / ' + failureThreshold"></span>
                 </div>
                 <div class="progress bar-xs">
@@ -238,105 +237,17 @@
                     :style="'width: ' + Math.min(100, (consecutiveFailures / Math.max(failureThreshold, 1)) * 100) + '%'"
                   ></div>
                 </div>
-                <div x-show="rebootCount > 0" x-cloak class="mt-3 pt-2 border-top small text-warning"
-                  x-text="'Reboots triggered: ' + rebootCount + (failureThreshold > pingFailureCount ? '. Next reboot after ' + failureThreshold + ' consecutive failures.' : '')"></div>
-              </div>
-            </div>
-
-          </div>
-
-          <!-- Right column: Scheduled Restart -->
-          <div class="col-md-6">
-
-            <div class="panel-section">
-              <div class="panel-title d-flex justify-content-between align-items-center">
-                <span>Scheduled Restart</span>
-                <span
-                  class="badge"
-                  :class="srServiceActive ? 'text-bg-success' : 'text-bg-secondary'"
-                  x-text="srServiceActive ? 'Enabled' : 'Disabled'"
-                ></span>
-              </div>
-
-                <!-- Enable / Disable -->
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                  <div>
-                    <div class="fw-semibold mb-1" style="font-size: 0.875rem">Enable Scheduled Restart</div>
-                    <div class="text-muted small" x-show="srEnabled" x-cloak>Reboots the modem on a schedule.</div>
-                    <div class="text-muted small" x-show="!srEnabled" x-cloak>Currently disabled.</div>
-                  </div>
-                  <div class="form-check form-switch ms-3">
-                    <input class="form-check-input" type="checkbox" role="switch" x-model="srEnabled" />
-                  </div>
+                <div x-show="rebootCount > 0" x-cloak class="mt-3 pt-2 border-top small text-warning">
+                  <span x-text="'Reboot attempts: ' + rebootCount + '.'"></span>
+                  <span x-show="retryAfter > 0" x-text="' Another attempt is blocked for ' + retryAfterLabel + '.'"></span>
                 </div>
-
-                <fieldset :disabled="!srEnabled" :style="!srEnabled ? 'opacity: 0.45' : ''">
-
-                  <hr />
-
-                  <!-- Frequency -->
-                  <div class="mb-4">
-                    <label class="form-label fw-semibold">Frequency</label>
-                    <div class="d-flex gap-3">
-                      <div class="form-check">
-                        <input class="form-check-input" type="radio" id="srDaily" value="daily" x-model="srType" />
-                        <label class="form-check-label" for="srDaily">Daily</label>
-                      </div>
-                      <div class="form-check">
-                        <input class="form-check-input" type="radio" id="srWeekly" value="weekly" x-model="srType" />
-                        <label class="form-check-label" for="srWeekly">Weekly</label>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Day of week (weekly only) -->
-                  <div class="mb-4" x-show="srType === 'weekly'" x-cloak>
-                    <label class="form-label fw-semibold">Day of Week</label>
-                    <select class="form-select" x-model.number="srDay">
-                      <option value="1">Monday</option>
-                      <option value="2">Tuesday</option>
-                      <option value="3">Wednesday</option>
-                      <option value="4">Thursday</option>
-                      <option value="5">Friday</option>
-                      <option value="6">Saturday</option>
-                      <option value="7">Sunday</option>
-                    </select>
-                  </div>
-
-                  <hr />
-
-                  <!-- Time -->
-                  <div class="mb-3">
-                    <label class="form-label fw-semibold">Time</label>
-                    <input type="time" class="form-control input-mw-160" x-model="srTime" />
-                    <div class="text-muted small mt-2">
-                      Will restart at
-                      <span x-text="String(srHour).padStart(2,'0') + ':' + String(srMinute).padStart(2,'0')"></span>
-                      <span x-show="srType === 'weekly'" x-text="' every ' + ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][srDay - 1]" x-cloak></span>
-                      <span x-show="srType === 'daily'" x-cloak> every day</span>
-                      (your local time).
-                    </div>
-                  </div>
-
-                </fieldset>
-
-              <div class="mt-auto pt-3">
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  @click="saveScheduledRestart()"
-                  :disabled="srLoading || !srCanSave"
-                  x-text="srLoading ? 'Saving...' : 'Save'"
-                ></button>
-                <span class="ms-3 text-muted small" x-text="srResponse"></span>
               </div>
             </div>
 
           </div>
-
         </div>
       </div>
     </main>
-    <script src="js/watchcat.js?v=71ebd6dd"></script>
+    <script src="js/watchcat.js?v=9b50a139"></script>
   </body>
 </html>

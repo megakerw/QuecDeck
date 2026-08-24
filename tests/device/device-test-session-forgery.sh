@@ -18,7 +18,7 @@
 #           www-data-readable file minted by a sudo helper that re-validates the
 #           password itself. Liveness (last_access) stays in the www-data-writable
 #           sibling, refreshed fork-free per request. Touches auth.lua,
-#           auth_login, auth_dev, sudoers, host-test-authlua.sh.
+#           auth_login, auth_dev, sudoers, and host/integration/auth-lua.sh.
 #
 # Run as ROOT on a CONFIGURED device (setup complete):
 #
@@ -30,9 +30,9 @@
 # unauthenticated GETs and must stay that way.
 #
 # Scope note: the fixed-path /tmp write checks that used to live here are gone.
-# They are covered properly at runtime by tests/device/device-test-runsplit.sh, and at
-# commit time by tests/host/tmpwrite-guard.sh, which catches a reintroduced /tmp path
-# before it can ever reach a device.
+# They are covered properly at runtime by tests/device/device-test-runsplit.sh,
+# and at commit time by tests/host/guards/runtime-path.sh, which catches a
+# reintroduced /tmp path before it can ever reach a device.
 
 SUDO=/opt/bin/sudo
 SESSIONS=/tmp/quecdeck/sessions

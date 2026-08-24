@@ -16,27 +16,59 @@ esac
 # (risking a reboot) or stopped indefinitely. Hold an exclusive lock for the
 # whole scan so a second invocation is rejected rather than interleaving. The
 # kernel releases an flock when the holding process dies (even on SIGKILL), so
-# a crashed scan can't wedge the lock. Degrade to no guard if flock is missing
-# rather than blocking scans entirely.
+# a crashed scan can't wedge the lock. Scanning is refused if flock is missing:
+# running concurrent scans would invalidate the Watchcat and AT-command guards.
 # Keep the scoped umask at this security-sensitive creation site even though
 # cgi-lib.sh now establishes the same mask globally. This CGI can be the first
 # creator of /tmp/quecdeck, and no root unit re-tightens that parent later.
 (umask 077; mkdir -p /tmp/quecdeck)
-if command -v flock >/dev/null 2>&1; then
-    exec 9>/tmp/quecdeck/qscan.lock
-    if ! flock -n 9; then
-        printf 'Status: 409 Conflict\r\n'
-        cgi_output_text
-        echo "ERROR: A cell scan is already in progress."
-        exit 0
-    fi
+if ! cgi_flock_available; then
+    printf 'Status: 500 Internal Server Error\r\n'
+    cgi_output_text
+    echo "ERROR: Cell scanning requires flock, which is unavailable on this device."
+    exit 0
+fi
+exec 9>/tmp/quecdeck/qscan.lock
+if ! flock -n 9; then
+    printf 'Status: 409 Conflict\r\n'
+    cgi_output_text
+    echo "ERROR: A cell scan is already in progress."
+    exit 0
+fi
+
+# Pause watchcat for the duration of the scan. AT+QSCAN drops the modem's
+# network connection, so watchcat would rack up ping failures and potentially
+# trigger a modem reboot mid-scan.
+#
+# Pause rather than stop: a settings save restarting the unit mid-scan would
+# cancel a stop, but not this. 240s outlives the 215s outer timeout below, and
+# expires on its own if this CGI dies before the trap runs. The marker also
+# covers a worker started by a concurrent settings save.
+watchcat_pause_for_disruption scan 240
+pause_rc=$?
+watchcat_was_watching=$WATCHCAT_WAS_ACTIVE
+if [ "$pause_rc" != "0" ]; then
+    printf 'Status: 500 Internal Server Error\r\n'
+    cgi_output_text
+    echo "ERROR: Could not pause Watchcat, so the scan was not started."
+    exit 0
+fi
+
+# Publish a monotonic scan guard before starting any modem work. Cache readers
+# fail closed while it is live, and can discard it after five minutes if this
+# CGI is killed before its EXIT trap runs.
+qscan_now=$(watchcat_uptime)
+if [ -z "$qscan_now" ] \
+    || ! watchcat_atomic_write /tmp/quecdeck/qscan.active "$((qscan_now + QSCAN_GUARD_SECS))"; then
+    watchcat_resume scan
+    printf 'Status: 500 Internal Server Error\r\n'
+    cgi_output_text
+    echo "ERROR: Could not establish the cell-scan guard, so the scan was not started."
+    exit 0
 fi
 
 cgi_output_text
 
-# Pause watchcat for the duration of the scan.
-# AT+QSCAN drops the modem's network connection, so watchcat would rack up
-# ping failures and potentially trigger a modem reboot mid-scan.
 CONN_LOG="/tmp/quecdeck/logs/connection_events.jsonl"
 log_scan_event() {
     mkdir -p "$(dirname "$CONN_LOG")" && chmod 700 "$(dirname "$CONN_LOG")"
@@ -48,24 +80,15 @@ log_scan_event() {
     fi
 }
 
-# is-active is a read-only query that works without sudo.
-watchcat_was_running=0
-if /bin/systemctl is-active watchcat > /dev/null 2>&1; then
-    watchcat_was_running=1
-    /opt/bin/sudo /bin/systemctl stop watchcat 2>/dev/null
-fi
+log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_start\",\"watchcat_paused\":$watchcat_was_watching}"
 
-log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_start\",\"watchcat_paused\":$(json_bool "$watchcat_was_running" 1)}"
-
-# Signal to cache_get_or_fetch that the modem is busy. CGIs will serve
-# existing cached data rather than attempting live AT commands.
-touch /tmp/quecdeck/qscan.active
-
-# On exit: remove scan flag and temp file, invalidate stale modem caches, and
-# restart watchcat if it was running before the scan.
+# On exit: resume watchcat, remove the scan flag and temp file, and invalidate
+# stale modem caches. One trap for every case, now that resuming is
+# unconditional.
 scan_tmp=$(mktemp)
 _scan_exit() {
-    log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_end\",\"watchcat_paused\":$(json_bool "$watchcat_was_running" 1)}"
+    log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_end\",\"watchcat_paused\":$watchcat_was_watching}"
+    watchcat_resume scan
     rm -f "$scan_tmp" /tmp/quecdeck/qscan.active
     # Invalidate all caches. AT+QSCAN drops the cellular connection, causing the
     # modem to emit registration URCs on reconnect that can mix into subsequent AT
@@ -74,11 +97,7 @@ _scan_exit() {
     cache_invalidate "$_CACHE_MODEM_ALL" "$_CACHE_NETWORK" "$_CACHE_NEIGHBOUR" \
         "$_CACHE_DEVICE_INFO" "$_CACHE_SETTINGS"
 }
-if [ "$watchcat_was_running" = "1" ]; then
-    trap '_scan_exit; /opt/bin/sudo /bin/systemctl start watchcat' EXIT
-else
-    trap '_scan_exit' EXIT
-fi
+trap '_scan_exit' EXIT
 
 # Run the cell scan in the background. Outer timeout = 215 s (180 s max scan +
 # 35 s handler overhead). The optional third AT+QSCAN parameter (firmware scan

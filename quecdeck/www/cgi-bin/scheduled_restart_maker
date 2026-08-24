@@ -34,16 +34,32 @@ if ! [[ "$MINUTE" =~ ^[0-9]+$ ]] || [ "$MINUTE" -lt 0 ] || [ "$MINUTE" -gt 59 ];
     cgi_error "MINUTE must be 0-59."
 fi
 
-cgi_output_text
+# Keep the generated JSON valid and prevent Bash from treating zero-padded
+# hour/minute input as octal.
+HOUR=$((10#$HOUR))
+MINUTE=$((10#$MINUTE))
 
-# Write config JSON atomically. The static scheduled_restart.sh in script/ reads this at startup
 enabled_val=$(json_bool "$ENABLED" enable)
-write_json_config /usrdata/quecdeck/var/scheduled_restart.json \
-    "{\"enabled\": $enabled_val, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}"
+CONFIG=/usrdata/quecdeck/var/scheduled_restart.json
+new_config="{\"enabled\": $enabled_val, \"type\": \"$TYPE\", \"day\": $DAY, \"hour\": $HOUR, \"minute\": $MINUTE}"
 
+config_changed=0
+[ "$(cat "$CONFIG" 2>/dev/null)" != "$new_config" ] && config_changed=1
+if [ "$config_changed" = "1" ]; then
+    # Written atomically. scheduled_restart.sh reads it at startup.
+    write_json_config "$CONFIG" "$new_config"
+fi
+
+# Every explicit save reloads the worker, including a retry after a failed
+# restart that may have left the old in-memory schedule active. Disabled
+# workers start, read the disabled config and exit cleanly.
+/opt/bin/sudo /bin/systemctl reset-failed scheduled_restart >/dev/null 2>&1
+if ! /opt/bin/sudo /bin/systemctl restart scheduled_restart; then
+    cgi_error "Failed to reload scheduled restart settings."
+fi
+
+cgi_output_text
 if [ "$ENABLED" = "enable" ]; then
-    /opt/bin/sudo /usrdata/quecdeck/script/create_scheduled_restart.sh
-
     case "$DAY" in
         1) day_name="Monday" ;; 2) day_name="Tuesday" ;; 3) day_name="Wednesday" ;;
         4) day_name="Thursday" ;; 5) day_name="Friday" ;; 6) day_name="Saturday" ;;
@@ -57,7 +73,6 @@ if [ "$ENABLED" = "enable" ]; then
         echo "Scheduled restart enabled, every ${day_name} at ${time_str}."
     fi
 else
-    /opt/bin/sudo /usrdata/quecdeck/script/remove_scheduled_restart.sh
     echo "Scheduled restart disabled."
 fi
 
