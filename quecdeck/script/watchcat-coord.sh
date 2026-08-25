@@ -2,7 +2,7 @@
 # Short-lived pause markers shared by Watchcat and operations that deliberately
 # disrupt connectivity. All callers run as www-data.
 
-WATCHCAT_PAUSE_DIR=/tmp/quecdeck/watchcat.pause.d
+WATCHCAT_PAUSE_DIR=/run/quecdeck-web/watchcat/pause.d
 WATCHCAT_MAX_PAUSE=300
 
 watchcat_uptime() {

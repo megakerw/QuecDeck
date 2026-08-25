@@ -26,6 +26,7 @@ all_suites=(
     libraries
     sms
     monitoring
+    connection-logger
     updater
     security
     firewall

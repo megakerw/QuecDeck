@@ -4,8 +4,8 @@
 #
 # THE RULE: a directory's owner is the only uid that writes inside it.
 #
-#   /run/quecdeck     root:root  root writes, www-data reads
-#   /tmp/quecdeck     www-data   www-data writes, root stays out
+#   /run/quecdeck       root:root          root writes, www-data reads
+#   /run/quecdeck-web   www-data:www-data  web runtime state
 #   /usrdata/root     root:root  root's private home
 #
 # The guard cannot check any of this: a mode is a runtime fact, not a source
@@ -26,7 +26,7 @@
 SUDO=/opt/bin/sudo
 RUN_UPDATE=/usrdata/quecdeck/script/run_update.sh
 RUNDIR=/run/quecdeck
-WEBDIR=/tmp/quecdeck
+WEBDIR=/run/quecdeck-web
 OLD_LOG=/tmp/install_quecdeck.log
 OLD_STATUS=/tmp/quecdeck_update.status
 PROBE=qdsplit-probe
@@ -67,12 +67,7 @@ id www-data >/dev/null 2>&1 || { echo "FATAL: www-data user missing."; exit 1; }
 # they would report failures that only mean "not deployed", and section C would
 # wedge the UI on a non-terminal "running" status written to the old path.
 DEPLOYED=0
-grep -q '/run/quecdeck' "$RUN_UPDATE" 2>/dev/null && DEPLOYED=1
-# The unit files live on the read-only rootfs and can lag the /usrdata scripts,
-# so section D is gated separately: with an old unit still trimming inside
-# www-data's tree, D would report a regression that only means "not deployed".
-UNIT_DEPLOYED=0
-grep -q '/run/quecdeck' /lib/systemd/system/atcmd-daemon.service 2>/dev/null && UNIT_DEPLOYED=1
+grep -q '/run/quecdeck-web' /usrdata/quecdeck/script/at-lib.sh 2>/dev/null && DEPLOYED=1
 # Sections A2/A3 assert 0600 on www-data's files. That mode comes from a umask
 # rather than a chmod, so gate on the installed library actually carrying it:
 # against an older build the checks would report a regression that only means
@@ -81,8 +76,8 @@ UMASK_DEPLOYED=0
 grep -qx 'umask 077' /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null && UMASK_DEPLOYED=1
 [ "$DEPLOYED" = "0" ] && {
     echo ""
-    echo "  !! Installed run_update.sh does not use /run/quecdeck: the split is"
-    echo "     NOT deployed. Running read-only checks only. C and D are skipped"
+    echo "  !! Installed at-lib.sh does not use /run/quecdeck-web: the split is"
+    echo "     NOT deployed. Running read-only checks only. Section C is skipped"
     echo "     to avoid a misleading verdict."
 }
 
@@ -172,7 +167,7 @@ fi
 # created long ago and would still pass if every creator were broken. This
 # exercises the real shipped
 # functions against a throwaway parent, which is what actually tests the fix.
-# Non-destructive: nothing touches the live /tmp/quecdeck.
+# Non-destructive: nothing touches the live /run/quecdeck-web.
 echo ""
 echo "[A2] www-data creators seal a fresh parent (not just the existing one)"
 FRESH=/tmp/qdfresh
@@ -254,7 +249,7 @@ rm -rf "$FRESH" 2>/dev/null
 #
 # sessions/ and cache/ only: both are written temp-file + rename, so a fresh
 # mode appears on the next write. Appended files (logs/) keep whatever mode they
-# were created with until /tmp clears at reboot, so a correct but recently
+# were created with until /run clears at reboot, so a correct but recently
 # updated device would fail there for no real reason.
 echo ""
 echo "[A3] live www-data files are owner-only"
@@ -278,7 +273,7 @@ done
 for _f in "$WEBDIR/logs"/*; do
     [ -f "$_f" ] || continue
     _lm=$(stat -c %a "$_f" 2>/dev/null)
-    [ "$_lm" = "600" ] || note "$_f is $_lm: appended files keep their creation mode until /tmp clears at reboot"
+    [ "$_lm" = "600" ] || note "$_f is $_lm: appended files keep their creation mode until /run clears at reboot"
 done
 
 # ---- C: the old paths are dead -------------------------------------------
@@ -349,29 +344,6 @@ for f in "$RUNDIR/atcmd.log" "$RUNDIR/install.log"; do
         note "$f not present yet"
     fi
 done
-
-# ---- D: root must not write through www-data's tree ----------------------
-echo ""
-echo "[D] root does not follow a link planted in www-data's tree"
-if [ "$UNIT_DEPLOYED" = "0" ]; then
-    note "skipped: atcmd-daemon.service on the rootfs still writes the pre-split path. Restarting would only re-prove the old bug"
-elif [ -d "$WEBDIR" ]; then
-    printf 'CANARY\n' > /tmp/qdsplit-decoy; chmod 600 /tmp/qdsplit-decoy
-    # atcmd.log.tmp is the name the OLD atcmd-daemon trim wrote through.
-    if $SUDO -u www-data sh -c "mkdir -p $WEBDIR/logs && ln -sf /tmp/qdsplit-decoy $WEBDIR/logs/atcmd.log.tmp" 2>/dev/null; then
-        systemctl restart atcmd-daemon >/dev/null 2>&1
-        sleep 3
-        [ "$(cat /tmp/qdsplit-decoy 2>/dev/null)" = "CANARY" ] \
-            && ok "decoy intact after an atcmd-daemon restart (the trim no longer writes into $WEBDIR)" \
-            || bad "the daemon restart wrote through a www-data symlink: root still trims inside $WEBDIR"
-        rm -f "$WEBDIR/logs/atcmd.log.tmp" 2>/dev/null
-        echo "  atcmd-daemon: $(systemctl is-active atcmd-daemon 2>/dev/null)"
-    else
-        note "could not plant the test link. Section D not exercised"
-    fi
-else
-    note "$WEBDIR absent. Section D not exercised"
-fi
 
 # ---- E: one-time root-home migration ------------------------------------
 echo ""

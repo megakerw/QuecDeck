@@ -4,7 +4,7 @@
 
 CONFIG=/usrdata/quecdeck/var/watchcat.json
 REBOOT_STATE=/usrdata/quecdeck/var/watchcat_reboot_state.json
-STATS_PATH=/tmp/quecdeck/watchcat_stats.json
+STATS_PATH=/run/quecdeck-web/watchcat/stats.json
 RESTART_LOG=/usrdata/quecdeck/var/restart_log.jsonl
 PING_TIMEOUT=3
 MAX_REBOOT_INTERVAL=7200
@@ -106,8 +106,7 @@ fi
 uptime_secs=$(get_uptime) || exit 1
 [ "$uptime_secs" -lt 65 ] && { sleep "$((65 - uptime_secs))" & wait $!; }
 
-mkdir -p /tmp/quecdeck || exit 1
-chmod 700 /tmp/quecdeck 2>/dev/null
+mkdir -p /run/quecdeck-web/watchcat || exit 1
 trap 'exit' INT TERM
 
 # -1 means that a target has not been contacted yet. A successful response ends

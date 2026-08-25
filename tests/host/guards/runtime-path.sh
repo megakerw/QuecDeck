@@ -3,14 +3,14 @@
 #
 # THE RULE: a directory's owner is the only uid that writes inside it.
 #
-#   /run/quecdeck   root:root 0755   everything ROOT writes, www-data reads
-#   /tmp/quecdeck   www-data 0700    everything WWW-DATA writes, root stays out
+#   /run/quecdeck       root:root          root runtime state
+#   /run/quecdeck-web   www-data:www-data  web runtime state
 #
 # Enforced as ONE check: root-context code may not name a path in a
 # world-writable directory unless the line carries a written justification.
 # No exceptions are inferred from what the line appears to do. Earlier versions
 # allowed lines that merely CONTAINED "rm -f", which let a compound line such as
-#   rm -f /tmp/a; chown www-data /tmp/quecdeck/sessions
+#   rm -f /tmp/a; chown www-data /run/quecdeck-web/sessions
 # through untouched. Intent is declared, never guessed.
 #
 # Mechanical rather than a review item because this class produced four bugs
@@ -20,14 +20,14 @@
 #      denies root's OWN write, and the update wedges on "running" forever.
 #   2. The atcmd-daemon log trim inside www-data's tree follows a planted symlink,
 #      overwriting an arbitrary root file with attacker-chosen content.
-#   3. In lighttpd.service, chown and chmod on /tmp/quecdeck/sessions follow symlinks,
+#   3. In lighttpd.service, chown and chmod on a web-owned child follow symlinks,
 #      handing www-data ownership of any root directory.
 #   4. In quecdeck.sh, sshd.service staged in www-data's tree could be swapped
 #      between sha256sum and cp, installing an unverified unit as root.
 #
 # Sticky /tmp does NOT save you: it stops deletion, not creation, and the
 # fs.protected_* sysctls cover only sticky world-writable dirs, so they do
-# nothing inside 0700 /tmp/quecdeck. This device has no SELinux, so uid is the
+# nothing inside a 0700 web runtime tree. This device has no SELinux, so uid is the
 # entire boundary.
 
 # Files that execute as root. Units are classified by the ABSENCE of
@@ -63,14 +63,15 @@ tmpguard_root_scripts() {
     } | sed 's|^/usrdata/quecdeck/|quecdeck/|' | sort -u
 }
 
-# Every world-writable directory on the device (all 1777, verified), not just
-# /tmp: any of them has the same squat-and-plant exposure. Root's runtime state
-# belongs in /run/quecdeck. /tmp/quecdeck belongs to www-data.
+# Every world-writable directory on the device and the web-owned runtime tree.
+# Root state belongs in /run/quecdeck and root must not operate on names planted
+# beneath /run/quecdeck-web. The one top-level creator carries an explicit
+# reasoned exemption.
 # The trailing separator is optional so bare uses (cd /tmp, TMPDIR=/tmp,
 # mktemp -p /tmp, tar -C /tmp) are caught too, not just full paths. The leading
 # guard keeps the path component anchored, so /opt/tmp (Entware's own dir,
 # under root-owned /opt) does not match on the "/tmp" inside it.
-TMPGUARD_RE='(^|[^[:alnum:]_.-])/(tmp|var/tmp|var/volatile|dev/shm)([/"'"'"' ]|$)'
+TMPGUARD_RE='(^|[^[:alnum:]_.-])(/(tmp|var/tmp|var/volatile|dev/shm)([/"'"'"' ]|$)|/run/quecdeck-web([/"'"'"' ]|$))'
 
 # The single scanner both callers use, so the rule cannot drift between them.
 # Reads a file on stdin, prints "<lineno>:<line>" for each violation.

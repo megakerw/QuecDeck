@@ -3,7 +3,7 @@
 
 local TIMEOUT  = 1800            -- seconds of inactivity before session expires
 local MAX_AGE  = 28800           -- 8 hours absolute session lifetime
-local SESSIONS = "/tmp/quecdeck/sessions/"
+local SESSIONS = "/run/quecdeck-web/sessions/"
 local LOGIN    = "/login.html"
 
 local uri  = lighty.env["request.uri"]

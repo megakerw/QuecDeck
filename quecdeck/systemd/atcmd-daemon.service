@@ -5,25 +5,25 @@ Description=quecdeck AT command daemon (atcli --daemon)
 Type=simple
 # The daemon logs to both sinks: the --log tmpfs file (journald is disabled
 # on the device) and stderr (journalctl works on firmware where it is not).
-# The file is trimmed to 500 lines at each restart. In-run growth is
-# rate-limited in the daemon (consecutive timeouts collapse to 1 line per
-# 100). Trim must stay in ExecStartPre: a tail+mv on the live file would
-# strand the daemon's append fd on the old inode.
+# atcli bounds the file to 64 KiB through its retained descriptor and writes a
+# rollover marker before the next entry. Recurring faults are also rate-limited
+# in the daemon, with the first occurrence and every hundredth written.
 # The log lives in /run/quecdeck because ROOT writes it: the daemon opens it
 # before dropping privileges, so it must not sit in www-data's tree where the
-# trim below could be redirected through a planted symlink. 0644 keeps it
-# readable by the CGI serving the developer log view.
-ExecStartPre=-/bin/bash -c 'mkdir -p /run/quecdeck; chmod 755 /run/quecdeck; L=/run/quecdeck/atcmd.log; if [ -f "$L" ]; then tail -500 "$L" > "$L.tmp" && mv "$L.tmp" "$L"; fi'
+# file could be redirected through a planted symlink. 0644 keeps it readable by
+# the CGI serving the developer log view.
+# tmpguard-ok: creates and labels only the top-level web runtime directory in root-owned /run
+ExecStartPre=/bin/bash -c 'for D in /run/quecdeck /run/quecdeck-web; do [ ! -L "$D" ] || exit 1; done; mkdir -p /run/quecdeck /run/quecdeck-web; chown root:root /run/quecdeck; chmod 755 /run/quecdeck; chown www-data:www-data /run/quecdeck-web; chmod 700 /run/quecdeck-web'
 # Starts as root to open /dev/smd11, drops itself to www-data before
 # binding the socket. User= must stay unset. -s is explicit because at-lib.sh
 # clients connect to this exact path, not the atcli binary's own default.
 # tmpguard-ok: the socket is bound AFTER atcli drops to www-data, so www-data
 # is its writer and it correctly lives in www-data's tree. Root never opens it.
-ExecStart=/usrdata/quecdeck/atcli --daemon -s /tmp/quecdeck/atcli.sock --log /run/quecdeck/atcmd.log
+ExecStart=/usrdata/quecdeck/atcli --daemon -s /run/quecdeck-web/atcli.sock --log /run/quecdeck/atcmd.log --log-bytes 65536
 # tmpguard-ok: rm only, exec'd directly with no shell. Same bounded residual as
 # lighttpd.service's wipe: www-data owns the parent and can redirect this to
 # unlink an entry named atcli.sock elsewhere. No read or write either way.
-ExecStopPost=/bin/rm -f /tmp/quecdeck/atcli.sock
+ExecStopPost=/bin/rm -f /run/quecdeck-web/atcli.sock
 Restart=always
 # 5s keeps repeated port-open failures (modem mid-reboot) under systemd's
 # default start limit (5 in 10s), which would otherwise park the unit in

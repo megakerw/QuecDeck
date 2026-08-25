@@ -22,7 +22,8 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin
 # All root-owned runtime state lives here. Root-owned and not world-writable,
 # so www-data can read the log but cannot plant a name for root to follow.
 # Reachable both from run_update.sh (which also creates it) and a console run.
-if ! mkdir -p /run/quecdeck || ! chmod 755 /run/quecdeck; then
+if [ -L /run/quecdeck ] || ! mkdir -p /run/quecdeck ||
+   ! chown root:root /run/quecdeck || ! chmod 755 /run/quecdeck; then
     echo "FATAL: cannot create the root-owned update runtime directory." >&2
     exit 1
 fi
@@ -878,21 +879,23 @@ swap_in_release() {
     # lighttpd stays down (Requires=) and the health probe below rolls back.
     [ "$_need_firewall_restart" = "1" ] && { systemctl restart firewall || echo "WARNING: Firewall failed to restart."; }
     systemctl restart atcmd-daemon
-    # The daemon now logs to /run/quecdeck. Drop the pre-split file it used to
-    # write inside www-data's tree. Inert once the new unit is live, but /tmp is
-    # tmpfs so it would otherwise linger as a root-owned entry there until the
-    # next reboot. After the restart, so nothing recreates it.
-    # tmpguard-ok: rm of a fixed name, completing the path migration.
-    rm -f /tmp/quecdeck/logs/atcmd.log
-    # Verify the AT daemon actually serves: unit active plus one round trip
-    # (binary -> socket -> daemon -> modem). Goes through the new release's
-    # at-lib.sh, so the probe uses the same socket path and binary as the CGIs.
-    # Subshell: the sourced helpers stay out of the updater's namespace, and a
-    # missing or broken at-lib.sh fails the probe, not the install.
-    # Warns, never rolls back: the web UI stays up either way (AT panels go
-    # empty until the daemon recovers. The systemd unit restarts it every 5 seconds.
-    sleep 2
-    if systemctl is-active atcmd-daemon >/dev/null 2>&1 &&        ( . "$QUECDECK_DIR/script/at-lib.sh" && atcmd_run 'AT' 3000 ) >/dev/null 2>&1; then
+    # Verify the AT daemon actually serves with one complete round trip. A
+    # fresh install can need longer than two seconds, and a failed first start
+    # is retried by systemd after five seconds. Retry briefly so that normal
+    # recovery does not produce a false warning. Each attempt uses the new
+    # release's at-lib.sh and the same socket path as the CGIs.
+    _at_probe_ok=0
+    _at_probe_attempt=0
+    while [ "$_at_probe_attempt" -lt 10 ]; do
+        if systemctl is-active atcmd-daemon >/dev/null 2>&1 &&
+           ( . "$QUECDECK_DIR/script/at-lib.sh" && atcmd_run 'AT' 1000 ) >/dev/null 2>&1; then
+            _at_probe_ok=1
+            break
+        fi
+        _at_probe_attempt=$((_at_probe_attempt + 1))
+        [ "$_at_probe_attempt" -lt 10 ] && sleep 1
+    done
+    if [ "$_at_probe_ok" = "1" ]; then
         echo "AT daemon serving."
     else
         echo -e "\e[1;33mWARNING: AT daemon not serving. AT data will be unavailable until it recovers.\e[0m"

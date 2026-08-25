@@ -3,7 +3,7 @@ Description=Lighttpd Daemon
 # firewall.service orders after the firmware connection chain and applies its
 # policy only after the boot settling boundary. Depending on it here keeps the
 # UI down until that protected state is ready.
-After=network.target opt.mount QCMAP_ConnectionManagerd.service firewall.service
+After=atcmd-daemon.service network.target opt.mount QCMAP_ConnectionManagerd.service firewall.service
 # Refuse to serve unless the firewall is up, so the UI is never reachable
 # without the LAN-only iptables rules in place.
 Requires=firewall.service

@@ -1,6 +1,7 @@
 #!/bin/bash
 
 . /usrdata/quecdeck/script/cgi-lib.sh
+. /usrdata/quecdeck/script/connection-log.sh || exit 1
 cgi_require_post
 cgi_read_post
 
@@ -18,17 +19,16 @@ esac
 # kernel releases an flock when the holding process dies (even on SIGKILL), so
 # a crashed scan can't wedge the lock. Scanning is refused if flock is missing:
 # running concurrent scans would invalidate the Watchcat and AT-command guards.
-# Keep the scoped umask at this security-sensitive creation site even though
-# cgi-lib.sh now establishes the same mask globally. This CGI can be the first
-# creator of /tmp/quecdeck, and no root unit re-tightens that parent later.
-(umask 077; mkdir -p /tmp/quecdeck)
+# The runtime unit creates the private web-owned scan directory before the web
+# server starts.
 if ! cgi_flock_available; then
     printf 'Status: 500 Internal Server Error\r\n'
     cgi_output_text
     echo "ERROR: Cell scanning requires flock, which is unavailable on this device."
     exit 0
 fi
-exec 9>/tmp/quecdeck/qscan.lock
+mkdir -p /run/quecdeck-web/scan
+exec 9>/run/quecdeck-web/scan/lock
 if ! flock -n 9; then
     printf 'Status: 409 Conflict\r\n'
     cgi_output_text
@@ -59,7 +59,7 @@ fi
 # CGI is killed before its EXIT trap runs.
 qscan_now=$(watchcat_uptime)
 if [ -z "$qscan_now" ] \
-    || ! watchcat_atomic_write /tmp/quecdeck/qscan.active "$((qscan_now + QSCAN_GUARD_SECS))"; then
+    || ! watchcat_atomic_write "$_QSCAN_ACTIVE" "$((qscan_now + QSCAN_GUARD_SECS))"; then
     watchcat_resume scan
     printf 'Status: 500 Internal Server Error\r\n'
     cgi_output_text
@@ -67,29 +67,31 @@ if [ -z "$qscan_now" ] \
     exit 0
 fi
 
+if ! connection_log_append "{\"ts\":$(date +%s),\"type\":\"cell_scan_start\",\"watchcat_paused\":$watchcat_was_watching}"; then
+    watchcat_resume scan
+    rm -f "$_QSCAN_ACTIVE"
+    printf 'Status: 500 Internal Server Error\r\n'
+    cgi_output_text
+    echo "ERROR: Could not write the connection event log, so the scan was not started."
+    exit 0
+fi
+
 cgi_output_text
-
-CONN_LOG="/tmp/quecdeck/logs/connection_events.jsonl"
-log_scan_event() {
-    mkdir -p "$(dirname "$CONN_LOG")" && chmod 700 "$(dirname "$CONN_LOG")"
-    printf '%s\n' "$1" >> "$CONN_LOG"
-    local count
-    count=$(wc -l < "$CONN_LOG" 2>/dev/null || echo 0)
-    if [ "$count" -gt 500 ]; then
-        tail -500 "$CONN_LOG" > "${CONN_LOG}.tmp" && mv "${CONN_LOG}.tmp" "$CONN_LOG"
-    fi
-}
-
-log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_start\",\"watchcat_paused\":$watchcat_was_watching}"
 
 # On exit: resume watchcat, remove the scan flag and temp file, and invalidate
 # stale modem caches. One trap for every case, now that resuming is
 # unconditional.
 scan_tmp=$(mktemp)
 _scan_exit() {
-    log_scan_event "{\"ts\":$(date +%s),\"type\":\"cell_scan_end\",\"watchcat_paused\":$watchcat_was_watching}"
+    connection_log_append "{\"ts\":$(date +%s),\"type\":\"cell_scan_end\",\"watchcat_paused\":$watchcat_was_watching}" \
+        || printf '%s\n' 'run_cell_scan: could not write the completion event' >&2
     watchcat_resume scan
-    rm -f "$scan_tmp" /tmp/quecdeck/qscan.active
+    scan_settle_now=$(watchcat_uptime)
+    if [ -n "$scan_settle_now" ]; then
+        watchcat_atomic_write /run/quecdeck-web/scan/settle "$((scan_settle_now + 60))" \
+            || printf '%s\n' 'run_cell_scan: could not establish the logger settling window' >&2
+    fi
+    rm -f "$scan_tmp" "$_QSCAN_ACTIVE"
     # Invalidate all caches. AT+QSCAN drops the cellular connection, causing the
     # modem to emit registration URCs on reconnect that can mix into subsequent AT
     # responses and poison any cache written immediately after the scan. A full

@@ -3,4 +3,4 @@
 . /usrdata/quecdeck/script/cgi-lib.sh
 cgi_check_cors
 
-cgi_serve_json_file /tmp/quecdeck/watchcat_stats.json '{}'
+cgi_serve_json_file /run/quecdeck-web/watchcat/stats.json '{}'

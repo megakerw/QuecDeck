@@ -55,6 +55,11 @@ if [ ! -f tests/host/guards/atcli.sh ]; then
 else
 . tests/host/guards/atcli.sh
 
+atcli_target_elf < quecdeck/atcli \
+    || err "quecdeck/atcli is not the required static ARM EABI5 VFP binary"
+atcli_supports_log_limit < quecdeck/atcli \
+    || err "quecdeck/atcli does not support the unit's --log-bytes option"
+
 while IFS= read -r f; do
     [ "$f" = "$ATCLI_GUARD_EXEMPT" ] && continue
     err "atcli guard: $f invokes atcli directly (use atcmd_run/atcmd_fire from at-lib.sh)"
@@ -71,11 +76,13 @@ for _f in $ATCLI_SOCK_REQUIRED; do
 done
 grep -qE -- "$ATCLI_SOCK_BIND_RE" "$ATCLI_SOCK_BIND_FILE" 2>/dev/null \
     || err "$ATCLI_SOCK_BIND_FILE has no '-s <path>' bind. The daemon would fall back to the atcli default"
+grep -q -- '--log-bytes 65536' "$ATCLI_SOCK_BIND_FILE" 2>/dev/null \
+    || err "$ATCLI_SOCK_BIND_FILE does not enforce the 64 KiB daemon log limit"
 fi
 
 # --------------------------------------------------- runtime-path guard ----
 # Root-context code must not name a /tmp path: root's runtime state belongs in
-# /run/quecdeck, and /tmp/quecdeck belongs to www-data. See
+# /run/quecdeck, and root must not follow names in /run/quecdeck-web. See
 # tests/host/guards/runtime-path.sh for the four bugs this class produced.
 if [ ! -f tests/host/guards/runtime-path.sh ]; then
     err "tests/host/guards/runtime-path.sh missing: the runtime-path guard cannot run"

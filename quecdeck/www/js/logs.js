@@ -68,7 +68,7 @@ function logsPage() {
       switch (ev.type) {
         case 'connected':
           if (ev.cell_id) {
-            return ev.mode + ' | Cell: ' + ev.cell_id + ' | PCI: ' + ev.pci + ' | Band: ' + ev.band + ' | EARFCN: ' + ev.earfcn;
+            return ev.mode + ' | Cell: ' + ev.cell_id + ' | PCI: ' + ev.pci + ' | Band: ' + ev.band + ' | ' + (ev.channel_label || 'EARFCN') + ': ' + ev.earfcn;
           }
           return ev.mode || '';
         case 'disconnected':
@@ -77,7 +77,7 @@ function logsPage() {
           const cellRef = c => c.cell_id ? c.cell_id + ':' + c.pci : '-';
           const modePrefix = ev.mode ? ev.mode + ' | ' : '';
           const cellStr = cellRef(ev.from) + ' → ' + cellRef(ev.to);
-          const radioStr = ev.to.cell_id ? ' | Band: ' + ev.to.band + ' | EARFCN: ' + ev.to.earfcn : '';
+          const radioStr = ev.to.cell_id ? ' | Band: ' + ev.to.band + ' | ' + (ev.to.channel_label || 'EARFCN') + ': ' + ev.to.earfcn : '';
           return modePrefix + cellStr + radioStr;
         }
         case 'mode_change': {

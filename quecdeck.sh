@@ -38,7 +38,10 @@ patch_root_passwd() {
 # Root-owned runtime dir for everything root writes. /run is root-owned and not
 # world-writable, so nothing can pre-plant a name here.
 ensure_rundir() {
-    mkdir -p /run/quecdeck && chmod 755 /run/quecdeck
+    [ ! -L /run/quecdeck ] || return 1
+    mkdir -p /run/quecdeck || return 1
+    chown root:root /run/quecdeck || return 1
+    chmod 755 /run/quecdeck
 }
 
 # One-time repair marker. Before this existed, /usrdata/root and bin were 0777.
@@ -645,14 +648,13 @@ uninstall_quecdeck_components() {
     # /tmp is tmpfs, so it survives an uninstall (only a reboot clears it):
     # without this, sessions, auth-failure/lockout counters, and logs from the
     # old install would silently carry into the next one.
-    # Two trees, one per writer: /run/quecdeck is everything root writes,
-    # /tmp/quecdeck everything www-data writes. _legacy holds the pre-split
-    # paths from before the split, so an upgrade-then-uninstall leaves nothing.
+    # Current volatile state uses one root-owned tree and one web-owned tree.
+    # _legacy holds paths from older releases so an uninstall leaves no residue.
     _legacy="/tmp/quecdeck_update.status /tmp/quecdeck_preflight.sha256 /tmp/install_quecdeck.log /tmp/install_quecdeck.sh /tmp/installentware.sh /tmp/.quecdeck-update /tmp/.quecdeck-update-cli /tmp/.quecdeck-release.tar.gz /tmp/.quecdeck-release-extract" # tmpguard-ok: never opened, only passed to rm below
-    { [ -e /tmp/quecdeck ] || [ -e /run/quecdeck ]; } && result_runtime_state="REMOVED" # tmpguard-ok: existence test, no open
+    { [ -e /tmp/quecdeck ] || [ -e /run/quecdeck ] || [ -e /run/quecdeck-web ]; } && result_runtime_state="REMOVED" # tmpguard-ok: existence test, no open
     # tmpguard-ok: uninstall removes fixed top-level names only. The rm command does not
     # follow a symlink supplied as the final path component.
-    rm -rf /tmp/quecdeck /run/quecdeck $_legacy
+    rm -rf /tmp/quecdeck /run/quecdeck /run/quecdeck-web $_legacy
 
     remount_ro
     trap - EXIT
@@ -758,8 +760,8 @@ sshd_service() {
                 echo "sshd:x:106:65534:Linux User,,,:/opt/run/sshd:/bin/nologin" >> /opt/etc/passwd
 
             # Download and install service file and IP update script.
-            # Staged in root-owned /run/quecdeck, NOT /tmp/quecdeck: that dir
-            # belongs to www-data, which could both plant a symlink for wget to
+            # Staged in root-owned /run/quecdeck, not the web subtree,
+            # where www-data could both plant a symlink for wget to
             # follow and swap the file between sha256sum and cp, installing an
             # unverified unit as root.
             ensure_rundir

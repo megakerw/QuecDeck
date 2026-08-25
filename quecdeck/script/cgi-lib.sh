@@ -242,20 +242,45 @@ validate_password() {
     printf '%s\n' "$3" | /opt/bin/sudo /usrdata/quecdeck/script/check_password.sh "$1" "$2"
 }
 
-# Append a JSON log entry to an access log file, capped at 500 lines.
+# Append a JSON log entry to an access log file, capped at 500 lines. Login,
+# logout, and developer-auth requests can overlap, so append and trim under one
+# lock. Each request opens the log anew, which makes the atomic replacement safe.
 # Usage: log_access_event <log_file> <json_string>
 log_access_event() {
-    local log_file="$1" entry="$2"
-    local log_dir; log_dir=$(dirname "$log_file")
-    # umask so the /tmp/quecdeck parent is sealed too, not just the leaf: no
-    # root unit pre-creates it any more. Guarded to stay fork-free once created.
-    [ -d "$log_dir" ] || { ( umask 077; mkdir -p "$log_dir" ); chmod 700 "$log_dir"; }
-    printf '%s\n' "$entry" >> "$log_file"
-    local count
-    count=$(wc -l < "$log_file" 2>/dev/null || echo 0)
-    if [ "$count" -gt 500 ]; then
-        tail -500 "$log_file" > "${log_file}.tmp" && mv "${log_file}.tmp" "$log_file"
+    local log_file="$1" entry="$2" log_dir lock_file tmp count rc=0
+    local limit="${ACCESS_LOG_LIMIT:-500}"
+    log_dir=$(dirname "$log_file") || return 1
+    # The runtime unit normally creates this directory. Keep the guarded
+    # fallback for direct CGI tests and preserve owner-only modes.
+    if [ ! -d "$log_dir" ]; then
+        (umask 077
+         mkdir -p "$log_dir") || return 1
+        chmod 700 "$log_dir" || return 1
     fi
+
+    command -v flock >/dev/null 2>&1 || return 1
+    lock_file="$log_dir/access_events.lock"
+    exec 8>>"$lock_file" || return 1
+    if ! flock -x 8; then
+        exec 8>&-
+        return 1
+    fi
+
+    printf '%s\n' "$entry" >> "$log_file" || rc=1
+    if [ "$rc" = "0" ]; then
+        count=$(wc -l < "$log_file" 2>/dev/null) || count=0
+        if [ "$count" -gt "$limit" ]; then
+            tmp="${log_file}.tmp.$$"
+            if ! tail -"$limit" "$log_file" > "$tmp" || ! mv -f "$tmp" "$log_file"; then
+                rm -f "$tmp"
+                rc=1
+            fi
+        fi
+    fi
+
+    flock -u 8 || rc=1
+    exec 8>&-
+    return "$rc"
 }
 
 # ---------------------------------------------------------------------------
@@ -288,7 +313,7 @@ cgi_wan_ip() {
 # lockouts last 15 min, so a day-old record is always expired.
 _bf_file() {
     local dir="$1" ip="$2"
-    # The umask seals the /tmp/quecdeck parent as well as the leaf. See cache_write.
+    # The runtime unit normally creates this directory. See cache_write.
     [ -d "$dir" ] || { ( umask 077; mkdir -p "$dir" ); chmod 700 "$dir"; }
     [ $(( RANDOM % 100 )) -eq 0 ] && find "$dir" -maxdepth 1 -type f ! -name '*.lock' -mtime +1 -delete 2>/dev/null
     printf '%s/%s' "$dir" "${ip//:/_}"
@@ -383,7 +408,7 @@ bf_clear() {
 # AT payload. Age comes from that header, not the mtime, so the read path never
 # forks stat(1). Always go through cache_write and cache_read.
 # ---------------------------------------------------------------------------
-_CACHE_DIR=/tmp/quecdeck/cache
+_CACHE_DIR=/run/quecdeck-web/cache
 
 _CACHE_MODEM_ALL="$_CACHE_DIR/modem_stats_all"
 _CACHE_DEVICE_INFO="$_CACHE_DIR/device_info"
@@ -393,22 +418,23 @@ _CACHE_SETTINGS="$_CACHE_DIR/settings"
 _CACHE_NETWORK="$_CACHE_DIR/network"
 _CACHE_MODEM_CONN="$_CACHE_DIR/modem_conn"
 QSCAN_GUARD_SECS=300
+_QSCAN_ACTIVE=${_QSCAN_ACTIVE:-/run/quecdeck-web/scan/active}
 
 # True while the monotonic cell-scan guard is live. Invalid and expired markers
 # are removed. If uptime cannot be read, fail safe: preserving the guard is less
 # harmful than sending an AT command into a scan that may still be running.
 qscan_is_active() {
-    [ -f /tmp/quecdeck/qscan.active ] || return 1
+    [ -f "$_QSCAN_ACTIVE" ] || return 1
     local expiry="" now
-    read -r expiry < /tmp/quecdeck/qscan.active 2>/dev/null || true
+    read -r expiry < "$_QSCAN_ACTIVE" 2>/dev/null || true
     case "$expiry" in
-        ''|*[!0-9]*) rm -f /tmp/quecdeck/qscan.active; return 1 ;;
+        ''|*[!0-9]*) rm -f "$_QSCAN_ACTIVE"; return 1 ;;
     esac
     now=$(watchcat_uptime) || return 0
     if [ "$expiry" -gt "$now" ] && [ "$expiry" -le "$((now + QSCAN_GUARD_SECS))" ]; then
         return 0
     fi
-    rm -f /tmp/quecdeck/qscan.active
+    rm -f "$_QSCAN_ACTIVE"
     return 1
 }
 
@@ -524,9 +550,8 @@ cache_write() {
     tmp="${f}.tmp.$$"
     # Guarded because the dir exists for every write after the first since boot,
     # and mkdir is a fork on the miss path, which is every dashboard poll.
-    # umask, not -m: -m seals the FINAL component only, and no root unit
-    # pre-creates the /tmp/quecdeck parent any more, so the first www-data path
-    # to arrive owns sealing it. Asserted by tests/device/device-test-runsplit.sh.
+    # The runtime unit creates the directory in production. Keep a private
+    # fallback so standalone host and device tests remain self-contained.
     [ -d "$_CACHE_DIR" ] || ( umask 077; mkdir -p "$_CACHE_DIR" )
     _epoch_now
     # No chmod: this library's umask makes the temp 0600 even when a caller runs
@@ -537,7 +562,7 @@ cache_write() {
         && mv "$tmp" "$f"; then
         return 0
     fi
-    # Keep: the likeliest failure is a full /tmp, where the half-written temp
+    # Keep: the likeliest failure is a full tmpfs, where the half-written temp
     # holds the space that ran out.
     rm -f "$tmp"
     return 1

@@ -4,8 +4,8 @@
 cgi_check_cors
 cgi_output_json
 
-CONN_LOG="/tmp/quecdeck/logs/connection_events.jsonl"
-ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
+CONN_LOG="/run/quecdeck-web/logs/connection_events.jsonl"
+ACCESS_LOG="/run/quecdeck-web/logs/access_events.jsonl"
 # Root writes this log, so it lives in the root-owned runtime tree. Mode 0644
 # allows www-data to read it.
 ATCMD_LOG="/run/quecdeck/atcmd.log"

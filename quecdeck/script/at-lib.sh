@@ -38,7 +38,7 @@
 # (request headers only surface as HTTP_* variables). _ATCLI_SOCK is also
 # the daemon-up probe for pollers: [ -S "$_ATCLI_SOCK" ].
 : "${_ATCLI:=/usrdata/quecdeck/atcli}"
-: "${_ATCLI_SOCK:=/tmp/quecdeck/atcli.sock}"
+: "${_ATCLI_SOCK:=/run/quecdeck-web/atcli.sock}"
 
 # atcli's exit status for a command past the daemon's CMD_MAX (E_CMD_TOO_LONG
 # in its src/proto.rs). The limit itself is deliberately not copied here, only

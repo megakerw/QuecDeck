@@ -20,5 +20,5 @@ done
 "$LUA" tests/host/integration/auth-lua.test.lua
 rc=$?
 rm -f /opt/etc/.htpasswd
-rm -rf /tmp/quecdeck/sessions
+rm -rf /run/quecdeck-web/sessions
 exit $rc

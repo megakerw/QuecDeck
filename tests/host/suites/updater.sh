@@ -199,6 +199,10 @@ t "updater health probe avoids blocked loopback HTTP" "yes" \
   "$(! sed -n '/^    _probe_site() {/,/^    }/p' update_quecdeck.sh | grep -q 'wget' && echo yes || echo no)"
 t "updater health probe exercises auth CGI as web uid" "yes" \
   "$( _probe_src=$(sed -n '/^    _probe_site() {/,/^    }/p' update_quecdeck.sh); printf '%s\n' "$_probe_src" | grep -q 'su www-data' && printf '%s\n' "$_probe_src" | grep -q 'auth_login' && echo yes || echo no)"
+_at_probe=$(sed -n '/systemctl restart atcmd-daemon/,/systemctl restart connection-logger/p' update_quecdeck.sh)
+t "AT daemon health probe tolerates one systemd restart" "yes" \
+  "$(printf '%s\n' "$_at_probe" | grep -q '_at_probe_attempt.*-lt 10' && printf '%s\n' "$_at_probe" | grep -q "atcmd_run 'AT' 1000" && ! printf '%s\n' "$_at_probe" | grep -q 'sleep 2' && echo yes || echo no)"
+unset _at_probe
 t "updater health probe requires lighttpd-owned LAN HTTPS socket" "yes" \
   "$( _probe_src=$(sed -n '/^    _probe_site() {/,/^    }/p' update_quecdeck.sh); printf '%s\n' "$_probe_src" | grep -q 'systemctl show -p MainPID' && printf '%s\n' "$_probe_src" | grep -q '_health_hex:01BB' && printf '%s\n' "$_probe_src" | grep -q 'socket:\[\$_https_inode\]' && echo yes || echo no)"
 t "pre-swap failures restore previously active services" "yes" \

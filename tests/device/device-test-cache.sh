@@ -126,7 +126,7 @@ else
     _stopped_daemon=0
     i=0
     while [ $i -lt 15 ]; do
-        [ -S "${_ATCLI_SOCK:-/tmp/quecdeck/atcli.sock}" ] && break
+        [ -S "${_ATCLI_SOCK:-/run/quecdeck-web/atcli.sock}" ] && break
         sleep 1; i=$((i+1))
     done
     if systemctl is-active atcmd-daemon >/dev/null 2>&1; then

@@ -79,7 +79,7 @@ su www-data -s /bin/bash -c 'REQUEST_METHOD=GET /usrdata/quecdeck/www/cgi-bin/au
 
 - [ ] The ownership command reports that lighttpd owns the configured LAN HTTPS listener
 - [ ] `auth_login` prints `Status: 303 See Other` and `Location: /`
-- [ ] No new entry in `/tmp/quecdeck/logs/access_events.jsonl` and no lockout
+- [ ] No new entry in `/run/quecdeck-web/logs/access_events.jsonl` and no lockout
       counter created (the GET branch must be side-effect free)
 
 ## 2. Preflight failure path (nonexistent tag)

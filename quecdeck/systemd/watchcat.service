@@ -1,6 +1,6 @@
 [Unit]
 Description=Watchcat Ping Watchdog
-After=network.target opt.mount
+After=atcmd-daemon.service network.target opt.mount
 
 [Service]
 Type=simple

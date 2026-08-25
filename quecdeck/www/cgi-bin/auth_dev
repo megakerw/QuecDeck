@@ -10,7 +10,7 @@
 #        {"unlocked": true}.
 #
 # Brute-force protection: 5 failed attempts trigger a 15-minute lockout,
-# tracked per client IP under /tmp/quecdeck/dev_auth_failures (mirroring
+# tracked per client IP under the web runtime tree (mirroring
 # auth_login). Per-session tracking would let an attacker who already holds
 # admin reset the counter by simply logging in again, since each login mints a
 # fresh session file.
@@ -31,7 +31,7 @@ if ! printf '%s' "$token" | grep -qE '^[A-Za-z0-9]{1,128}$'; then
     exit 0
 fi
 
-SESSION_FILE="/tmp/quecdeck/sessions/${token}"
+SESSION_FILE="/run/quecdeck-web/sessions/${token}"
 # The dev-unlock flag lives in a sibling "<token>.dev" file rather than inside
 # the session file. auth.lua rewrites the session file on every request (to
 # refresh last_access). Keeping dev_unlocked in a separate file that only this
@@ -66,12 +66,12 @@ if [ -z "$password" ] || [ "${#password}" -gt 256 ]; then
 fi
 
 now=$(date +%s)
-ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
+ACCESS_LOG="/run/quecdeck-web/logs/access_events.jsonl"
 client_ip=$(cgi_client_ip)
 wan_ip=$(cgi_wan_ip)
 
 # Brute-force protection per client IP (rationale in the header comment).
-FAILURE_DIR="/tmp/quecdeck/dev_auth_failures"
+FAILURE_DIR="/run/quecdeck-web/dev-auth-failures"
 
 # Reject immediately if locked out.
 if ! cgi_flock_available; then

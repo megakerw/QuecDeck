@@ -2,8 +2,8 @@
 # Sourced by tests/host/run-tests.sh.
 
 # ------------------------------------------- runtime-path guard (tmpguard) --
-# The guard is the durable half of the /run/quecdeck split: source scanning is
-# all that stops a root write drifting back into /tmp. If its regexes silently
+# The guard is the durable half of the runtime split: source scanning stops a
+# root write drifting into world-writable storage or the web-owned tree. If its regexes silently
 # stop matching, nothing else notices, so assert BOTH directions against the
 # four bugs it exists to prevent. Callers feed it grep -n output, so the fixture
 # prefixes a line number.
@@ -31,6 +31,8 @@ t "tmpguard flags any new fixed tmp path" "flag" \
   "$(tmpguard_verdict 'STATUS=/tmp/some_new_thing.status')"
 t "tmpguard flags root chmod in www-data tree" "flag" \
   "$(tmpguard_verdict 'chmod 700 /tmp/quecdeck/logs')"
+t "tmpguard flags root access in current web tree" "flag" \
+  "$(tmpguard_verdict 'tail /run/quecdeck-web/logs/access_events.jsonl')"
 
 # Intent is declared, never inferred from what the line appears to do. An
 # earlier version exempted any line CONTAINING "rm -f", which let a compound
@@ -58,7 +60,7 @@ t "tmpguard ignores /opt/tmpfoo" "allow" "$(tmpguard_verdict 'cp a /opt/tmpfiles
 # Must allow: comments, and an explicit reasoned marker on the line or, for
 # systemd units where a trailing comment would join the command, above it.
 t "tmpguard allows comments" "allow" \
-  "$(tmpguard_verdict '    # /tmp/quecdeck belongs to www-data')"
+  "$(tmpguard_verdict '    # /run/quecdeck-web belongs to www-data')"
 t "tmpguard allows an inline marker" "allow" \
   "$(tmpguard_verdict '_legacy="/tmp/install_quecdeck.log" # tmpguard-ok: only passed to rm')"
 t "tmpguard allows a marker on the line above" "allow" \
@@ -89,9 +91,26 @@ for _u in "$TMPGUARD_UNIT_DIR"/*.service; do
 done
 t "tmpguard classifies some units root-context" "yes" \
   "$([ "$_units_in_scope" -gt 0 ] && echo yes || echo no)"
-# www-data units must NOT be in scope: their /tmp/quecdeck writes are correct.
+# www-data units must not be in scope because their web-runtime writes are correct.
 t "tmpguard excludes www-data units" "yes" \
   "$(grep -q '^User=www-data' "$TMPGUARD_UNIT_DIR/watchcat.service" && echo yes || echo no)"
+
+# The daemon establishes only the two top-level ownership boundaries. Web
+# services then create their own private children after that initializer runs.
+_at_unit=quecdeck/systemd/atcmd-daemon.service
+t "atcmd unit rejects symlinked runtime boundaries" "yes" \
+  "$(grep -q 'for D in /run/quecdeck /run/quecdeck-web.*\[ ! -L' "$_at_unit" && echo yes || echo no)"
+t "atcmd unit owns the web runtime as www-data 0700" "yes" \
+  "$(grep -q 'chown www-data:www-data /run/quecdeck-web.*chmod 700 /run/quecdeck-web' "$_at_unit" && echo yes || echo no)"
+t "atcmd socket lives in the web runtime" "yes" \
+  "$(grep -q '^ExecStart=.*-s /run/quecdeck-web/atcli.sock ' "$_at_unit" && echo yes || echo no)"
+t "atcmd daemon owns live log rollover" "yes" \
+  "$(grep -q -- '--log-bytes 65536' "$_at_unit" && ! grep -q 'tail -500.*atcmd.log' "$_at_unit" && echo yes || echo no)"
+for _runtime_unit in connection-logger watchcat scheduled_restart lighttpd; do
+  t "$_runtime_unit starts after the runtime initializer" "yes" \
+    "$(grep -q '^After=.*atcmd-daemon.service' "quecdeck/systemd/$_runtime_unit.service" && echo yes || echo no)"
+done
+unset _at_unit _runtime_unit
 
 # Authentication must serialize the complete decision, not only the counter
 # write: otherwise queued requests can pass bf_locked and then erase a lockout.
@@ -109,6 +128,90 @@ for _auth in quecdeck/www/cgi-bin/auth_login quecdeck/www/cgi-bin/auth_dev; do
           && [ "$_fail" -lt "$_unlock" ] && echo yes || echo no)"
 done
 unset _guard _lock _validate _fail _unlock _auth
+
+# Access events come from several independent CGI processes. Exercise the real
+# writer around its rollover boundary so a future lock or atomic-replace
+# regression cannot silently discard overlapping login and logout events.
+eval "$(extract_fn quecdeck/script/cgi-lib.sh log_access_event)"
+_access_umask=$(umask)
+umask 077
+_access_fixture=$(mktemp -d)
+_access_log="$_access_fixture/access_events.jsonl"
+_access_results="$_access_fixture/results"
+mkdir "$_access_results"
+_access_real_flock=1
+if ! command -v flock >/dev/null 2>&1; then
+    _access_real_flock=0
+    flock() { return 0; }
+fi
+ACCESS_LOG_LIMIT=100
+if [ "$_access_real_flock" = "1" ]; then
+    for _i in $(seq 1 40); do
+        (log_access_event "$_access_log" "{\"id\":$_i}" && touch "$_access_results/$_i") &
+    done
+    wait
+    t "every concurrent access-log append succeeds" "40" \
+      "$(find "$_access_results" -type f | wc -l | tr -d ' ')"
+    t "concurrent access-log appends are not lost" "40" "$(wc -l < "$_access_log" | tr -d ' ')"
+    t "concurrent access-log entries stay intact" "40" "$(grep -c '^{"id":[0-9][0-9]*}$' "$_access_log")"
+else
+    for _i in $(seq 1 40); do
+        log_access_event "$_access_log" "{\"id\":$_i}"
+    done
+fi
+
+ACCESS_LOG_LIMIT=25
+if [ "$_access_real_flock" = "1" ]; then
+    for _i in $(seq 41 100); do
+        (log_access_event "$_access_log" "{\"id\":$_i}" && touch "$_access_results/$_i") &
+    done
+    wait
+    t "every append through concurrent rollover succeeds" "100" \
+      "$(find "$_access_results" -type f | wc -l | tr -d ' ')"
+else
+    for _i in $(seq 41 100); do
+        log_access_event "$_access_log" "{\"id\":$_i}"
+    done
+fi
+t "access log remains at its configured limit" "25" "$(wc -l < "$_access_log" | tr -d ' ')"
+t "access-log rollover leaves complete entries" "25" "$(grep -c '^{"id":[0-9][0-9]*}$' "$_access_log")"
+t "access-log rollover leaves no temporary files" "0" \
+  "$(find "$_access_fixture" -name 'access_events.jsonl.tmp.*' | wc -l | tr -d ' ')"
+t "access log is created owner-only" "600" "$(stat -c %a "$_access_log")"
+t "access-log lock is created owner-only" "600" \
+  "$(stat -c %a "$_access_fixture/access_events.lock")"
+
+flock() { return 1; }
+log_access_event "$_access_log" '{"id":101}' >/dev/null 2>&1
+t_rc "access-log lock failure is reported" 1 "$?"
+if [ "$_access_real_flock" = "1" ]; then
+    unset -f flock
+else
+    flock() { return 0; }
+fi
+
+tail() { return 1; }
+log_access_event "$_access_log" '{"id":102}' >/dev/null 2>&1
+t_rc "access-log trim failure is reported" 1 "$?"
+unset -f tail
+t "failed access-log trim removes its temporary file" "0" \
+  "$(find "$_access_fixture" -name 'access_events.jsonl.tmp.*' | wc -l | tr -d ' ')"
+
+mv() { return 1; }
+log_access_event "$_access_log" '{"id":103}' >/dev/null 2>&1
+t_rc "access-log replacement failure is reported" 1 "$?"
+unset -f mv
+t "failed access-log replacement removes its temporary file" "0" \
+  "$(find "$_access_fixture" -name 'access_events.jsonl.tmp.*' | wc -l | tr -d ' ')"
+
+log_access_event "$_access_fixture" '{"id":104}' >/dev/null 2>&1
+t_rc "access-log append failure is reported" 1 "$?"
+rm -rf "$_access_fixture"
+umask "$_access_umask"
+if [ "$_access_real_flock" = "0" ]; then
+    unset -f flock
+fi
+unset ACCESS_LOG_LIMIT _access_fixture _access_log _access_results _access_real_flock _access_umask _i
 
 # --------------------------------------------- orphaned-unit sweep logic ---
 # The sweeps in quecdeck.sh (uninstall) and update_quecdeck.sh (dropped units)

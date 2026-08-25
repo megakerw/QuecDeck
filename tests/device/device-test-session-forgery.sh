@@ -35,7 +35,7 @@
 # reintroduced /tmp path before it can ever reach a device.
 
 SUDO=/opt/bin/sudo
-SESSIONS=/tmp/quecdeck/sessions
+SESSIONS=/run/quecdeck-web/sessions
 PROOF_TOKEN="QDHARDPROOF000000000000000000000"
 
 pass=0; fail=0; warn=0

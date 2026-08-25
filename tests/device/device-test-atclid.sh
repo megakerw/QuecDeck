@@ -183,7 +183,26 @@ fi
 # to come after this point.
 daemon_pid=$(systemctl show -p MainPID --value atcmd-daemon)
 
+# The source and binary guards prove the option exists. These two checks prove
+# the installed unit passed it to the process and the live tmpfs file obeys it.
+daemon_args=$(tr '\0' ' ' < "/proc/$daemon_pid/cmdline" 2>/dev/null)
+case " $daemon_args " in
+    *' --log-bytes 65536 '*) ok "running daemon enforces the 64 KiB log limit" ;;
+    *) bad "running daemon enforces the 64 KiB log limit" "cmdline: ${daemon_args:-unreadable}" ;;
+esac
+atlog_bytes=$(wc -c < "$ATLOG" 2>/dev/null | tr -d ' ')
+case "$atlog_bytes" in
+    ''|*[!0-9]*) bad "daemon log size is measurable" "missing or unreadable $ATLOG" ;;
+    *)
+        [ "$atlog_bytes" -le 65536 ] \
+            && ok "daemon log is within its 64 KiB limit ($atlog_bytes bytes)" \
+            || bad "daemon log is within its 64 KiB limit" "$atlog_bytes bytes"
+        ;;
+esac
+
 # ---- root path (watchcat/scheduled_restart context) ------------------------
+# This request also proves the daemon still serves commands after the log
+# wiring and size checks above.
 resp=$(atcmd_run 'AT+QGMR')
 case "$resp" in
     *OK) ok "root atcmd_run round trip" ;;
@@ -411,7 +430,7 @@ fi
 # The no-daemon row, forced without stopping the unit: a socket path nothing is
 # bound to. Subshell so the override cannot leak into the sections below.
 # at-lib.sh reads _ATCLI_SOCK at call time, so assigning it here is enough.
-ec_out=$( _ATCLI_SOCK=/tmp/quecdeck/atcli-absent.sock; atcmd_run 'AT' 2000 ); ec_rc=$?
+ec_out=$( _ATCLI_SOCK=/run/quecdeck-web/atcli-absent.sock; atcmd_run 'AT' 2000 ); ec_rc=$?
 if [ "$ec_rc" -ne 0 ] && [ -z "$ec_out" ]; then
     ok "an unreachable socket exits non-zero with empty stdout (rc=$ec_rc)"
 elif [ "$ec_rc" -eq 0 ]; then

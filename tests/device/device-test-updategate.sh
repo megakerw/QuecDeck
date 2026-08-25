@@ -30,7 +30,7 @@ UPDATER=/tmp/test_update.sh
 LOG=/run/quecdeck/install.log
 STATUS=/run/quecdeck/update.status
 PLOG=/usrdata/quecdeck_last_update.log
-ACCESS=/tmp/quecdeck/logs/access_events.jsonl
+ACCESS=/run/quecdeck-web/logs/access_events.jsonl
 pass=0; fail=0; warn=0
 
 ok()   { echo "  PASS: $1"; pass=$((pass+1)); }

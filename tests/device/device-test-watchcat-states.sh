@@ -21,7 +21,7 @@
 # original configuration.
 
 CONFIG=/usrdata/quecdeck/var/watchcat.json
-STATS=/tmp/quecdeck/watchcat_stats.json
+STATS=/run/quecdeck-web/watchcat/stats.json
 CGI_LIB=/usrdata/quecdeck/script/cgi-lib.sh
 BACKUP=/run/quecdeck/watchcat-states-backup.$$
 TMP=${CONFIG}.states.$$
@@ -206,7 +206,7 @@ elif apply_config '{"enabled":true,"track_ips":["198.51.100.1"],"ping_interval":
         mtime=$(stat -c %Y "$STATS" 2>/dev/null)
         # Written as www-data through the real helper, exactly as a CGI does.
         $as_www_data ". $CGI_LIB >/dev/null 2>&1; watchcat_pause devtest 120" >/dev/null 2>&1
-        [ -s /tmp/quecdeck/watchcat.pause.d/devtest ] \
+        [ -s /run/quecdeck-web/watchcat/pause.d/devtest ] \
             && ok "the web tier can write a pause marker without privilege" \
             || bad "watchcat_pause did not create a marker"
 
@@ -234,7 +234,7 @@ elif apply_config '{"enabled":true,"track_ips":["198.51.100.1"],"ping_interval":
     else
         bad_n 3 "no stats were published for the pause test"
     fi
-    rm -f /tmp/quecdeck/watchcat.pause.d/devtest
+    rm -f /run/quecdeck-web/watchcat/pause.d/devtest
 else
     bad_n 3 "could not apply the pause-test configuration"
 fi

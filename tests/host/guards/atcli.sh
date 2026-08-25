@@ -34,3 +34,23 @@ ATCLI_SOCK_REQUIRED='quecdeck/script/at-lib.sh quecdeck/systemd/atcmd-daemon.ser
 # dropped from ExecStart. Assert the bind flag itself.
 ATCLI_SOCK_BIND_FILE='quecdeck/systemd/atcmd-daemon.service'
 ATCLI_SOCK_BIND_RE='-s +/[^ "}]*atcli\.sock'
+
+# The unit passes this option explicitly, so an older otherwise valid ARM
+# binary would fail at startup. Search the binary's argument table without
+# executing a foreign-architecture program on the host.
+atcli_supports_log_limit() {
+    LC_ALL=C grep -aq -- '--log-bytes'
+}
+
+# The modem requires a static 32-bit little-endian ARM EABI5 binary using the
+# VFP argument convention. A wrong-toolchain build can still look like a valid
+# ARM ELF file while systemd fails it with 203/EXEC. Read only the fixed ELF
+# header so this works on hosts without readelf and never executes the binary.
+atcli_target_elf() {
+    local header
+    header=$(od -An -v -tx1 -N40 | tr -d ' \n')
+    [ "${#header}" -eq 80 ] || return 1
+    [ "${header:0:12}" = '7f454c460101' ] || return 1
+    [ "${header:36:4}" = '2800' ] || return 1
+    [ "${header:72:8}" = '00040005' ]
+}

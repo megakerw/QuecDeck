@@ -31,7 +31,7 @@ swallows a ~10 ms difference. For anything about cache hit rate, read the
 daemon's own counter instead and compare deltas:
 
 ```
-adb shell "/usrdata/quecdeck/atcli -s /tmp/quecdeck/atcli.sock --status"
+adb shell "/usrdata/quecdeck/atcli -s /run/quecdeck-web/atcli.sock --status"
 ```
 
 **Keep-alive is real** (`server.max-keep-alive-idle = 45`), so a polling page

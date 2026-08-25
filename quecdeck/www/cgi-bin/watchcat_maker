@@ -99,7 +99,7 @@ if [ "$config_changed" = "1" ]; then
     # safety state. A failed write must leave its reboot backoff intact.
     write_json_config "$CONFIG" "$new_config"
     rm -f /usrdata/quecdeck/var/watchcat_reboot_state.json
-    rm -f /tmp/quecdeck/watchcat_stats.json
+    rm -f /run/quecdeck-web/watchcat/stats.json
 fi
 
 # Every explicit save reloads the worker. If a previous restart failed while

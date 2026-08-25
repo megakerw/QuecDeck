@@ -1,10 +1,10 @@
 -- Harness for auth.lua: stubs the lighty request environment and runs the
 -- real file per case via dofile. Run via integration/auth-lua.sh and expect a
 -- disposable root environment (CI runner/container), since auth.lua's
--- /tmp/quecdeck and /opt/etc paths are used as-is.
+-- /run/quecdeck-web and /opt/etc paths are used as-is.
 
 local AUTH = "quecdeck/auth.lua"
-local SESSIONS = "/tmp/quecdeck/sessions/"
+local SESSIONS = "/run/quecdeck-web/sessions/"
 local HTPASSWD = "/opt/etc/.htpasswd"
 
 local pass, fail = 0, 0

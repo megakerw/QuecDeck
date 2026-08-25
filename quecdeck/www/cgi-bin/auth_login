@@ -17,11 +17,11 @@ cgi_read_post
 username=$(get_post_param "username")
 password=$(get_post_param "password")
 
-ACCESS_LOG="/tmp/quecdeck/logs/access_events.jsonl"
+ACCESS_LOG="/run/quecdeck-web/logs/access_events.jsonl"
 json_error() { printf 'Status: 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n\r\n{"ok":false,"error":"%s"}' "$1"; }
 
 # Brute-force protection (5 attempts, 15-min lockout per IP) lives in cgi-lib.
-FAILURE_DIR="/tmp/quecdeck/auth_failures"
+FAILURE_DIR="/run/quecdeck-web/auth-failures"
 client_ip=$(cgi_client_ip)
 wan_ip=$(cgi_wan_ip)
 now=$(date +%s)
@@ -77,13 +77,13 @@ bf_unlock
 # Use umask to set permissions atomically on creation rather than a separate chmod.
 # Redundant with both cgi-lib.sh and lighttpd.service, but kept as a local
 # guarantee at the security-sensitive session creation site.
-(umask 077; mkdir -p /tmp/quecdeck/sessions)
+(umask 077; mkdir -p /run/quecdeck-web/sessions)
 token=$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 64)
 now=$(date +%s)
 log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"login_success\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
 
 (umask 077; printf 'user=%s\nrole=%s\ncreated=%s\nlast_access=%s\n' \
-    "$username" "$role" "$now" "$now" > "/tmp/quecdeck/sessions/$token")
+    "$username" "$role" "$now" "$now" > "/run/quecdeck-web/sessions/$token")
 
 printf 'Status: 200 OK\r\n'
 printf 'Content-Type: application/json\r\n'

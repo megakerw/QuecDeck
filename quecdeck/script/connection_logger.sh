@@ -1,195 +1,355 @@
 #!/bin/bash
 # QuecDeck connection event logger.
-# Polls AT+QENG="servingcell" every 30 seconds via the AT command queue and
-# appends state-change events to /tmp/quecdeck/connection_events.jsonl.
-#
-# Events logged: connected, disconnected, cell_change, band_change, mode_change.
+# Polls AT+QENG="servingcell" every 30 seconds and records validated radio
+# state changes in the volatile web runtime tree.
 
-. /usrdata/quecdeck/script/at-lib.sh
+: "${QUECDECK_SCRIPT_DIR:=/usrdata/quecdeck/script}"
+. "$QUECDECK_SCRIPT_DIR/at-lib.sh" || exit 1
+. "$QUECDECK_SCRIPT_DIR/connection-log.sh" || exit 1
 
-LOG_FILE="/tmp/quecdeck/logs/connection_events.jsonl"
-MAX_EVENTS=500
-INTERVAL=30
+: "${STATE_FILE:=/run/quecdeck-web/logs/connection_logger.state}"
+: "${BOOT_ID_FILE:=/proc/sys/kernel/random/boot_id}"
+: "${UPTIME_FILE:=/proc/uptime}"
+: "${SCAN_ACTIVE_FILE:=/run/quecdeck-web/scan/active}"
+: "${SCAN_SETTLE_FILE:=/run/quecdeck-web/scan/settle}"
+: "${INTERVAL:=30}"
 
-mkdir -p "$(dirname "$LOG_FILE")" && chmod 700 "$(dirname "$LOG_FILE")"
-# Lock the base dir if this daemon created it before lighttpd's ExecStartPre did.
-chmod 700 /tmp/quecdeck 2>/dev/null
+command -v flock >/dev/null 2>&1 || exit 1
+(umask 077; mkdir -p "$(dirname "$STATE_FILE")") || exit 1
 
-# ---------------------------------------------------------------------------
-
-log_event() {
-    printf '%s\n' "$1" >> "$LOG_FILE"
-    local count
-    count=$(wc -l < "$LOG_FILE" 2>/dev/null || echo 0)
-    if [ "$count" -gt "$MAX_EVENTS" ]; then
-        tail -"$MAX_EVENTS" "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
-    fi
+qeng_reset() {
+    sc_state=""
+    sc_mode=""
+    sc_mcc=""
+    sc_mnc=""
+    sc_cell_id=""
+    sc_pci=""
+    sc_earfcn=""
+    sc_band=""
 }
 
-# Extracts sc_cell_id/pci/earfcn/band from a +QENG: "LTE" sub-line.
+qeng_digits() {
+    printf '%s' "$1" | awk -F',' -v field="$2" \
+        '{gsub(/[^0-9]/,"",$field); print $field}'
+}
+
+qeng_hex() {
+    printf '%s' "$1" | awk -F',' -v field="$2" \
+        '{gsub(/[^0-9A-Fa-f]/,"",$field); print $field}'
+}
+
 parse_lte_fields() {
-    sc_mcc=$(    printf '%s' "$1" | awk -F',' '{gsub(/[^0-9]/,"",$3); print $3}')
-    sc_mnc=$(    printf '%s' "$1" | awk -F',' '{gsub(/[^0-9]/,"",$4); print $4}')
-    sc_cell_id=$(printf '%s' "$1" | awk -F',' '{gsub(/[^0-9A-Fa-f]/,"",$5); print $5}')
-    sc_pci=$(    printf '%s' "$1" | awk -F',' '{gsub(/[^0-9]/,"",$6); print $6+0}')
-    sc_earfcn=$( printf '%s' "$1" | awk -F',' '{gsub(/[^0-9]/,"",$7); print $7+0}')
-    sc_band=$(   printf '%s' "$1" | awk -F',' '{gsub(/[^0-9]/,"",$8); print $8+0}')
+    sc_mcc=$(qeng_digits "$1" 3)
+    sc_mnc=$(qeng_digits "$1" 4)
+    sc_cell_id=$(qeng_hex "$1" 5)
+    sc_pci=$(qeng_digits "$1" 6)
+    sc_earfcn=$(qeng_digits "$1" 7)
+    sc_band=$(qeng_digits "$1" 8)
 }
 
-# Parses response from AT+QENG="servingcell" and sets:
-#   sc_state    : CONNECT | NOCONN | NOSERVICE | SEARCH | LIMSRV
-#   sc_mode     : LTE | NR5G-SA | NR5G-NSA | WCDMA | (empty when not registered)
-#   sc_cell_id  : hex cell identifier
-#   sc_pci      : physical cell ID (integer)
-#   sc_earfcn   : frequency (integer)
-#   sc_band     : primary band number (integer)
+nsa_line_valid() {
+    local arfcn band
+    arfcn=$(qeng_digits "$1" 8)
+    band=$(qeng_digits "$1" 9)
+    case "$arfcn" in ""|*[!0-9]*) return 1 ;; esac
+    case "$band" in ""|*[!0-9]*) return 1 ;; esac
+}
+
+is_registered() {
+    case "$1" in CONNECT|NOCONN) return 0 ;; *) return 1 ;; esac
+}
+
+qeng_fields_valid() {
+    case "$sc_state" in
+        CONNECT|NOCONN|NOSERVICE|SEARCH|LIMSRV) ;;
+        *) return 1 ;;
+    esac
+
+    case "$sc_mode" in
+        LTE|NR5G-SA|NR5G-NSA) ;;
+        "") is_registered "$sc_state" && return 1 ;;
+        *) return 1 ;;
+    esac
+
+    is_registered "$sc_state" || return 0
+    [ "${#sc_mcc}" = "3" ] || return 1
+    case "${#sc_mnc}" in 2|3) ;; *) return 1 ;; esac
+    case "$sc_cell_id" in ""|*[!0-9A-Fa-f]*) return 1 ;; esac
+    [ "${#sc_cell_id}" -le 16 ] || return 1
+    case "$sc_pci" in ""|*[!0-9]*) return 1 ;; esac
+    case "$sc_earfcn" in ""|*[!0-9]*) return 1 ;; esac
+    case "$sc_band" in ""|*[!0-9]*) return 1 ;; esac
+    [ "${#sc_pci}" -le 5 ] || return 1
+    [ "${#sc_earfcn}" -le 8 ] || return 1
+    [ "${#sc_band}" -le 4 ] || return 1
+
+    sc_pci=$((10#$sc_pci))
+    sc_earfcn=$((10#$sc_earfcn))
+    sc_band=$((10#$sc_band))
+}
+
+# Parses a complete QENG response into the sc_* globals. A registered sample is
+# accepted only when all fields used by the event stream are present.
 parse_qeng() {
-    local response="$1"
-    local sc_line lte_line
+    local response="$1" sc_line lte_line nsa_line
+    qeng_reset
 
-    # Primary format (newer firmware):
-    # +QENG: "servingcell","<state>","<mode>","<duplex>",<mcc>,<mnc>,<cellhex>,<pci>,<earfcn>,<band>,...
     sc_line=$(printf '%s' "$response" | grep '+QENG: "servingcell"' | head -1)
-
     if [ -n "$sc_line" ]; then
-        sc_state=$(  printf '%s' "$sc_line" | awk -F',' '{gsub(/"/,"",$2); print $2}')
-        sc_mode=$(   printf '%s' "$sc_line" | awk -F',' '{gsub(/"/,"",$3); print $3}')
-        sc_mcc=$(    printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9]/,"",$5); print $5}')
-        sc_mnc=$(    printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9]/,"",$6); print $6}')
-        sc_cell_id=$(printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9A-Fa-f]/,"",$7); print $7}')
-        sc_pci=$(    printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9]/,"",$8); print $8+0}')
-        sc_earfcn=$( printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9]/,"",$9); print $9+0}')
-        sc_band=$(   printf '%s' "$sc_line" | awk -F',' '{gsub(/[^0-9]/,"",$10); print $10+0}')
+        sc_state=$(printf '%s' "$sc_line" | awk -F',' '{gsub(/"/,"",$2); print $2}')
+        sc_mode=$(printf '%s' "$sc_line" | awk -F',' '{gsub(/"/,"",$3); print $3}')
+        sc_mcc=$(qeng_digits "$sc_line" 5)
+        sc_mnc=$(qeng_digits "$sc_line" 6)
+        sc_cell_id=$(qeng_hex "$sc_line" 7)
+        sc_pci=$(qeng_digits "$sc_line" 8)
+        if [ "$sc_mode" = "NR5G-SA" ]; then
+            # SA inserts TAC before NR-ARFCN and band.
+            sc_earfcn=$(qeng_digits "$sc_line" 10)
+            sc_band=$(qeng_digits "$sc_line" 11)
+        else
+            sc_earfcn=$(qeng_digits "$sc_line" 9)
+            sc_band=$(qeng_digits "$sc_line" 10)
+        fi
 
-        # In RGMII/PCIe mode the servingcell line is truncated to just the state
-        # ("NOCONN") with no mode or cell fields. Fall through to the sub-lines.
+        # Some firmware reports only the state on the servingcell line and
+        # carries LTE details on a separate line.
         if [ -z "$sc_mode" ]; then
             lte_line=$(printf '%s' "$response" | grep '+QENG: "LTE"' | head -1)
             if [ -n "$lte_line" ]; then
-                if printf '%s' "$response" | grep -q '+QENG: "NR5G-NSA"'; then
-                    sc_mode="NR5G-NSA"
+                nsa_line=$(printf '%s' "$response" | grep '+QENG: "NR5G-NSA"' | head -1)
+                if [ -n "$nsa_line" ] && nsa_line_valid "$nsa_line"; then
+                    sc_mode=NR5G-NSA
                 else
-                    sc_mode="LTE"
+                    sc_mode=LTE
                 fi
                 parse_lte_fields "$lte_line"
             fi
         fi
     else
-        # Fallback format (older firmware):
-        # +QENG: "LTE","<duplex>",<mcc>,<mnc>,<cellhex>,<pci>,<earfcn>,<band>,...
+        # Older firmware can omit the servingcell wrapper.
         lte_line=$(printf '%s' "$response" | grep '+QENG: "LTE"' | head -1)
-        if [ -n "$lte_line" ]; then
-            sc_state="CONNECT"
-            sc_mode="LTE"
-            parse_lte_fields "$lte_line"
-        else
-            sc_state="NOSERVICE"
-            sc_mode=""
-            sc_mcc=""
-            sc_mnc=""
-            sc_cell_id=""
-            sc_pci=0
-            sc_earfcn=0
-            sc_band=0
-        fi
+        [ -n "$lte_line" ] || return 1
+        sc_state=CONNECT
+        sc_mode=LTE
+        parse_lte_fields "$lte_line"
     fi
 
-    # Whitelist sc_mode against known values to prevent JSON injection from crafted AT responses.
-    case "$sc_mode" in
-        LTE|NR5G-SA|NR5G-NSA|WCDMA|CDMA|TDSCDMA) ;;
-        *) sc_mode="" ;;
-    esac
+    qeng_fields_valid
 }
 
-is_registered() {
-    case "$1" in
-        CONNECT|NOCONN) return 0 ;;
-        *) return 1 ;;
-    esac
+qeng_sample() {
+    local response="$1"
+    [ "${response##*$'\n'}" = "OK" ] || return 1
+    parse_qeng "$response"
 }
 
 band_label() {
-    local mode="$1" band="$2"
-    case "$mode" in
-        NR5G-SA) printf 'N%s' "$band" ;;
-        *)        printf 'B%s' "$band" ;;
+    case "$1" in
+        NR5G-SA) printf 'N%s' "$2" ;;
+        NR5G-NSA) printf 'LTE anchor B%s' "$2" ;;
+        *) printf 'B%s' "$2" ;;
     esac
 }
 
-# ---------------------------------------------------------------------------
-# Wait for the AT command daemon to settle before first poll.
-sleep 15
+channel_label() {
+    case "$1" in NR5G-SA) printf 'NR-ARFCN' ;; *) printf 'EARFCN' ;; esac
+}
 
-# Initial poll: log startup event.
-ts=$(date +%s)
-if [ -S "$_ATCLI_SOCK" ]; then
-    response=$(atcmd_run 'AT+QENG="servingcell"' 10000)
-    parse_qeng "$response"
-else
-    sc_state="NOSERVICE"; sc_mode=""; sc_mcc=""; sc_mnc=""; sc_cell_id=""; sc_pci=0; sc_earfcn=0; sc_band=0
-fi
+runtime_uptime() {
+    local value
+    read -r value _ < "$UPTIME_FILE" || return 1
+    value=${value%.*}
+    case "$value" in ""|*[!0-9]*) return 1 ;; esac
+    printf '%s\n' "$value"
+}
 
-prev_state="$sc_state"
-prev_mode="$sc_mode"
-prev_mcc="$sc_mcc"
-prev_mnc="$sc_mnc"
-prev_cell_id="$sc_cell_id"
-prev_pci="$sc_pci"
-prev_band="$sc_band"
+runtime_marker_live() {
+    local marker="$1" max_future="$2" expiry now
+    [ -f "$marker" ] || return 1
+    scan_rebaseline=1
+    read -r expiry < "$marker" 2>/dev/null || expiry=""
+    case "$expiry" in ""|*[!0-9]*) rm -f "$marker"; return 1 ;; esac
+    now=$(runtime_uptime) || return 0
+    if [ "$expiry" -gt "$now" ] && [ "$expiry" -le "$((now + max_future))" ]; then
+        return 0
+    fi
+    rm -f "$marker"
+    return 1
+}
 
-if is_registered "$sc_state"; then
-    log_event "{\"ts\":$ts,\"type\":\"connected\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}"
-fi
+scan_suppresses_logging() {
+    runtime_marker_live "$SCAN_ACTIVE_FILE" 300 && return 0
+    runtime_marker_live "$SCAN_SETTLE_FILE" 120 && return 0
+    return 1
+}
 
-# ---------------------------------------------------------------------------
-# Main poll loop.
-while true; do
-    sleep "$INTERVAL"
+emit_event() {
+    connection_log_append "$1" || exit 1
+}
 
-    [ ! -S "$_ATCLI_SOCK" ] && continue
+queue_event() {
+    if [ -n "$event_batch" ]; then
+        event_batch="$event_batch
+$1"
+    else
+        event_batch=$1
+    fi
+}
 
+save_state() {
+    local boot_id tmp
+    boot_id=$(cat "$BOOT_ID_FILE" 2>/dev/null) || return 1
+    tmp="${STATE_FILE}.tmp.$$"
+    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$boot_id" "$sc_state" "$sc_mode" "$sc_mcc" "$sc_mnc" \
+        "$sc_cell_id" "$sc_pci" "$sc_earfcn" "$sc_band" > "$tmp" \
+        && mv -f "$tmp" "$STATE_FILE"
+}
+
+load_state() {
+    local current_boot saved_boot
+    [ -s "$STATE_FILE" ] || return 1
+    current_boot=$(cat "$BOOT_ID_FILE" 2>/dev/null) || return 1
+    IFS='|' read -r saved_boot sc_state sc_mode sc_mcc sc_mnc sc_cell_id \
+        sc_pci sc_earfcn sc_band < "$STATE_FILE" || return 1
+    [ "$saved_boot" = "$current_boot" ] || return 1
+    qeng_fields_valid || return 1
+    prev_state=$sc_state
+    prev_mode=$sc_mode
+    prev_mcc=$sc_mcc
+    prev_mnc=$sc_mnc
+    prev_cell_id=$sc_cell_id
+    prev_pci=$sc_pci
+    prev_band=$sc_band
+}
+
+remember_sample() {
+    prev_state=$sc_state
+    prev_mode=$sc_mode
+    prev_mcc=$sc_mcc
+    prev_mnc=$sc_mnc
+    prev_cell_id=$sc_cell_id
+    prev_pci=$sc_pci
+    prev_band=$sc_band
+    save_state || exit 1
+}
+
+process_sample() {
+    local ts was_registered=0 now_registered=0 response event_batch=""
     ts=$(date +%s)
-    response=$(atcmd_run 'AT+QENG="servingcell"' 10000)
-    # A timed-out or truncated poll (queue congestion, e.g. an SMS fetch
-    # holding the port) says nothing about radio state: only a complete
-    # OK-terminated response may change logged state.
-    [ "${response##*$'\n'}" = "OK" ] || continue
-    parse_qeng "$response"
-
-    was_registered=0; is_registered "$prev_state" && was_registered=1
-    now_registered=0; is_registered "$sc_state"   && now_registered=1
+    is_registered "$prev_state" && was_registered=1
+    is_registered "$sc_state" && now_registered=1
+    [ "$now_registered" = "1" ] && unregistered_samples=0
 
     if [ "$now_registered" = "0" ] && [ "$was_registered" = "1" ]; then
-        log_event "{\"ts\":$ts,\"type\":\"disconnected\",\"prev_mode\":\"$prev_mode\"}"
-
+        pending_mode=""
+        pending_mode_samples=0
+        unregistered_samples=$((unregistered_samples + 1))
+        # Ignore one isolated unregistered sample. The previous accepted radio
+        # state remains the baseline so a second sample can confirm the outage.
+        [ "$unregistered_samples" -ge 2 ] || return 1
+        queue_event "{\"ts\":$ts,\"type\":\"disconnected\",\"prev_mode\":\"$prev_mode\"}"
     elif [ "$now_registered" = "1" ] && [ "$was_registered" = "0" ]; then
-        # Re-poll after a short delay so cell info is populated before logging.
+        pending_mode=""
+        pending_mode_samples=0
+        # Registration details often settle after the state first changes.
         sleep 5
-        ts=$(date +%s)
         response=$(atcmd_run 'AT+QENG="servingcell"' 10000)
-        # Incomplete re-poll: skip without updating prev_*. The next cycle
-        # logs the connected event with real cell info instead.
-        [ "${response##*$'\n'}" = "OK" ] || continue
-        parse_qeng "$response"
-        log_event "{\"ts\":$ts,\"type\":\"connected\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}"
-
+        qeng_sample "$response" || return 1
+        is_registered "$sc_state" || return 1
+        ts=$(date +%s)
+        queue_event "{\"ts\":$ts,\"type\":\"connected\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"channel_label\":\"$(channel_label "$sc_mode")\",\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}"
     elif [ "$now_registered" = "1" ]; then
-        if [ "$sc_mcc$sc_mnc" != "$prev_mcc$prev_mnc" ] && [ -n "$sc_mcc" ] && [ -n "$prev_mcc" ]; then
-            log_event "{\"ts\":$ts,\"type\":\"operator_change\",\"from\":\"$prev_mcc$prev_mnc\",\"to\":\"$sc_mcc$sc_mnc\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci}"
-        elif [ "$sc_mode" != "$prev_mode" ] && [ -n "$sc_mode" ] && [ -n "$prev_mode" ]; then
-            log_event "{\"ts\":$ts,\"type\":\"mode_change\",\"from\":\"$prev_mode\",\"to\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci}"
+        # A mode-only change commonly reflects the NSA secondary carrier being
+        # released and reacquired. Require the same new mode twice unless an
+        # operator or cell change independently confirms a larger transition.
+        if [ "$sc_mode" != "$prev_mode" ] \
+            && [ "$sc_mcc$sc_mnc" = "$prev_mcc$prev_mnc" ] \
+            && [ "$sc_cell_id" = "$prev_cell_id" ] \
+            && [ "$sc_pci" = "$prev_pci" ]; then
+            if [ "$pending_mode" = "$sc_mode" ]; then
+                pending_mode_samples=$((pending_mode_samples + 1))
+            else
+                pending_mode=$sc_mode
+                pending_mode_samples=1
+            fi
+            [ "$pending_mode_samples" -ge 2 ] || return 1
+        else
+            pending_mode=""
+            pending_mode_samples=0
+        fi
+        if [ "$sc_mcc$sc_mnc" != "$prev_mcc$prev_mnc" ]; then
+            queue_event "{\"ts\":$ts,\"type\":\"operator_change\",\"from\":\"$prev_mcc$prev_mnc\",\"to\":\"$sc_mcc$sc_mnc\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci}"
+        fi
+        if [ "$sc_mode" != "$prev_mode" ]; then
+            queue_event "{\"ts\":$ts,\"type\":\"mode_change\",\"from\":\"$prev_mode\",\"to\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci}"
         elif [ "$sc_cell_id" != "$prev_cell_id" ] || [ "$sc_pci" != "$prev_pci" ]; then
-            log_event "{\"ts\":$ts,\"type\":\"cell_change\",\"mode\":\"$sc_mode\",\"from\":{\"cell_id\":\"$prev_cell_id\",\"pci\":$prev_pci},\"to\":{\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}}"
+            queue_event "{\"ts\":$ts,\"type\":\"cell_change\",\"mode\":\"$sc_mode\",\"from\":{\"cell_id\":\"$prev_cell_id\",\"pci\":$prev_pci},\"to\":{\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"channel_label\":\"$(channel_label "$sc_mode")\",\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}}"
         elif [ "$sc_band" != "$prev_band" ]; then
-            log_event "{\"ts\":$ts,\"type\":\"band_change\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"from\":\"$(band_label "$prev_mode" "$prev_band")\",\"to\":\"$(band_label "$sc_mode" "$sc_band")\"}"
+            queue_event "{\"ts\":$ts,\"type\":\"band_change\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"from\":\"$(band_label "$prev_mode" "$prev_band")\",\"to\":\"$(band_label "$sc_mode" "$sc_band")\"}"
         fi
     fi
 
-    prev_state="$sc_state"
-    prev_mode="$sc_mode"
-    prev_mcc="$sc_mcc"
-    prev_mnc="$sc_mnc"
-    prev_cell_id="$sc_cell_id"
-    prev_pci="$sc_pci"
-    prev_band="$sc_band"
-done
+    unregistered_samples=0
+    pending_mode=""
+    pending_mode_samples=0
+    [ -z "$event_batch" ] || connection_log_append "$event_batch" || exit 1
+    remember_sample
+}
+
+connection_logger_main() {
+    local have_previous=0 response ts
+    # Give the AT daemon time to settle before the first poll. A same-boot state
+    # file prevents a service restart from creating a duplicate connected event.
+    sleep 15
+    unregistered_samples=0
+    pending_mode=""
+    pending_mode_samples=0
+    scan_rebaseline=0
+    load_state && have_previous=1
+
+    while true; do
+        if scan_suppresses_logging; then
+            sleep "$INTERVAL"
+            continue
+        fi
+        if [ -S "$_ATCLI_SOCK" ]; then
+            response=$(atcmd_run 'AT+QENG="servingcell"' 10000)
+            # A scan can begin after the pre-poll check while this request is
+            # queued. Discard that in-flight result if a marker appeared.
+            scan_suppresses_logging && continue
+            if qeng_sample "$response"; then
+                if [ "$scan_rebaseline" = "1" ]; then
+                    unregistered_samples=0
+                    pending_mode=""
+                    pending_mode_samples=0
+                    scan_rebaseline=0
+                    if [ "$have_previous" = "0" ] || is_registered "$sc_state"; then
+                        # Normal scan recovery is adopted silently. If the
+                        # worker started during the scan, this also establishes
+                        # its first trustworthy baseline.
+                        remember_sample
+                        have_previous=1
+                    else
+                        # A modem still unregistered after the settling window
+                        # may have a real outage. Keep the pre-scan baseline and
+                        # apply the normal two-sample disconnect policy.
+                        process_sample
+                    fi
+                elif [ "$have_previous" = "1" ]; then
+                    process_sample
+                else
+                    if is_registered "$sc_state"; then
+                        ts=$(date +%s)
+                        emit_event "{\"ts\":$ts,\"type\":\"connected\",\"mode\":\"$sc_mode\",\"cell_id\":\"$sc_cell_id\",\"pci\":$sc_pci,\"earfcn\":$sc_earfcn,\"channel_label\":\"$(channel_label "$sc_mode")\",\"band\":\"$(band_label "$sc_mode" "$sc_band")\"}"
+                    fi
+                    remember_sample
+                    have_previous=1
+                fi
+            fi
+        fi
+        sleep "$INTERVAL"
+    done
+}
+
+[ "${CONNECTION_LOGGER_LIB_ONLY:-0}" = "1" ] || connection_logger_main

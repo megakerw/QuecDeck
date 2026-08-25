@@ -16,6 +16,27 @@ function statusColor(name) {
   return value;
 }
 
+// An NSA line can remain present with unavailable fields. Quectel documents
+// fields 7 and 8 as NR-ARFCN and NR band, so both must be numeric before the
+// dashboard claims an active NSA allocation.
+function qengNsaActive(line) {
+  const fields = line?.split(',');
+  return /^\d+$/.test(fields?.[7]?.trim() || '')
+    && /^\d+$/.test(fields?.[8]?.trim() || '');
+}
+
+function splitServingCellId(hex, isNr) {
+  if (!/^[0-9a-f]+$/i.test(hex || '')) return null;
+  const value = Number.parseInt(hex, 16);
+  if (!Number.isSafeInteger(value)) return null;
+  const sectorBits = isNr ? 14 : 8;
+  const divisor = 2 ** sectorBits;
+  return {
+    node: Math.floor(value / divisor),
+    sector: value % divisor,
+  };
+}
+
 function processAllInfos() {
   return {
     isFetching: false,
@@ -134,7 +155,7 @@ function processAllInfos() {
               const duplex_mode_lte = atField(lte_line, 1);
 
               // +QENG: "NR5G-NSA",515,03,843,-95,20,-11,528030,41,8,1
-              if (nr5g_nsa_line) {
+              if (qengNsaActive(nr5g_nsa_line)) {
                 this.networkMode = "5G NSA";
               } else if (duplex_mode_lte === "FDD") {
                 this.networkMode = "4G LTE FDD";
@@ -285,9 +306,11 @@ function processAllInfos() {
 
               const longCIDDec = longCID ? parseInt(longCID, 16) : null;
               const isNR = this.networkMode === "5G SA TDD" || this.networkMode === "5G SA FDD";
-              // NR 36-bit: >>14 / &0x3FFF. LTE 28-bit: >>8 / &0xFF
-              const nodeID   = longCIDDec !== null ? (isNR ? longCIDDec >> 14    : longCIDDec >> 8)   : null;
-              const sectorID = longCIDDec !== null ? (isNR ? longCIDDec & 0x3FFF : longCIDDec & 0xFF) : null;
+              // JavaScript bitwise operators truncate to signed 32 bits, so
+              // arithmetic division is required for a 36-bit NR cell ID.
+              const cellParts = longCID ? splitServingCellId(longCID, isNR) : null;
+              const nodeID = cellParts?.node ?? null;
+              const sectorID = cellParts?.sector ?? null;
               this.eNBID = nodeID !== null ? nodeID : "Unknown";
 
               if (isNR) {

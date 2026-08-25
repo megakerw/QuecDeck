@@ -112,7 +112,7 @@ QuecDeck started as a fork of [Simple Admin](https://github.com/iamromulan/quect
 - **Fewer features, done well.** QuecDeck covers the basics: signal monitoring, band locking, network config, a handful of utilities. New functionality is only added when it fits that scope and can be implemented cleanly.
 - **Minimize attack surface.** The web server and SSH bind only to the LAN IP, the firewall blocks WAN access, and the web application runs as `www-data`. Operations that genuinely require root are confined to systemd services and an enumerated sudoers allowlist.
 - **Destructive features behind a separate auth wall.** Things that can cause real damage (like the AT terminal and the web console) require a separate developer password on top of the standard admin login. This is an application-level feature gate, not a sandbox against compromise of the web-server account. See **Threat model and limitations** below.
-- **Minimal write footprint.** Persistent files live under `/usrdata`, root-owned runtime files under `/run/quecdeck`, and web-owned runtime files under `/tmp/quecdeck`. Installation, updates, and service enablement briefly remount the root filesystem writable. Normal operation does not.
+- **Minimal write footprint.** Persistent files live under `/usrdata`. Volatile root state uses `/run/quecdeck`, while web-owned state uses `/run/quecdeck-web`. Installation, updates, and service enablement briefly remount the root filesystem writable. Normal operation does not.
 
 ### Web Server
 [Lighttpd](https://www.lighttpd.net/) serves the frontend and CGI backend on port 443 (HTTPS), with port 80 redirecting to HTTPS.
@@ -129,6 +129,7 @@ The release stores the binary at `quecdeck/atcli`, matching its installed path a
 - **No silent fallback.** There is no automatic fallback to the port, so a plain invocation never bypasses the serializer. If the daemon is down, every caller (root and www-data alike) gets empty output until systemd restarts it within seconds, and the UI tolerates the gap. A root operator can still reach the modem directly for recovery by passing `--direct` explicitly.
 - **Sender lifecycle.** Commands whose sender has hung up are skipped instead of being sent to the modem. Fire-and-forget senders (modem reboots) pass `--detach`.
 - **Reply completeness.** A reply cut short by a timeout is byte-for-byte a shorter complete one, so the exit status, not the output, is what says whether the modem finished. The atcli client exits 0 only when the modem terminated the reply itself. Both `OK` and `ERROR` count as terminated. It exits non-zero when the modem did not, leaving whatever arrived on stdout, and non-zero with empty stdout when nothing arrived at all (timeout, or the daemon down). Callers that must not parse a truncated record check the status and drop stdout: `get_sms` refuses a short `+CMGL` listing rather than serving it as a complete inbox, `run_cell_scan` appends a `PARTIAL` marker, the developer console labels an unterminated reply, and the updater's health probe warns. A pipe masks the status, so a caller that needs it assigns first, then pipes.
+- **Bounded diagnostics.** The daemon keeps its tmpfs log below 64 KiB. It performs rollover through its retained file descriptor, then writes a marker and the next entry. Repeated faults are additionally logged on the first occurrence and every hundredth occurrence.
 - **Caching.** Responses are cached per endpoint to reduce modem load, with TTLs tuned to how often the data actually changes: 2 seconds for signal stats, connection and SIM info, 5 seconds for network and settings data, and 1 hour for static device info like firmware version and build time. Where possible, multiple AT commands are batched into a single request to cut down on round trips.
 
 ### Firewall
@@ -169,7 +170,7 @@ mask applies, and inspect the loaded setting and runtime tree as root:
 
 ```sh
 systemctl show lighttpd -p UMask -p MainPID
-find /tmp/quecdeck -maxdepth 3 -exec stat -c '%A %a %U:%G %n' {} +
+find /run/quecdeck /run/quecdeck-web -maxdepth 4 -exec stat -c '%A %a %U:%G %n' {} +
 ```
 
 Files that existed before a permission-policy update retain their old mode until

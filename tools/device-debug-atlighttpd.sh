@@ -9,9 +9,9 @@
 
 set -u
 CGI=/usrdata/quecdeck/www/cgi-bin/at_debug
-OUT=/tmp/quecdeck/at_debug.out
+OUT=/run/quecdeck-web/at_debug.out
 ATCLI=/usrdata/quecdeck/atcli
-SOCK=/tmp/quecdeck/atcli.sock
+SOCK=/run/quecdeck-web/atcli.sock
 
 _teardown() { rm -f "$CGI"; }
 trap _teardown EXIT
@@ -20,7 +20,7 @@ sec() { echo; echo "==== $1 ===================================="; }
 
 # ---------------------------------------------------------------- baseline --
 sec "binary, socket, dirs"
-ls -la "$ATCLI" "$SOCK" /tmp/quecdeck /tmp/quecdeck/cache 2>&1 | sed 's/^/  /'
+ls -la "$ATCLI" "$SOCK" /run/quecdeck-web /run/quecdeck-web/cache 2>&1 | sed 's/^/  /'
 ls -Z "$ATCLI" "$SOCK" 2>/dev/null | sed 's/^/  /' || echo "  (ls -Z unsupported)"
 
 sec "mount flags for /usrdata and /tmp (noexec/nosuid would matter)"
@@ -47,15 +47,15 @@ printf 'Content-type: text/plain\n\n'
     echo "id: $(id)"
     echo "domain: $(cat /proc/self/attr/current 2>/dev/null)"
     echo "ppid: $PPID ($(cat /proc/$PPID/comm 2>/dev/null))"
-    ls -la /usrdata/quecdeck/atcli /tmp/quecdeck/atcli.sock 2>&1
+    ls -la /usrdata/quecdeck/atcli /run/quecdeck-web/atcli.sock 2>&1
     out=$(/usrdata/quecdeck/atcli --help 2>&1 | head -1); echo "exec: rc=$? [$out]"
     out=$(/usrdata/quecdeck/atcli -t 3000 --status 2>&1); echo "status: rc=$? [$out]"
     out=$(/usrdata/quecdeck/atcli -t 3000 AT 2>&1); echo "AT: rc=$? [$out]"
     . /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null
     out=$(atcmd_run AT 2>&1); echo "atcmd_run: rc=$? [$out]"
     echo "ulimit -a:"; ulimit -a 2>&1
-} > /tmp/quecdeck/at_debug.out 2>&1
-cat /tmp/quecdeck/at_debug.out
+} > /run/quecdeck-web/at_debug.out 2>&1
+cat /run/quecdeck-web/at_debug.out
 EOF
 chmod 755 "$CGI"
 

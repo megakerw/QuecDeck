@@ -16,6 +16,7 @@ CHECKSUMMED_FILES=(
   quecdeck/script/at-lib.sh
   quecdeck/script/scheduled_restart.sh
   quecdeck/script/connection_logger.sh
+  quecdeck/script/connection-log.sh
   quecdeck/script/lighttpd_prestart.sh
   quecdeck/script/write_htpasswd.sh
   quecdeck/script/check_password.sh
@@ -269,7 +270,7 @@ if [ "$hash_errors" = "1" ]; then
 fi
 
 # Enforce the runtime-path split: root-context code writes /run/quecdeck,
-# www-data writes /tmp/quecdeck, and neither reaches into the other's tree.
+# www-data writes /run/quecdeck-web, and root does not follow web-owned names.
 # Reads the index, so a staged violation is caught with a clean working tree.
 tmpguard_defs=$(mktemp) || {
   echo "ERROR: cannot create a temporary file for the staged runtime-path guard."
@@ -315,7 +316,7 @@ if [ "$tmpguard_errors" = "1" ]; then
   echo ""
   echo "Commit blocked: root-owned runtime state belongs in /run/quecdeck."
   echo "  /run/quecdeck is root-owned, so www-data cannot plant a name there."
-  echo "  /tmp/quecdeck belongs to www-data; root must not write inside it."
+  echo "  /run/quecdeck-web belongs to www-data; root must not follow names inside it."
   echo "  If the line is genuinely safe, declare it: '# tmpguard-ok: <reason>'"
   echo "  on the line, or on the line above for systemd units (a trailing"
   echo "  comment on a unit directive would become part of the command)."
@@ -333,6 +334,25 @@ if [ ! -f tests/host/guards/atcli.sh ]; then
   exit 1
 fi
 . tests/host/guards/atcli.sh
+
+# Smoke-check the staged binary's ELF target. This caught a static ARM EABI4
+# build that looked plausible in Git but the modem kernel rejected at ExecStart.
+if ! git show ':quecdeck/atcli' 2>/dev/null | atcli_target_elf; then
+  echo ""
+  echo "ERROR: quecdeck/atcli is not the required ARM EABI5 VFP binary."
+  echo "  Build it with the approved armv7 musl toolchain."
+  echo ""
+  echo "Commit blocked: atcli would fail to start on the modem."
+  exit 1
+fi
+
+if ! git show ':quecdeck/atcli' 2>/dev/null | atcli_supports_log_limit; then
+  echo ""
+  echo "ERROR: quecdeck/atcli does not support --log-bytes."
+  echo ""
+  echo "Commit blocked: the daemon unit would fail to start."
+  exit 1
+fi
 
 atcli_errors=0
 while IFS= read -r f; do

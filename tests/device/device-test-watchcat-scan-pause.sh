@@ -21,8 +21,8 @@
 # timeout. Ping execution only widens that margin.
 
 CONFIG=/usrdata/quecdeck/var/watchcat.json
-STATS=/tmp/quecdeck/watchcat_stats.json
-PAUSE_DIR=/tmp/quecdeck/watchcat.pause.d
+STATS=/run/quecdeck-web/watchcat/stats.json
+PAUSE_DIR=/run/quecdeck-web/watchcat/pause.d
 SCAN_CGI=/usrdata/quecdeck/www/cgi-bin/run_cell_scan
 MAKER=/usrdata/quecdeck/www/cgi-bin/watchcat_maker
 BACKUP=/run/quecdeck/watchcat-scanpause-backup.$$
@@ -50,7 +50,7 @@ cleanup() {
     rm -f "$TMP"
     # Never leave a marker behind: it would park the real watchdog until expiry.
     rm -f "$PAUSE_DIR"/scan "$PAUSE_DIR"/scanpause
-    rm -f /tmp/quecdeck/qscan.active
+    rm -f /run/quecdeck-web/scan/active
     if [ "$restored" != "1" ]; then
         if [ "$had_config" = "1" ]; then
             cp -p "$BACKUP" "$CONFIG" 2>/dev/null || \

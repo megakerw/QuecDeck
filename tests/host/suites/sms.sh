@@ -258,24 +258,16 @@ t "a failed load clears the header"  "" "$_CACHE_TS"
 # shared one.
 . quecdeck/script/watchcat-coord.sh
 #
-# The flag path is hardcoded in cgi-lib, so these two cases touch the REAL
-# /tmp/quecdeck/qscan.active. Run on-device during a live cell scan, clearing it
-# would let every CGI resume sending AT commands to a busy modem, which is the
-# exact condition the flag exists to prevent. So: refuse to run rather than
-# clobber it, and say so loudly instead of skipping into silence.
-if [ -e /tmp/quecdeck/qscan.active ]; then
-    printf 'SKIP: scan-path cases (a real qscan.active exists, refusing to clobber it)\n' >&2
-else
-    # -m 700 to match what the daemon unit creates: cache_write's guard now
-    # assumes that mode on the parent.
-    mkdir -p -m 700 /tmp/quecdeck
+# Redirect the production scan marker to the suite's private cache fixture.
+_QSCAN_ACTIVE_SAVED=$_QSCAN_ACTIVE
+_QSCAN_ACTIVE=$_CACHE_DIR/qscan.active
     _STUB_OUT=$'+X: scanned\nOK'; _STUB_RC=0
     cache_get_or_fetch "$_CACHE_DIR/q" 60 "AT+X" 1000 >/dev/null
     _qscan_now=$(watchcat_uptime)
-    printf '%s\n' "$((_qscan_now + QSCAN_GUARD_SECS))" > /tmp/quecdeck/qscan.active
+    printf '%s\n' "$((_qscan_now + QSCAN_GUARD_SECS))" > "$_QSCAN_ACTIVE"
     # Mtime is deliberately nonsense: a network-time correction must not make
     # a live monotonic marker look stale.
-    touch -d @0 /tmp/quecdeck/qscan.active
+    touch -d @0 "$_QSCAN_ACTIVE"
     _STUB_OUT=$'+X: fresh\nOK'; _STUB_RC=0
     t "scan path serves payload, not the header" "$(printf '+X: scanned\nOK')" \
         "$(cache_get_or_fetch "$_CACHE_DIR/q" 0 "AT+X" 1000)"
@@ -290,15 +282,16 @@ else
     # up. That branch must delete the flag and fall through to a live fetch, or
     # every cache pins to whatever it held when the scan started, forever.
     _STUB_OUT=$'+X: after-scan\nOK'; _STUB_RC=0
-    printf '0\n' > /tmp/quecdeck/qscan.active
+    printf '0\n' > "$_QSCAN_ACTIVE"
     t "a stale scan flag does not block a fetch" "$(printf '+X: after-scan\nOK')" \
         "$(cache_get_or_fetch "$_CACHE_DIR/q" 0 "AT+X" 1000)"
     t "a stale scan flag is removed" "0" \
-        "$([ -f /tmp/quecdeck/qscan.active ] && echo 1 || echo 0)"
+        "$([ -f "$_QSCAN_ACTIVE" ] && echo 1 || echo 0)"
     t "the scan-status endpoint validates the shared expiry" "yes" \
         "$(grep -q '^qscan_is_active &&' quecdeck/www/cgi-bin/get_scan_status && echo yes || echo no)"
-    rm -f /tmp/quecdeck/qscan.active
-fi
+    rm -f "$_QSCAN_ACTIVE"
+_QSCAN_ACTIVE=$_QSCAN_ACTIVE_SAVED
+unset _QSCAN_ACTIVE_SAVED
 unset _qscan_now
 unset -f fetches
 . quecdeck/script/at-lib.sh   # Restore the real atcmd_run. See the block above.
