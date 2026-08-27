@@ -832,7 +832,6 @@ AuthenticationMethods publickey
 AuthorizedKeysFile /usrdata/root/.ssh/authorized_keys
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-UsePAM no
 AllowUsers root
 MaxAuthTries 3
 StrictModes yes
@@ -852,8 +851,6 @@ EOF
         rm -f "$_ssh_config_tmp"
         return 1
     }
-    { ! printf '%s\n' "$_effective" | grep -q '^usepam ' ||
-      printf '%s\n' "$_effective" | grep -qx 'usepam no'; } &&
     printf '%s\n' "$_effective" | grep -qx 'passwordauthentication no' &&
     printf '%s\n' "$_effective" | grep -qx 'kbdinteractiveauthentication no' &&
     printf '%s\n' "$_effective" | grep -qx 'permitrootlogin without-password' &&

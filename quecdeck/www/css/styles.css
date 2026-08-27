@@ -977,6 +977,33 @@ html {
 .chart-box    { height: 210px !important; }
 .input-mw-180 { max-width: 180px; }
 .input-mw-160 { max-width: 160px; }
+.input-mw-140 { max-width: 140px; }
+.input-w-port { width: 4.5rem; }
+.panel-fill { height: 100%; }
+.panel-relative { position: relative; }
+.text-label { font-size: 0.875rem; }
+.setup-actions { margin-top: 2rem; }
+.log-scroll { max-height: 420px; overflow-y: auto; }
+.table-col-compact { width: 1%; white-space: nowrap; }
+.surface-muted { background: var(--bs-secondary-bg); }
+.update-log {
+  background: var(--bs-secondary-bg);
+  min-height: 240px;
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.icon-sun { color: var(--status-color-yellow); }
+.icon-muted { color: var(--status-color-grey); }
+.ram-icon {
+  fill: none;
+  stroke: var(--status-color-green);
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ram-contacts { stroke: none; }
 
 /* .form-narrow is on three column wrappers (network.html twice, settings.html
    once) and deliberately styles nothing. A 24rem cap on the controls inside was

@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
-    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=76025f9f" />
+    <link rel="stylesheet" href="css/styles.css?v=76025f9f" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
-    <script src="js/utils.js?v=d126c03f"></script>
-    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=76025f9f"></script>
+    <script src="js/utils.js?v=76025f9f"></script>
+    <script src="js/alpinejs.min.js?v=76025f9f" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="processAllInfos()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=d126c03f"></script>
+        <script src="js/nav.js?v=76025f9f"></script>
 
         <div class="row mt-4 mb-0 g-3">
           <div class="col-6 col-sm-4 col-lg-2">
@@ -86,7 +86,7 @@
                       width="85"
                       class="cloud-icon"
                      x-cloak>
-                    <g style="color: var(--status-color-yellow)">
+                    <g class="icon-sun">
                       <circle cx="540" cy="80" r="48" fill="currentColor"/>
                       <line x1="540" y1="14" x2="540" y2="0"   stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
                       <line x1="540" y1="146" x2="540" y2="160" stroke="currentColor" stroke-width="12" stroke-linecap="round"/>
@@ -112,7 +112,7 @@
                     width="85"
                     class="cloud-icon"
                    x-cloak>
-                    <g style="color: var(--status-color-grey)">
+                    <g class="icon-muted">
                       <path fill="currentColor" d="M0 336c0 79.5 64.5 144 144 144H512c70.7 0 128-57.3 128-128c0-61.9-44-113.6-102.4-125.4c4.1-10.7 6.4-22.4 6.4-34.6c0-53-43-96-96-96c-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32C167.6 32 96 103.6 96 192c0 2.7 .1 5.4 .2 8.1C40.2 219.8 0 273.2 0 336z"/>
                       <line x1="180" y1="492" x2="156" y2="548" stroke="var(--status-color-blue)" stroke-width="14" stroke-linecap="round"/>
                       <line x1="320" y1="492" x2="296" y2="548" stroke="var(--status-color-blue)" stroke-width="14" stroke-linecap="round"/>
@@ -179,13 +179,13 @@
             <div class="panel-section stat-card">
               <div class="stat-main">
                 <div class="stat-icon-wrap">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" height="85" width="85" class="ram-icon" style="fill: none; stroke: var(--status-color-green); stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round;">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" height="85" width="85" class="ram-icon">
                     <rect x="4" y="8" width="112" height="42" rx="4" fill="var(--status-color-green)" fill-opacity="1"/>
                     <rect x="11" y="17" width="20" height="22" rx="3" fill="black"/>
                     <rect x="37" y="17" width="20" height="22" rx="3" fill="black"/>
                     <rect x="63" y="17" width="20" height="22" rx="3" fill="black"/>
                     <rect x="89" y="17" width="20" height="22" rx="3" fill="black"/>
-                    <rect x="10" y="50" width="100" height="12" fill="#FFD700" style="stroke:none"/>
+                    <rect x="10" y="50" width="100" height="12" fill="#FFD700" class="ram-contacts"/>
                     <line x1="10" y1="50" x2="10" y2="62"/><line x1="20" y1="50" x2="20" y2="62"/>
                     <line x1="30" y1="50" x2="30" y2="62"/><line x1="40" y1="50" x2="40" y2="62"/>
                     <line x1="50" y1="50" x2="50" y2="62"/><line x1="60" y1="50" x2="60" y2="62"/>
@@ -205,7 +205,7 @@
 
         <div class="row gy-3 mt-2 mb-4 align-items-stretch">
           <div class="col-12 col-md">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title">Network Information</div>
               <table>
                 <tbody>
@@ -263,7 +263,7 @@
           </div>
 
           <div class="col-12 col-md">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title">Signal Information</div>
               <table>
                 <tbody>
@@ -511,6 +511,6 @@
       </div>
     </main>
 
-    <script src="js/home.js?v=d126c03f"></script>
+    <script src="js/home.js?v=76025f9f"></script>
   </body>
 </html>

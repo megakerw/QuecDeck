@@ -57,8 +57,8 @@ t "SSH account preparation copies the firmware root line literally" "yes" \
   "$(printf '%s\n' "$_ssh_accounts" | grep -q 'printf.*_firmware_root' && printf '%s\n' "$_ssh_accounts" | grep -q "grep -v '\^root:'" && ! printf '%s\n' "$_ssh_accounts" | grep -q 'sed -i.*firmware_root' && echo yes || echo no)"
 t "QuecDeck uninstall does not rewrite Entware passwd links" "yes" \
   "$(! sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh | grep -q 'sed -i.*opt/etc/passwd' && echo yes || echo no)"
-t "SSH install is key-only and non-PAM" "yes" \
-  "$(grep -q 'openssh-server openssh-keygen' quecdeck.sh && grep -q '^AuthenticationMethods publickey$' quecdeck.sh && grep -q '^UsePAM no$' quecdeck.sh && echo yes || echo no)"
+t "SSH install uses the non-PAM server with key-only authentication" "yes" \
+  "$(grep -q 'openssh-server openssh-keygen' quecdeck.sh && grep -q '^AuthenticationMethods publickey$' quecdeck.sh && ! grep -q 'UsePAM' quecdeck.sh && echo yes || echo no)"
 _sshd_menu=$(sed -n '/^sshd_service() {/,/^}/p' quecdeck.sh)
 t "SSH installer stops when Entware setup fails" "yes" \
   "$(printf '%s\n' "$_sshd_menu" | grep -q '^            ensure_entware_installed || return$' && echo yes || echo no)"
@@ -114,8 +114,8 @@ t "installer checks generation before Entware setup" "yes" \
   "$(_guard=$(grep -n 'require_supported_install_state ||' quecdeck.sh | head -1 | cut -d: -f1); _entware=$(grep -n '^[[:space:]]*ensure_entware_installed$' quecdeck.sh | tail -1 | cut -d: -f1); [ -n "$_guard" ] && [ -n "$_entware" ] && [ "$_guard" -lt "$_entware" ] && echo yes || echo no)"
 t "interrupted first install retries only with its Entware marker" "yes" \
   "$( _ensure=$(sed -n '/^ensure_entware_installed() {/,/^}/p' quecdeck.sh); grep -q '^ENTWARE_BOOTSTRAP_MARKER=' quecdeck.sh && printf '%s\n' "$_ensure" | grep -q '^    require_supported_install_state || return 1$' && printf '%s\n' "$_ensure" | grep -q 'ENTWARE_BOOTSTRAP_MARKER' && sed -n '/^supported_install_state() {/,/^}/p' quecdeck.sh | grep -q 'grep -qx.*ENTWARE_BOOTSTRAP_MARKER' && echo yes || echo no)"
-t "non-PAM SSH output may omit usepam" "yes" \
-  "$( _config=$(sed -n '/^configure_key_only_ssh() (/,/^)/p' quecdeck.sh); _ready=$(sed -n '/^keys_ready() {/,/^}/p' quecdeck/script/ssh_keys.sh); printf '%s\n' "$_config" "$_ready" | grep -q "grep -q '\^usepam '" && printf '%s\n' "$_config" "$_ready" | grep -q "grep -qx 'usepam no'" && echo yes || echo no)"
+t "non-PAM SSH configuration omits UsePAM handling" "yes" \
+  "$(! grep -qE 'UsePAM|usepam' quecdeck.sh quecdeck/script/ssh_keys.sh && echo yes || echo no)"
 t "updater rejects releases before this installation generation" "yes" \
   "$(grep -q '_install_generation_supported' update_quecdeck.sh && grep -q 'requires a clean installation' update_quecdeck.sh quecdeck.sh && echo yes || echo no)"
 t "updater has no legacy SSH or authentication migration" "yes" \
@@ -157,6 +157,8 @@ t "SSH validates the final generated config" "yes" \
   "$([ "$(grep -n 'update_sshd_ip.sh' optional/sshd/sshd.service | cut -d: -f1)" -lt "$(grep -n 'ssh_keys.sh ready' optional/sshd/sshd.service | cut -d: -f1)" ] && echo yes || echo no)"
 t "SSH installation creates the root-only enable marker" "yes" \
   "$( _configure=$(sed -n '/^configure_key_only_ssh() (/,/^)/p' quecdeck.sh); printf '%s\n' "$_configure" | grep -q 'quecdeck_enabled' && printf '%s\n' "$_configure" | grep -q 'chmod 600' && echo yes || echo no)"
+t "strict CSP has no blocked literal style attributes" "yes" \
+  "$(! grep -R -E '(^|[[:space:]])style=' quecdeck/www --include='*.html' --include='*.js' && ! grep -q "style-src.*unsafe-inline" quecdeck/lighttpd.conf && echo yes || echo no)"
 js_fail=0
 for f in quecdeck/www/js/*.js; do
     case "$f" in *.min.js) continue ;; esac

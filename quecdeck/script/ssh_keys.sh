@@ -149,9 +149,6 @@ keys_ready() {
     load_store || return 1
     [ "$KEY_USABLE_COUNT" -gt 0 ] || return 1
     effective=$(/opt/sbin/sshd -T 2>/dev/null) || return 1
-    if printf '%s\n' "$effective" | grep -q '^usepam '; then
-        printf '%s\n' "$effective" | grep -qx 'usepam no' || return 1
-    fi
     printf '%s\n' "$effective" | grep -qx 'passwordauthentication no' || return 1
     printf '%s\n' "$effective" | grep -qx 'kbdinteractiveauthentication no' || return 1
     printf '%s\n' "$effective" | grep -qx 'permitrootlogin without-password' || return 1
@@ -185,9 +182,6 @@ validate_sshd_config() { # validate_sshd_config <path> <port>
     local effective
     /opt/sbin/sshd -t -f "$1" || return 1
     effective=$(/opt/sbin/sshd -T -f "$1" 2>/dev/null) || return 1
-    if printf '%s\n' "$effective" | grep -q '^usepam '; then
-        printf '%s\n' "$effective" | grep -qx 'usepam no' || return 1
-    fi
     printf '%s\n' "$effective" | grep -qx 'passwordauthentication no' || return 1
     printf '%s\n' "$effective" | grep -qx 'kbdinteractiveauthentication no' || return 1
     printf '%s\n' "$effective" | grep -qx 'permitrootlogin without-password' || return 1

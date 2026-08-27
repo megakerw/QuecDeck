@@ -6,30 +6,29 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
-    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=76025f9f" />
+    <link rel="stylesheet" href="css/styles.css?v=76025f9f" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
-    <script src="js/utils.js?v=d126c03f"></script>
-    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=76025f9f"></script>
+    <script src="js/utils.js?v=76025f9f"></script>
+    <script src="js/alpinejs.min.js?v=76025f9f" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="networkSettings()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=d126c03f"></script>
+        <script src="js/nav.js?v=76025f9f"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
           <div class="col-12 col-md-5">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title d-flex align-items-center gap-2 mb-4">
                 Band Locking
                 <span x-show="isGettingBands" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <select
-                  class="form-select ms-auto"
+                  class="form-select ms-auto input-mw-140"
                   id="networkModeBand"
                   aria-label="LTE"
-                  style="max-width:140px"
                 >
                   <option selected value="LTE">LTE</option>
                   <option value="NSA">NR5G-NSA</option>
@@ -70,7 +69,7 @@
           </div>
 
           <div class="col-12 col-md form-narrow">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title">APN Settings</div>
                 <div class="mb-4">
                   <label for="roamPref" class="form-label">Roaming Preference</label>
@@ -142,7 +141,7 @@
           </div>
 
           <div class="col-12 col-md form-narrow">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title">Network Preferences</div>
                 <div class="mb-4">
                   <label class="form-label">Preferred Network Mode</label>
@@ -198,8 +197,8 @@
       </div>
     </main>
 
-    <script src="js/populate-bands.js?v=d126c03f"></script>
-    <script src="js/parse-settings.js?v=d126c03f"></script>
-    <script src="js/network.js?v=d126c03f"></script>
+    <script src="js/populate-bands.js?v=76025f9f"></script>
+    <script src="js/parse-settings.js?v=76025f9f"></script>
+    <script src="js/network.js?v=76025f9f"></script>
   </body>
 </html>

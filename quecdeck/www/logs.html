@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
-    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=76025f9f" />
+    <link rel="stylesheet" href="css/styles.css?v=76025f9f" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
-    <script src="js/utils.js?v=d126c03f"></script>
-    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=76025f9f"></script>
+    <script src="js/utils.js?v=76025f9f"></script>
+    <script src="js/alpinejs.min.js?v=76025f9f" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="logsPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=d126c03f"></script>
+        <script src="js/nav.js?v=76025f9f"></script>
 
         <div class="alert alert-warning small mt-4 mb-0" x-show="clockUnsynced" x-cloak>
           Device clock appears unsynced. Timestamps below may be inaccurate until it syncs (e.g. once connected to a cell tower).
@@ -26,19 +26,19 @@
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
 
           <div class="col-12 col-lg-6">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title d-flex align-items-center gap-2 mb-3">
                 Connection Events
                 <span x-show="loadingConn" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshConnection()">Refresh</button>
               </div>
               <div x-show="connectionEvents.length === 0 && !loadingConn" class="text-muted small" x-cloak>No connection events recorded yet.</div>
-              <div x-show="connectionEvents.length > 0" style="max-height:420px; overflow-y:auto" x-cloak>
+              <div x-show="connectionEvents.length > 0" class="log-scroll" x-cloak>
                 <table class="table table-sm mb-0">
                   <thead>
                     <tr>
-                      <th scope="col" style="width:1%;white-space:nowrap">Time</th>
-                      <th scope="col" style="width:1%;white-space:nowrap">Event</th>
+                      <th scope="col" class="table-col-compact">Time</th>
+                      <th scope="col" class="table-col-compact">Event</th>
                       <th scope="col">Detail</th>
                     </tr>
                   </thead>
@@ -58,19 +58,19 @@
           </div>
 
           <div class="col-12 col-lg-6">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title d-flex align-items-center gap-2 mb-3">
                 Access Events
                 <span x-show="loadingAccess" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshAccess()">Refresh</button>
               </div>
               <div x-show="accessEvents.length === 0 && !loadingAccess" class="text-muted small" x-cloak>No access events recorded yet.</div>
-              <div x-show="accessEvents.length > 0" style="max-height:420px; overflow-y:auto" x-cloak>
+              <div x-show="accessEvents.length > 0" class="log-scroll" x-cloak>
                 <table class="table table-sm mb-0">
                   <thead>
                     <tr>
-                      <th scope="col" style="width:1%;white-space:nowrap">Time</th>
-                      <th scope="col" style="width:1%;white-space:nowrap">Event</th>
+                      <th scope="col" class="table-col-compact">Time</th>
+                      <th scope="col" class="table-col-compact">Event</th>
                       <th scope="col">Detail</th>
                     </tr>
                   </thead>
@@ -90,17 +90,17 @@
           </div>
 
           <div class="col-12 col-lg-6">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title d-flex align-items-center gap-2 mb-3">
                 Watchcat Reboot Activity
                 <button type="button" class="btn btn-sm btn-danger ms-auto" @click="clearRestartLog()">Clear</button>
               </div>
               <div x-show="restartEvents.length === 0 && !loadingRestart" class="text-muted small" x-cloak>No Watchcat reboot activity recorded yet.</div>
-              <div x-show="restartEvents.length > 0" style="max-height:420px; overflow-y:auto" x-cloak>
+              <div x-show="restartEvents.length > 0" class="log-scroll" x-cloak>
                 <table class="table table-sm mb-0">
                   <thead>
                     <tr>
-                      <th scope="col" style="width:1%;white-space:nowrap">Time</th>
+                      <th scope="col" class="table-col-compact">Time</th>
                       <th scope="col">Detail</th>
                     </tr>
                   </thead>
@@ -119,18 +119,18 @@
           </div>
 
           <div class="col-12 col-lg-6">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title d-flex align-items-center gap-2 mb-3">
                 AT Daemon
                 <span x-show="loadingAtcmd" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <button type="button" class="btn btn-sm btn-primary ms-auto" @click="refreshAtcmd()">Refresh</button>
               </div>
               <div x-show="atcmdEvents.length === 0 && !loadingAtcmd" class="text-muted small" x-cloak>No daemon log entries recorded yet.</div>
-              <div x-show="atcmdEvents.length > 0" style="max-height:420px; overflow-y:auto" x-cloak>
+              <div x-show="atcmdEvents.length > 0" class="log-scroll" x-cloak>
                 <table class="table table-sm mb-0">
                   <thead>
                     <tr>
-                      <th scope="col" style="width:1%;white-space:nowrap">Time</th>
+                      <th scope="col" class="table-col-compact">Time</th>
                       <th scope="col">Message</th>
                     </tr>
                   </thead>
@@ -153,6 +153,6 @@
       </div>
     </main>
 
-    <script src="js/logs.js?v=d126c03f"></script>
+    <script src="js/logs.js?v=76025f9f"></script>
   </body>
 </html>

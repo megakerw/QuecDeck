@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <h5 class="mb-0 fw-semibold" x-text="$store.confirmModal.title"></h5>
       </div>
       <p class="mb-3 text-muted" x-text="$store.confirmModal.message"></p>
-      <p x-show="$store.confirmModal.detail" class="mb-3 font-monospace small rounded px-2 py-1" style="background:var(--bs-secondary-bg)" x-text="$store.confirmModal.detail"></p>
+      <p x-show="$store.confirmModal.detail" class="mb-3 font-monospace small rounded px-2 py-1 surface-muted" x-text="$store.confirmModal.detail"></p>
       <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-secondary btn-sm" @click="$store.confirmModal.cancel()">Cancel</button>
         <button type="button" class="btn btn-primary btn-sm" @click="$store.confirmModal.confirm()">Confirm</button>

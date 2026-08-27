@@ -6,24 +6,24 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
-    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=76025f9f" />
+    <link rel="stylesheet" href="css/styles.css?v=76025f9f" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
-    <script src="js/utils.js?v=d126c03f"></script>
-    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=76025f9f"></script>
+    <script src="js/utils.js?v=76025f9f"></script>
+    <script src="js/alpinejs.min.js?v=76025f9f" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="securitySettings()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=d126c03f"></script>
+        <script src="js/nav.js?v=76025f9f"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
           <div class="col-lg-5">
           <div class="panel-section h-100">
             <div class="panel-title">Administrator Password</div>
-            <p class="text-muted small">Changing the password signs out active web sessions. QuecDeck warns if complete invalidation cannot be confirmed.</p>
+            <p class="text-muted small">Changing the password signs out all active web sessions.</p>
             <div class="row gy-3">
               <div class="col-12">
                 <label class="form-label" for="current-password">Current password</label>
@@ -49,7 +49,7 @@
             <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
               <div>
                 <div class="panel-title mb-1">SSH Access</div>
-                <p class="text-muted small mb-0">Public keys are the only SSH login method. Changing the port or disabling SSH ends active SSH sessions.</p>
+                <p class="text-muted small mb-0" x-show="loaded && sshInstalled" x-cloak>Public keys are the only SSH login method. Changing the port or disabling SSH ends active SSH sessions.</p>
               </div>
               <span class="badge" :class="sshActive ? 'text-bg-success' : 'text-bg-secondary'" x-text="sshLabel"></span>
             </div>
@@ -72,7 +72,7 @@
 
                 <div class="d-flex justify-content-between align-items-start mb-3">
                   <div>
-                    <div class="fw-semibold mb-1" style="font-size: 0.875rem">Enable SSH server</div>
+                    <div class="fw-semibold mb-1 text-label">Enable SSH server</div>
                     <div class="text-muted small" x-show="sshEnabled" x-cloak>Accepts key-only SSH connections on the configured port.</div>
                     <div class="text-muted small" x-show="!sshEnabled" x-cloak>Currently disabled.</div>
                   </div>
@@ -131,7 +131,7 @@
         </div>
       </div>
     </main>
-    <script src="js/capslock.js?v=d126c03f"></script>
-    <script src="js/security.js?v=d126c03f"></script>
+    <script src="js/capslock.js?v=76025f9f"></script>
+    <script src="js/security.js?v=76025f9f"></script>
   </body>
 </html>

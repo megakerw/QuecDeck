@@ -6,22 +6,22 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
-    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=76025f9f" />
+    <link rel="stylesheet" href="css/styles.css?v=76025f9f" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
-    <script src="js/utils.js?v=d126c03f"></script>
-    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=76025f9f"></script>
+    <script src="js/utils.js?v=76025f9f"></script>
+    <script src="js/alpinejs.min.js?v=76025f9f" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="updatePage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=d126c03f"></script>
+        <script src="js/nav.js?v=76025f9f"></script>
 
         <div class="row gy-3 mt-4 mb-4 justify-content-center">
           <div class="col-12 col-md-8 col-lg-6">
-            <div class="panel-section" style="position:relative">
+            <div class="panel-section panel-relative">
               <div class="panel-title d-flex align-items-center gap-2">
                 Software Update
                 <span x-show="checking" class="spinner-border spinner-border-sm text-secondary" role="status" aria-label="Loading" x-cloak></span>
@@ -34,14 +34,14 @@
                   x-text="updateAvailable ? 'Update available' : 'Up to date'" x-cloak></span>
 
                 <div class="mb-4">
-                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                  <div class="fw-semibold mb-1 text-label">Installed version</div>
                   <div class="text-muted small" x-text="currentVersion || '…'"></div>
                 </div>
 
                 <!-- Rendered unconditionally so the panel height is stable. Only
                      the text swaps once the check completes (avoids layout shift). -->
                 <div class="mb-4">
-                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Latest version</div>
+                  <div class="fw-semibold mb-1 text-label">Latest version</div>
                   <div class="text-muted small" x-text="checked ? latestVersion : (checkError ? '-' : 'Checking…')"></div>
                   <div x-show="checkError" x-cloak class="text-warning small mt-1" x-text="checkError"></div>
                   <a x-show="updateAvailable && latestTag" :href="'https://github.com/megakerw/QuecDeck/releases/tag/' + latestTag" target="_blank" rel="noopener" class="small text-muted" x-cloak>Release notes</a>
@@ -63,12 +63,12 @@
               <div x-show="updating && !done && !failed" x-cloak>
                 <span class="badge text-bg-primary position-absolute top-0 end-0 m-3">Updating</span>
                 <div class="mb-4">
-                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Updating</div>
+                  <div class="fw-semibold mb-1 text-label">Updating</div>
                   <div class="text-muted small" x-text="(currentVersion || '…') + (latestVersion && latestVersion !== currentVersion ? ' → ' + latestVersion : '')"></div>
                 </div>
                 <div class="mb-4">
-                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
-                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);min-height:240px;max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logbox"
+                  <div class="fw-semibold mb-1 text-label">Progress</div>
+                  <div class="font-monospace small p-2 rounded update-log" x-ref="logbox"
                     x-text="log || 'Starting…'"></div>
                 </div>
                 <div class="d-flex align-items-center gap-2 text-muted small">
@@ -83,12 +83,12 @@
               <div x-show="done" x-cloak>
                 <span class="badge text-bg-success position-absolute top-0 end-0 m-3">Updated</span>
                 <div class="mb-4">
-                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                  <div class="fw-semibold mb-1 text-label">Installed version</div>
                   <div class="text-muted small" x-text="latestVersion || currentVersion"></div>
                 </div>
                 <div class="mb-4">
-                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
-                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);min-height:240px;max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logboxDone"
+                  <div class="fw-semibold mb-1 text-label">Progress</div>
+                  <div class="font-monospace small p-2 rounded update-log" x-ref="logboxDone"
                     x-text="log"></div>
                 </div>
                 <div class="text-success small mt-1 mb-3">Update complete.</div>
@@ -102,12 +102,12 @@
               <div x-show="failed" x-cloak>
                 <span class="badge text-bg-danger position-absolute top-0 end-0 m-3">Update failed</span>
                 <div class="mb-4">
-                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Installed version</div>
+                  <div class="fw-semibold mb-1 text-label">Installed version</div>
                   <div class="text-muted small" x-text="currentVersion"></div>
                 </div>
                 <div class="mb-4">
-                  <div class="fw-semibold mb-1" style="font-size:0.875rem">Progress</div>
-                  <div class="font-monospace small p-2 rounded" style="background:var(--bs-secondary-bg);min-height:240px;max-height:240px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" x-ref="logboxFailed"
+                  <div class="fw-semibold mb-1 text-label">Progress</div>
+                  <div class="font-monospace small p-2 rounded update-log" x-ref="logboxFailed"
                     x-text="log"></div>
                 </div>
                 <div x-show="rollback === 'ok'" class="text-warning small mt-1 mb-3" x-cloak>Update failed. Previous version has been restored.</div>
@@ -124,6 +124,6 @@
       </div>
     </main>
 
-    <script src="js/update.js?v=d126c03f"></script>
+    <script src="js/update.js?v=76025f9f"></script>
   </body>
 </html>

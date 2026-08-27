@@ -6,11 +6,11 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
-    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=76025f9f" />
+    <link rel="stylesheet" href="css/styles.css?v=76025f9f" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
-    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=76025f9f"></script>
+    <script src="js/alpinejs.min.js?v=76025f9f" defer></script>
   </head>
   <body>
     <main>
@@ -42,7 +42,7 @@
                       <label class="form-label">Confirm password</label>
                       <input type="password" class="form-control" x-model="adminPassConfirm" minlength="12" maxlength="256" autocomplete="new-password" required />
                     </div>
-                    <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;" :disabled="submitting || !adminPass || !adminPassConfirm">Continue</button>
+                    <button type="submit" class="btn btn-primary w-100 setup-actions" :disabled="submitting || !adminPass || !adminPassConfirm">Continue</button>
                   </form>
                 </div>
               </template>
@@ -64,7 +64,7 @@
                       <label class="form-label">Confirm password</label>
                       <input type="password" class="form-control" x-model="devPassConfirm" minlength="12" maxlength="256" autocomplete="new-password" required />
                     </div>
-                    <div class="d-flex gap-2" style="margin-top: 2rem;">
+                    <div class="d-flex gap-2 setup-actions">
                       <button type="submit" class="btn btn-primary flex-fill" :disabled="submitting || !devPass || !devPassConfirm">
                         <span x-show="!submitting" x-cloak>Finish</span>
                         <span x-show="submitting" x-cloak>Setting up...</span>
@@ -79,7 +79,7 @@
         </div>
       </div>
     </main>
-    <script src="js/capslock.js?v=d126c03f"></script>
-    <script src="js/setup.js?v=d126c03f"></script>
+    <script src="js/capslock.js?v=76025f9f"></script>
+    <script src="js/setup.js?v=76025f9f"></script>
   </body>
 </html>

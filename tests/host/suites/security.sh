@@ -285,7 +285,7 @@ t "password-change reports success with an invalidation warning" "yes" \
 t "hidden unsupported SSH entries do not consume the UI key limit" "yes" \
   "$(grep -q '\[ "\$KEY_USABLE_COUNT" -lt "\$MAX_KEYS" \]' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
 t "SSH readiness enforces effective key-only policy" "yes" \
-  "$(grep -q 'sshd -T' quecdeck/script/ssh_keys.sh && grep -q "authenticationmethods publickey" quecdeck/script/ssh_keys.sh && grep -q "passwordauthentication no" quecdeck/script/ssh_keys.sh && grep -q "usepam no" quecdeck/script/ssh_keys.sh && echo yes || echo no)"
+  "$(grep -q 'sshd -T' quecdeck/script/ssh_keys.sh && grep -q "authenticationmethods publickey" quecdeck/script/ssh_keys.sh && grep -q "passwordauthentication no" quecdeck/script/ssh_keys.sh && ! grep -q 'usepam' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
 t "SSH stops when the final key is removed" "yes" \
   "$(grep -q 'KEY_COUNT.*= 0' quecdeck/script/ssh_keys.sh && grep -q 'systemctl stop sshd' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
 t "explicit SSH stops terminate sessions" "yes" \
