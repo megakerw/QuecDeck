@@ -4,6 +4,7 @@
 
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
+. /usrdata/quecdeck/script/lock-lib.sh || exit 1
 
 ROOT_HOME=/usrdata/root
 SSH_DIR=$ROOT_HOME/.ssh
@@ -321,7 +322,7 @@ case "${1:-}" in
         valid_ssh_port "$SSH_PORT" || exit 1
         exec 9>>"$LOCK" || exit 1
         chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
-        flock -w 5 -x 9 || exit 75
+        flock_wait 9 5 || exit 75
         verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
         credential_rc=$?
         [ "$credential_rc" != 75 ] || exit 75
@@ -368,7 +369,7 @@ case "${1:-}" in
         fingerprint_line "$KEY_LINE" >/dev/null || exit 4
         exec 9>>"$LOCK" || exit 1
         chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
-        flock -w 5 -x 9 || exit 75
+        flock_wait 9 5 || exit 75
         verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
         credential_rc=$?
         [ "$credential_rc" != 75 ] || exit 75
@@ -437,7 +438,7 @@ case "${1:-}" in
         [ -n "$DEV_PASSWORD" ] && [ "${#DEV_PASSWORD}" -le 256 ] || exit 2
         exec 9>>"$LOCK" || exit 1
         chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
-        flock -w 5 -x 9 || exit 75
+        flock_wait 9 5 || exit 75
         verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
         credential_rc=$?
         [ "$credential_rc" != 75 ] || exit 75

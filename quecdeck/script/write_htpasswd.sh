@@ -27,7 +27,8 @@ LOCK=/opt/etc/.quecdeck-setup.lock
 exec 9>>"$LOCK" || exit 1
 chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
 command -v flock >/dev/null 2>&1 || exit 75
-flock -w 5 -x 9 || exit 75
+. /usrdata/quecdeck/script/lock-lib.sh || exit 75
+flock_wait 9 5 || exit 75
 
 valid_line() { # valid_line <expected username> <line>
     [ "${#2}" -le 256 ] &&

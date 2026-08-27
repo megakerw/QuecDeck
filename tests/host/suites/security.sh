@@ -146,7 +146,7 @@ t "auth checks logout tombstone after refresh" "yes" \
 # Initial setup is one root-side transaction. The lock must cover both the
 # existence checks and installation, and the administrator file is written
 # last because its presence marks setup complete to auth.lua.
-_setup_lock=$(grep -n '^flock -w 5 -x 9' quecdeck/script/write_htpasswd.sh | cut -d: -f1)
+_setup_lock=$(grep -n '^flock_wait 9 5' quecdeck/script/write_htpasswd.sh | cut -d: -f1)
 _setup_exists=$(grep -n '\[ ! -s /opt/etc/\.htpasswd \]' quecdeck/script/write_htpasswd.sh | head -1 | cut -d: -f1)
 _setup_dev=$(grep -n 'install_line /opt/etc/\.htpasswd_dev' quecdeck/script/write_htpasswd.sh | cut -d: -f1)
 _setup_admin=$(grep -n 'install_line /opt/etc/\.htpasswd "\$ADMIN_LINE"' quecdeck/script/write_htpasswd.sh | cut -d: -f1)
@@ -189,13 +189,13 @@ done
 t "password helper verifies current password before replacement" "yes" \
   "$([ "$(grep -n 'check_password.sh admin admin' quecdeck/script/change_password.sh | cut -d: -f1)" -lt "$(grep -n 'mv -f.*HTPASSWD' quecdeck/script/change_password.sh | cut -d: -f1)" ] && echo yes || echo no)"
 t "root-side web password verification is serialized and paced" "yes" \
-  "$(grep -q '^LIMIT_DIR=/run/quecdeck/auth-limit$' quecdeck/script/check_password.sh && grep -q '^flock -w 5 -x 9 || exit 75$' quecdeck/script/check_password.sh && grep -q '^sleep 1$' quecdeck/script/check_password.sh && echo yes || echo no)"
+  "$(grep -q '^LIMIT_DIR=/run/quecdeck/auth-limit$' quecdeck/script/check_password.sh && grep -q '^flock_wait 9 5 || exit 75$' quecdeck/script/check_password.sh && grep -q '^sleep 1$' quecdeck/script/check_password.sh && echo yes || echo no)"
 t "password pacing availability tradeoff is documented" "yes" \
   "$(grep -q 'Root-side password pacing trades availability for brute-force resistance' README.md && grep -q 'availability cost is accepted deliberately' README.md && echo yes || echo no)"
 t "privileged security mutation locks have bounded waits" "4" \
-  "$(grep -h '^[[:space:]]*flock -w 5 -x 9 || exit 75$' quecdeck/script/change_password.sh quecdeck/script/ssh_keys.sh | wc -l | tr -d ' ')"
+  "$(grep -h '^[[:space:]]*flock_wait 9 5 || exit 75$' quecdeck/script/change_password.sh quecdeck/script/ssh_keys.sh | wc -l | tr -d ' ')"
 t "initial setup lock has a bounded wait" "yes" \
-  "$(grep -q '^flock -w 5 -x 9 || exit 75$' quecdeck/script/write_htpasswd.sh && echo yes || echo no)"
+  "$(grep -q '^flock_wait 9 5 || exit 75$' quecdeck/script/write_htpasswd.sh && echo yes || echo no)"
 t "web startup verifies the Entware credential boundary" "yes" \
   "$( _guard=$(extract_fn quecdeck/script/lighttpd_prestart.sh secure_entware_config_dir); grep -q '^PATH=.*opt/bin' quecdeck/script/lighttpd_prestart.sh && grep -q 'command -v stat' quecdeck/script/lighttpd_prestart.sh && printf '%s\n' "$_guard" | grep -q '\[ ! -L "\$_etc_dir" \]' && printf '%s\n' "$_guard" | grep -q 'stat -c %u' && printf '%s\n' "$_guard" | grep -q '& 022' && grep -q '^if ! secure_entware_config_dir; then$' quecdeck/script/lighttpd_prestart.sh && echo yes || echo no)"
 t "SSH key upload trims pasted whitespace" "yes" \
@@ -211,7 +211,7 @@ t "credential callers preserve temporary-unavailable status" "yes" \
 t "CGI lockout accounting does not duplicate root-side pacing" "yes" \
   "$(! extract_fn quecdeck/script/cgi-lib.sh bf_fail | grep -q '^ *sleep ' && echo yes || echo no)"
 t "password verifier accepts only fixed account pairs" "yes" \
-  "$(grep -q 'admin).*USERNAME=admin' quecdeck/script/check_password.sh && grep -q 'dev).*USERNAME=devadmin' quecdeck/script/check_password.sh && grep -q '^if \[ "\${2:-}" != "\$USERNAME" \]; then$' quecdeck/script/check_password.sh && [ "$(grep -n '^flock -w 5' quecdeck/script/check_password.sh | cut -d: -f1)" -lt "$(grep -n '^if \[ "\${2:-}" != "\$USERNAME" \]; then$' quecdeck/script/check_password.sh | cut -d: -f1)" ] && echo yes || echo no)"
+  "$(grep -q 'admin).*USERNAME=admin' quecdeck/script/check_password.sh && grep -q 'dev).*USERNAME=devadmin' quecdeck/script/check_password.sh && grep -q '^if \[ "\${2:-}" != "\$USERNAME" \]; then$' quecdeck/script/check_password.sh && [ "$(grep -n '^flock_wait 9 5' quecdeck/script/check_password.sh | cut -d: -f1)" -lt "$(grep -n '^if \[ "\${2:-}" != "\$USERNAME" \]; then$' quecdeck/script/check_password.sh | cut -d: -f1)" ] && echo yes || echo no)"
 t "dual-credential SSH checks do not short-circuit" "yes" \
   "$( _verify=$(extract_fn quecdeck/script/ssh_keys.sh verify_credentials); [ "$(printf '%s\n' "$_verify" | grep -c 'check_password.sh')" = 2 ] && printf '%s\n' "$_verify" | grep -q 'admin_rc=' && printf '%s\n' "$_verify" | grep -q 'dev_rc=' && echo yes || echo no)"
 t "sudo credential helpers bound stdin before parsing" "yes" \
@@ -423,3 +423,19 @@ for _src in quecdeck.sh update_quecdeck.sh; do
     t "sweep predicate present in $_src" "yes" \
       "$(grep -q "grep -qE '\^Exec(Start|StartPre|StartPost|Reload|Stop|StopPost)=" "$_src" && echo yes || echo no)"
 done
+
+# BusyBox flock accepts only -sxun. The -w timeout is util-linux only, and a
+# device without it fails every credential lock on a usage error, which breaks
+# login, setup, password change and SSH key management at once.
+t "no shipped script depends on the util-linux flock timeout" "yes" \
+  "$(! grep -rn 'flock -w' quecdeck/ update_quecdeck.sh quecdeck.sh >/dev/null 2>&1 && echo yes || echo no)"
+_lock_lib=$(extract_fn quecdeck/script/lock-lib.sh flock_wait)
+t "flock_wait bounds its wait without -w" "yes" \
+  "$(printf '%s\n' "$_lock_lib" | grep -q 'flock -n -x' && printf '%s\n' "$_lock_lib" | grep -q '_left - 1' && printf '%s\n' "$_lock_lib" | grep -q 'sleep 1' && ! printf '%s\n' "$_lock_lib" | grep -q '\-w' && echo yes || echo no)"
+for _h in check_password.sh write_htpasswd.sh change_password.sh ssh_keys.sh; do
+    t "$_h takes its lock through flock_wait" "yes" \
+      "$(grep -q '^\. /usrdata/quecdeck/script/lock-lib.sh ||' "quecdeck/script/$_h" && grep -q 'flock_wait 9 5 || exit 75' "quecdeck/script/$_h" && echo yes || echo no)"
+done
+t "lock library is installed root-only" "yes" \
+  "$(sed -n '/for _s in lighttpd_prestart.sh/,/done/p' update_quecdeck.sh | grep -q 'lock-lib.sh' && grep -q '  quecdeck/script/lock-lib.sh$' .githooks/pre-commit && echo yes || echo no)"
+unset _lock_lib

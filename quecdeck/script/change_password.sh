@@ -5,6 +5,7 @@
 
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
+. /usrdata/quecdeck/script/lock-lib.sh || exit 1
 
 HTPASSWD=/opt/etc/.htpasswd
 LOCK=/opt/etc/.quecdeck-credentials.lock
@@ -28,7 +29,7 @@ PAYLOAD=${PAYLOAD%$'\n'}
 
 exec 9>>"$LOCK" || exit 1
 chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
-flock -w 5 -x 9 || exit 75
+flock_wait 9 5 || exit 75
 
 printf '%s\n' "$CURRENT" |
     /usrdata/quecdeck/script/check_password.sh admin admin

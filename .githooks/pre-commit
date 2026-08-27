@@ -18,6 +18,7 @@ CHECKSUMMED_FILES=(
   quecdeck/script/connection_logger.sh
   quecdeck/script/connection-log.sh
   quecdeck/script/lighttpd_prestart.sh
+  quecdeck/script/lock-lib.sh
   quecdeck/script/write_htpasswd.sh
   quecdeck/script/change_password.sh
   quecdeck/script/ssh_keys.sh

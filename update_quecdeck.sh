@@ -431,7 +431,8 @@ stage_release() {
     # unprivileged runs or reads them. The rest of script/ stays 755: www-data
     # sources or executes those.
     for _s in lighttpd_prestart.sh write_htpasswd.sh change_password.sh \
-              ssh_keys.sh check_password.sh run_update.sh firewall.sh; do
+              ssh_keys.sh check_password.sh run_update.sh firewall.sh \
+              lock-lib.sh; do
         chown root:root "$STAGE_DIR/script/$_s"
         chmod 700 "$STAGE_DIR/script/$_s"
     done

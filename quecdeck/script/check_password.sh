@@ -42,7 +42,8 @@ chown root:root "$LIMIT_DIR" && chmod 700 "$LIMIT_DIR" || exit 1
 exec 9>>"$LIMIT_DIR/$LIMIT_NAME.lock" || exit 1
 chown root:root "$LIMIT_DIR/$LIMIT_NAME.lock" && chmod 600 "$LIMIT_DIR/$LIMIT_NAME.lock" || exit 1
 command -v flock >/dev/null 2>&1 || exit 75
-flock -w 5 -x 9 || exit 75
+. /usrdata/quecdeck/script/lock-lib.sh || exit 75
+flock_wait 9 5 || exit 75
 
 # Pace a syntactically valid unknown username like a wrong password. The web
 # username is fixed and public, but keeping failure timing uniform is cheap.
