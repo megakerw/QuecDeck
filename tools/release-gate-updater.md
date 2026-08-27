@@ -116,9 +116,7 @@ bash /tmp/test_update.sh <current>
 - [ ] Content-only run takes the stays-up branch: log shows
       `Verifying the new web stack...` then
       `lighttpd stayed up through the swap` (no lighttpd restart)
-- [ ] ttyd verifies against the LOCAL manifest: log has NO
-      "download checksums" step between the ttyd.bash/ttyd.service fetches
-- [ ] Summary: Stage/Switch/QuecDeck/Firewall/ttyd all OK. No Rollback line
+- [ ] Summary: Stage/Switch/QuecDeck/Firewall all OK. No Rollback line
 - [ ] Status `done`. `/usrdata/quecdeck/version` correct (no leading `v`)
 - [ ] Manifest retained: `/usrdata/quecdeck/checksums.sha256` present
 - [ ] Persisted log updated (mtime) and matches this run

@@ -42,7 +42,7 @@ AT+CFUN=1,1
 Follow [iamromulan's guide](https://github.com/iamromulan/cellular-modem-wiki/blob/main/quectel/sdxlemur/sdxlemur_m.2_to_eth.md#unlocking-adb) to unlock ADB access on the modem.
 ### Installing QuecDeck
 
-Run the following command on your modem (via ADB shell, SSH, or the web console):
+Run the following command on your modem through ADB shell or SSH:
 
 ```sh
 cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDeck/main/quecdeck.sh && chmod +x quecdeck.sh && ./quecdeck.sh && cd /
@@ -50,7 +50,9 @@ cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDe
 
 Select **Install/Update QuecDeck** from the menu. On first access, a setup wizard will guide you through setting your passwords.
 
-To update, run the same command and select **Install/Update QuecDeck** again, or use the Update page in the web UI. Settings from the current implementation are preserved across updates. The monitoring migration exception is described below.
+This release starts a new installation generation. If an older release is installed, run the installer command above and uninstall QuecDeck and Entware, reboot, then run it again to install QuecDeck. Direct updates from older installations are rejected before installed files are changed.
+
+After that clean installation, update by running the same command and selecting **Install/Update QuecDeck** again, or use the Update page in the web UI. Settings are preserved across compatible updates.
 
 ## Features
 
@@ -74,6 +76,10 @@ Scan for nearby cells and display network, provider, band, frequency, PCI, and R
 - LAN IP and DHCP range configuration
 - One-click utilities: reboot, onboard DNS IPv4/IPv6 proxy, IP Passthrough (IPPT), auto-connect (QMAPWAC), GNSS toggle, and SIM hot-swap detection
 
+### Security
+- Change the web administrator password after confirming the current password. QuecDeck signs out active web sessions and warns if complete invalidation cannot be confirmed
+- When OpenSSH is installed, enable or disable the server, choose its LAN-only port, and manage up to 5 root public keys. QuecDeck accepts Ed25519, ECDSA, and RSA keys without key options. Private keys are rejected
+
 ### Monitoring
 - **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics, consecutive failure tracking, and a persistent reboot-activity log. Each round rotates which configured target is checked first and stops at the first response. A reboot requires at least three rounds where every target fails. If a reboot doesn't restore connectivity, Watchcat waits progressively longer before trying again instead of rebooting in a tight loop
 - **Scheduled Restart:** schedule daily or weekly reboots at a specified time. The schedule follows the modem's own clock and remains held until that clock contains a plausible date and time
@@ -86,7 +92,7 @@ View, read, and delete SMS messages directly from the modem's inbox, newest firs
 ### Device Information
 - **Device & SIM:** manufacturer, model, firmware version, build time, IMEI, phone number, IMSI, and ICCID
 - **Network:** LAN IP, WWAN IPv4/IPv6, primary/secondary DNS (IPv4 and IPv6 shown separately), and UPnP status
-- **Services:** live status overview of all QuecDeck services (AT Daemon, Firewall, Connection Logger, Watchcat, Scheduled Restart, SSH, and ttyd)
+- **Services:** live status overview of all QuecDeck services (AT Daemon, Firewall, Connection Logger, Watchcat, Scheduled Restart, and SSH)
 
 ### Logs
 - **Connection Events:** timestamped log of connection changes and failures. Keeps the last 500 entries, cleared on reboot.
@@ -100,8 +106,9 @@ Check the installed version against the latest GitHub release and trigger an in-
 Requires a separate developer password to unlock. Provides access to:
 - **AT Terminal:** send AT commands directly to the modem, with support for multiple commands separated by a semicolon
 - **Cell Locking:** lock the primary cell for LTE or NR5G-SA by EARFCN and PCI (not persistent across reboots)
-- **Web Console (ttyd):** start/stop the browser-based terminal and open it directly from the UI
-- **Console Menu:** an interactive shell menu (`menu` command) available over ADB, SSH, or ttyd. Provides access to modem apps (file browser, disk usage, task manager) and password management (admin, developer, and root passwords).
+
+### Shell Management
+Run `/usrdata/root/bin/quecdeckpasswd` or `/usrdata/root/bin/quecdeckdevpasswd` through ADB or root SSH to change passwords. Fetch `quecdeck.sh` again for installation, removal, and optional SSH management.
 
 ## Implementation
 
@@ -111,14 +118,14 @@ QuecDeck started as a fork of [Simple Admin](https://github.com/iamromulan/quect
 
 - **Fewer features, done well.** QuecDeck covers the basics: signal monitoring, band locking, network config, a handful of utilities. New functionality is only added when it fits that scope and can be implemented cleanly.
 - **Minimize attack surface.** The web server and SSH bind only to the LAN IP, the firewall blocks WAN access, and the web application runs as `www-data`. Operations that genuinely require root are confined to systemd services and an enumerated sudoers allowlist.
-- **Destructive features behind a separate auth wall.** Things that can cause real damage (like the AT terminal and the web console) require a separate developer password on top of the standard admin login. This is an application-level feature gate, not a sandbox against compromise of the web-server account. See **Threat model and limitations** below.
+- **Destructive features behind a separate auth wall.** Things that can cause real damage, such as the AT terminal and cell locking, require a separate developer password on top of the standard admin login. This is an application-level feature gate, not a sandbox against compromise of the web-server account. See **Threat model and limitations** below.
 - **Minimal write footprint.** Persistent files live under `/usrdata`. Volatile root state uses `/run/quecdeck`, while web-owned state uses `/run/quecdeck-web`. Installation, updates, and service enablement briefly remount the root filesystem writable. Normal operation does not.
 
 ### Web Server
 [Lighttpd](https://www.lighttpd.net/) serves the frontend and CGI backend on port 443 (HTTPS), with port 80 redirecting to HTTPS.
 - A pre-start script (`lighttpd_prestart.sh`) reads the current LAN IP, rewrites `lighttpd.conf` to bind to that IP, and regenerates a self-signed TLS certificate to match if the IP has changed.
 - Authentication uses a custom session-based login with SHA-512 hashed passwords and a two-tier credential system (admin and developer).
-- Sessions are managed via secure cookies, with a 15-minute lockout after 5 failed login attempts. Both passwords require a minimum of 8 characters.
+- Sessions are managed via secure cookies, with a 15-minute lockout after 5 failed login attempts. Both passwords require a minimum of 12 characters.
 
 ### AT Command Layer
 All modem communication goes through [atcli](https://github.com/megakerw/atcli_rust) (a fork of [atcli_rust](https://github.com/1alessandro1/atcli_rust)), a Rust-based AT command CLI that emits clean newline-terminated output (modem `\r` framing is stripped at the source). That is a contract the shell side relies on rather than a convenience: nothing downstream re-strips carriage returns, so replies are parsed as they arrive.
@@ -128,12 +135,12 @@ The release stores the binary at `quecdeck/atcli`, matching its installed path a
 - **Serialization and privilege.** Serialization happens inside atcli itself. Its daemon side (`atcli --daemon`, unit `atcmd-daemon`) opens the modem port as root, drops to www-data, and serves one command per unix-socket connection, verifying each peer's uid via `SO_PEERCRED`. The atcli binary is not setuid: the daemon is the only privileged path to the modem.
 - **No silent fallback.** There is no automatic fallback to the port, so a plain invocation never bypasses the serializer. If the daemon is down, every caller (root and www-data alike) gets empty output until systemd restarts it within seconds, and the UI tolerates the gap. A root operator can still reach the modem directly for recovery by passing `--direct` explicitly.
 - **Sender lifecycle.** Commands whose sender has hung up are skipped instead of being sent to the modem. Fire-and-forget senders (modem reboots) pass `--detach`.
-- **Reply completeness.** A reply cut short by a timeout is byte-for-byte a shorter complete one, so the exit status, not the output, is what says whether the modem finished. The atcli client exits 0 only when the modem terminated the reply itself. Both `OK` and `ERROR` count as terminated. It exits non-zero when the modem did not, leaving whatever arrived on stdout, and non-zero with empty stdout when nothing arrived at all (timeout, or the daemon down). Callers that must not parse a truncated record check the status and drop stdout: `get_sms` refuses a short `+CMGL` listing rather than serving it as a complete inbox, `run_cell_scan` appends a `PARTIAL` marker, the developer console labels an unterminated reply, and the updater's health probe warns. A pipe masks the status, so a caller that needs it assigns first, then pipes.
+- **Reply completeness.** A reply cut short by a timeout is byte-for-byte a shorter complete one, so the exit status, not the output, is what says whether the modem finished. The atcli client exits 0 only when the modem terminated the reply itself. Both `OK` and `ERROR` count as terminated. It exits non-zero when the modem did not, leaving whatever arrived on stdout, and non-zero with empty stdout when nothing arrived at all (timeout, or the daemon down). Callers that must not parse a truncated record check the status and drop stdout: `get_sms` refuses a short `+CMGL` listing rather than serving it as a complete inbox, `run_cell_scan` appends a `PARTIAL` marker, the developer AT terminal labels an unterminated reply, and the updater's health probe warns. A pipe masks the status, so a caller that needs it assigns first, then pipes.
 - **Bounded diagnostics.** The daemon keeps its tmpfs log below 64 KiB. It performs rollover through its retained file descriptor, then writes a marker and the next entry. Repeated faults are additionally logged on the first occurrence and every hundredth occurrence.
 - **Caching.** Responses are cached per endpoint to reduce modem load, with TTLs tuned to how often the data actually changes: 2 seconds for signal stats, connection and SIM info, 5 seconds for network and settings data, and 1 hour for static device info like firmware version and build time. Where possible, multiple AT commands are batched into a single request to cut down on round trips.
 
 ### Firewall
-A lightweight iptables-based firewall restricts access to ports 80, 443, and optionally 22 (SSH) to traffic entering through the LAN bridge and targeting the configured LAN IP. IPv4 DNS follows the same policy. IPv6 DNS is limited to the bridge's non-routable `fe80::/10` link-local destination, and all other DNS destinations are dropped. This prevents QCMAP's resolver from being used through additional IPPT or future global addresses. DHCP remains firmware-managed. Both address families are mandatory and verified after application. This keeps the policy independent of QCMAP's mode-dependent WAN rule ordering. Custom chains (`QUECDECK`/`QUECDECK6`) survive QCMAP's automatic iptables rebuilds. IPv6 access to the admin UI is blocked.
+A lightweight iptables-based firewall restricts access to ports 80, 443, and the configured SSH port when SSH is enabled to traffic entering through the LAN bridge and targeting the configured LAN IP. IPv4 DNS follows the same policy. IPv6 DNS is limited to the bridge's non-routable `fe80::/10` link-local destination, and all other DNS destinations are dropped. This prevents QCMAP's resolver from being used through additional IPPT or future global addresses. DHCP remains firmware-managed. Both address families are mandatory and verified after application. This keeps the policy independent of QCMAP's mode-dependent WAN rule ordering. Custom chains (`QUECDECK`/`QUECDECK6`) survive QCMAP's automatic iptables rebuilds. IPv6 access to the admin UI is blocked.
 
 The web server is bound to the firewall's lifecycle: lighttpd will not start unless the firewall is up, and a firewall restart cycles the web server with it. The admin UI is therefore never served without the LAN-only rules in place, and it comes back automatically after the firewall is restarted.
 
@@ -148,9 +155,10 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 **Web application:**
 - All CGI endpoints validate the `Origin` header against the current host, blocking cross-origin requests and functioning as CSRF protection
 - All state-changing endpoints are POST-only
-- Login attempts are rate-limited with a 1-second delay per attempt and a 15-minute lockout after 5 failures. All login events are written to the access log
+- Failed login attempts are delayed by 1 second and trigger a 15-minute lockout after 5 failures. Password verification waits at most 5 seconds for another check to finish. All login events are written to the access log
 - Session tokens are 64-character random strings stored in `0600` files inside a `0700` directory. Cookies are flagged `HttpOnly`, `Secure`, and `SameSite=Strict`. Session file writes are atomic (temp file plus rename), and the developer-unlock flag is kept in a separate per-session file to avoid write races
-- Passwords must be at least 8 characters and are validated before any credential check is performed
+- Passwords must be between 12 and 256 characters and are validated before any credential check is performed
+- Administrator password changes require the current administrator password. SSH key changes require both administrator and developer passwords. Root helpers use fixed operations and paths, reject symlinks, and replace credential files atomically
 - Path traversal is rejected in depth: lighttpd is pinned to reject encoded slashes (`%2f`) and dot-segments rather than silently decode them, and the auth layer independently rejects both literal `..` and percent-encoded (`%2e`) sequences before any access-exemption check
 
 **Data at rest:** private web runtime state follows one invariant: it is owned by
@@ -164,6 +172,11 @@ through its normal DAC override. Password hashes are stored `root:root 600`,
 unreadable from the web tier: login checks pass the password over stdin to a
 small root helper via sudo, which answers with an exit code. Pre-start scripts
 and anything running with elevated access are `chmod 700 root:root`.
+SSH public keys are stored in `/usrdata/root/.ssh/authorized_keys` as
+`root:root 600`. The parent directory is `root:root 700`.
+SSH accepts public keys only. PAM, passwords, and keyboard-interactive login are
+disabled. The service remains inactive until it is enabled and at least one
+valid key exists. Removing the final key also stops it.
 
 For permission troubleshooting, start services through systemd so their unit
 mask applies, and inspect the loaded setting and runtime tree as root:
@@ -183,17 +196,21 @@ unless its access model is deliberately changed.
 QuecDeck is intended for an owner-operated modem on a trusted local network. Its controls reduce exposure and contain ordinary web requests, but they do not turn the modem into a multi-user or hostile-tenant system.
 
 - **First-time setup assumes a trusted LAN.** Until the administrator password is created, the setup wizard is intentionally available without credentials. The first client that completes setup becomes the administrator, so initial configuration should be performed immediately and without untrusted clients on the LAN.
-- **Developer unlock is an application-level gate.** It protects destructive features from an ordinary administrator session. Session and developer-unlock files are necessarily written by `www-data`, so arbitrary code execution as that account could forge both and reach developer AT commands. The ttyd console still presents the system login prompt, but the developer gate should not be treated as containment of a compromised web process.
-- **Login throttling protects the HTTP login path.** Password hashes remain root-only, but a process already executing as `www-data` can invoke the narrowly allowed password-check helper directly and bypass the CGI's per-IP lockout. Use strong, unique admin and developer passwords rather than relying on throttling alone.
+- **Developer unlock is an application-level gate.** It protects destructive features from an ordinary administrator session. Session and developer-unlock files are necessarily written by `www-data`, so arbitrary code execution as that account could forge both and reach developer AT commands. The developer gate should not be treated as containment of a compromised web process.
+- **Login throttling protects the HTTP login path.** Password hashes remain root-only, but a process already executing as `www-data` can invoke the narrowly allowed password-check helper directly and bypass the CGI's per-IP lockout. The root helper serializes checks per credential, delays failures by 1 second, and abandons a contended check after 5 seconds. This is bounded pacing rather than a lockout, so use strong, unique admin and developer passwords rather than relying on throttling alone.
+- **Root-side password pacing trades availability for brute-force resistance.** Failed checks share a per-credential lock across all clients because the root helper cannot trust client identity supplied by the web tier. Sustained failed verification can therefore make legitimate login or security requests return temporarily unavailable. The 5-second lock timeout bounds each request and this availability cost is accepted deliberately.
+- **Clean installation boundary.** Releases from before the current installation generation are not updated in place. Rerun the installer to uninstall QuecDeck and Entware, reboot, then install the current release. This prevents legacy login, SSH, web console, and package configuration from being carried into the new installation.
+- **A compromised web process can forge application sessions.** Session state belongs to `www-data`, so code already running as that account can mint an administrator session or hijack a live one. An administrator session may view public-key metadata, and changing the web password requires the current administrator password. Adding or removing root SSH keys requires both administrator and developer passwords at a root-owned helper. Root-side checks are serialized and paced, which limits a web-tier compromise from becoming persistent root access without additional credentials.
+- **The sudo allowlist is a fixed security budget.** Root helpers use fixed operations and paths and revalidate security-sensitive credentials themselves. New sudo entries require an explicit review of what fully compromised `www-data` could do with them.
 - **Release checksums detect corruption and inconsistent files, not publisher compromise.** The release and its checksum manifest are obtained from the same GitHub repository. Verification does not protect against compromise of the publishing account or replacement of both artifacts by an authorized publisher.
 - **HTTPS uses a self-signed device certificate.** Encryption is provided after the certificate is accepted, but users should verify and trust the expected certificate rather than dismissing an unexpected certificate change, especially on an untrusted LAN.
 - **Local root, ADB, and physical access are trusted.** An attacker with any of these already controls the device and is outside the security boundary QuecDeck attempts to enforce.
 
 ### Frontend
-The UI is built with [Bootstrap 5](https://getbootstrap.com/) and [Alpine.js](https://alpinejs.dev/) for reactive data binding. All assets carry a content-hashed cache-busting query parameter, maintained by a pre-commit git hook, which lets them be served with a one-year `immutable` cache lifetime: a content change produces a new URL, so updates apply immediately while repeat visits skip revalidation. HTML pages are always sent `no-store` so they never pin stale asset URLs.
+The UI is built with [Bootstrap 5](https://getbootstrap.com/) and [Alpine.js](https://alpinejs.dev/) for reactive data binding. All assets carry a content-hashed cache-busting query parameter, maintained by a pre-commit Git hook, which lets them be served with a one-year `immutable` cache lifetime: a content change produces a new URL, so updates apply immediately while repeat visits skip revalidation. HTML pages are always sent `no-store` so they never pin stale asset URLs.
 
 ### Installation and Updates
-QuecDeck is installed via `quecdeck.sh`, which handles Entware/opkg setup, firewall deployment, service registration, and root/console password configuration. On first access, a setup wizard guides the user through setting the admin and (optionally) developer passwords.
+QuecDeck is installed via `quecdeck.sh`, which handles Entware/opkg setup, firewall deployment, and service registration. On first access, a setup wizard guides the user through setting the admin and developer passwords. Both are required.
 
 Updates can be triggered from the Update page in the web UI or by re-running `quecdeck.sh`. Both paths use the same update installer (`update_quecdeck.sh`), which:
 
@@ -201,10 +218,10 @@ Updates can be triggered from the Update page in the web UI or by re-running `qu
 2. Stages the new version alongside the running install, then moves the old install aside and swaps the new one in atomically.
 3. Verifies that lighttpd owns the configured LAN HTTPS listener and that the authentication CGI executes correctly after the swap, rolling back to the previous version automatically if either check fails.
 
-Watchcat and Scheduled Restart settings are preserved between releases that use the current monitoring implementation. When upgrading from an earlier implementation, its monitoring settings and history are removed and the new services start unconfigured. If a compatible update fails after the switch begins, rollback restores monitoring boot enablement and attempts to restart both workers.
+Watchcat and Scheduled Restart settings are preserved between releases that use the current monitoring implementation. If a compatible update fails after the switch begins, rollback restores monitoring boot enablement and attempts to restart both workers. A future release that changes the monitoring state contract starts those features unconfigured instead of loading incompatible state.
 
 ### Optional Components
-- **SSH:** OpenSSH server. A pre-start script (`update_sshd_ip.sh`) updates `sshd_config`'s `ListenAddress` to the current LAN IP before the daemon starts, restricting it to LAN only. Requires a root password to be set first.
+- **SSH:** OpenSSH server with public-key-only root login. A pre-start script (`update_sshd_ip.sh`) updates `sshd_config`'s `ListenAddress` to the current LAN IP before the daemon starts, restricting it to LAN only. Install SSH from the installer menu, then manage its enabled state, port, and public keys on the Security page. SSH changes require both administrator and developer passwords. The service does not start without a key or while disabled. QuecDeck does not replace firmware login or password commands.
 
 ## Development
 
@@ -217,7 +234,7 @@ The repository includes the following host and device checks. The applicable hos
 
 The pre-commit hook is enabled with `git config core.hooksPath .githooks`.
 
-**Shell performance rule** (measured on the device's single Cortex-A7): bash builtins are used only for small or fixed-size data. Bulk transformation of unbounded AT responses uses `tr`/`awk`, never bash pattern replacement, whose cost scales with size times match count (48 seconds on a 44 KB SMS list, versus 20 ms for `tr`). The atcli repo's CI guards the daemon path with a large-response test.
+**Shell performance rule** (measured on the device's single Cortex-A7): Bash builtins are used only for small or fixed-size data. Bulk transformation of unbounded AT responses uses `tr`/`awk`, never Bash pattern replacement, whose cost scales with size times match count (48 seconds on a 44 KB SMS list, versus 20 ms for `tr`). The atcli repo's CI guards the daemon path with a large-response test.
 
 ## Credits
 
@@ -232,5 +249,4 @@ QuecDeck is based on [quectel-rgmii-toolkit](https://github.com/iamromulan/quect
 ### Projects
 
 - [Entware/opkg](https://github.com/Entware/Entware) - package manager
-- [TTYd](https://github.com/tsl0922/ttyd) - browser-based terminal
 - [atcli_rust](https://github.com/1alessandro1/atcli_rust) by [1alessandro1](https://github.com/1alessandro1) - AT command CLI, forked by [megakerw](https://github.com/megakerw/atcli_rust)

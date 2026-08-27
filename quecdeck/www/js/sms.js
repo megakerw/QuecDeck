@@ -104,7 +104,7 @@ function fetchSMS() {
       }
 
       if (textModeHeaders > 0) {
-        console.error(`get_sms returned ${textModeHeaders} text-mode entries; this page decodes PDUs. Reload after an update.`);
+        console.error(`get_sms returned ${textModeHeaders} text-mode entries. This page decodes PDUs. Reload after an update.`);
       }
 
       // Bucket by the sender's concatenation reference. A part with no UDH

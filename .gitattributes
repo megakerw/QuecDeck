@@ -19,10 +19,10 @@
 quecdeck/www/cgi-bin/* text eol=lf
 quecdeck/quecdeckpasswd text eol=lf
 quecdeck/quecdeckdevpasswd text eol=lf
+quecdeck/install-generation text eol=lf
+quecdeck/monitoring-generation text eol=lf
 quecdeck/console/.profile text eol=lf
-quecdeck/console/ttyd.bash text eol=lf
-quecdeck/console/menu/start_menu.sh text eol=lf
-# No pattern above matches this file, so autocrlf rewrites it CRLF on a
+# No pattern above matches this file, so core.autocrlf rewrites it CRLF on a
 # Windows checkout: ci-checks.sh compares it against a freshly generated LF
 # listing, so every line differs at once, and sha256sum -c rejects CRLF lines.
 quecdeck/checksums.sha256 text eol=lf

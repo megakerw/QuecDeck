@@ -358,7 +358,7 @@ Delete both from the device afterwards.
 `_ATCLI` override, so it needs no device. That stub returns 65 because the
 test says so, which does not prove atcli returns it: only the atcli repo's own
 `host-test-atclid.sh` closes that gap. `js/sms.js` cannot be executed on the
-dev machine (no JS runtime). Verify it by diff review.
+dev machine (no JS runtime). Verify it by reviewing the Git Diff.
 
 **Real delete wall time, measured 2026-08-05.** One occupied slot was deleted
 deliberately to settle it (store went 128 used to 127, confirmed):

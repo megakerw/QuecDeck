@@ -20,6 +20,25 @@ _version_lt 1.9.9  2.0.0;  t_rc "version_lt major"              "0" "$?"
 _version_lt 2.0.0  1.9.9;  t_rc "version_lt greater major"      "1" "$?"
 _version_lt 1.2.3  1.10.0; t_rc "version_lt minor numeric"      "0" "$?"
 
+eval "$(extract_fn update_quecdeck.sh _install_generation_supported)"
+_generation_fixture=$(mktemp -d)
+QUECDECK_DIR="$_generation_fixture/fresh"
+INSTALL_GENERATION=2
+_install_generation_supported
+t_rc "install generation allows a fresh tree" "0" "$?"
+mkdir -p "$QUECDECK_DIR/www"
+_install_generation_supported
+t_rc "install generation rejects an unmarked installation" "1" "$?"
+printf '%s\n' 1 > "$QUECDECK_DIR/install-generation"
+_install_generation_supported
+t_rc "install generation rejects an older marker" "1" "$?"
+printf '%s\n' 2 > "$QUECDECK_DIR/install-generation"
+_install_generation_supported
+t_rc "install generation accepts the current marker" "0" "$?"
+rm -rf "$_generation_fixture"
+unset -f _install_generation_supported
+unset _generation_fixture
+
 eval "$(extract_fn update_quecdeck.sh _normalize_bind)"
 # Both the live-IP-patched and repo (0.0.0.0) conf must normalize identically,
 # or a mere IP patch forces an unnecessary lighttpd restart during updates.

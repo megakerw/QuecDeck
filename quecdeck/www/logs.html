@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=25a918f1" />
-    <link rel="stylesheet" href="css/styles.css?v=25a918f1" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=25a918f1"></script>
-    <script src="js/utils.js?v=25a918f1"></script>
-    <script src="js/alpinejs.min.js?v=25a918f1" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
+    <script src="js/utils.js?v=d126c03f"></script>
+    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="logsPage()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=25a918f1"></script>
+        <script src="js/nav.js?v=d126c03f"></script>
 
         <div class="alert alert-warning small mt-4 mb-0" x-show="clockUnsynced" x-cloak>
           Device clock appears unsynced. Timestamps below may be inaccurate until it syncs (e.g. once connected to a cell tower).
@@ -144,7 +144,7 @@
                   </tbody>
                 </table>
               </div>
-              <div x-show="atcmdEvents.length > 0" class="small mt-auto pt-2" x-cloak>Last 100 lines. A few lines per daemon start are normal, including "serving"; timeouts and drops appear here. Cleared on reboot.</div>
+              <div x-show="atcmdEvents.length > 0" class="small mt-auto pt-2" x-cloak>Last 100 lines. A few lines per daemon start are normal, including "serving". Timeouts and drops appear here. Cleared on reboot.</div>
             </div>
           </div>
 
@@ -153,6 +153,6 @@
       </div>
     </main>
 
-    <script src="js/logs.js?v=25a918f1"></script>
+    <script src="js/logs.js?v=d126c03f"></script>
   </body>
 </html>

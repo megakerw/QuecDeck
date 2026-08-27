@@ -6,11 +6,11 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=25a918f1" />
-    <link rel="stylesheet" href="css/styles.css?v=25a918f1" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=25a918f1"></script>
-    <script src="js/alpinejs.min.js?v=25a918f1" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
+    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
   </head>
   <body>
     <main>
@@ -31,9 +31,24 @@
                     Your session expired due to inactivity. Please sign in again.
                   </div>
                 </template>
+                <template x-if="passwordChanged">
+                  <div class="alert alert-success" role="status">
+                    Password changed. Sign in with your new password.
+                  </div>
+                </template>
+                <template x-if="sessionWarning">
+                  <div class="alert alert-warning" role="alert">
+                    Complete sign-out of every previous session could not be confirmed.
+                  </div>
+                </template>
                 <template x-if="locked">
                   <div class="alert alert-danger" role="alert">
                     Too many failed attempts. Try again in 15 minutes.
+                  </div>
+                </template>
+                <template x-if="unavailable">
+                  <div class="alert alert-danger" role="alert">
+                    Password verification is temporarily unavailable. Please try again.
                   </div>
                 </template>
                 <template x-if="error">
@@ -66,7 +81,7 @@
       </div>
     </main>
 
-    <script src="js/capslock.js?v=25a918f1"></script>
-    <script src="js/login.js?v=25a918f1"></script>
+    <script src="js/capslock.js?v=d126c03f"></script>
+    <script src="js/login.js?v=d126c03f"></script>
   </body>
 </html>

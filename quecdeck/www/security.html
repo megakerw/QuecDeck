@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <style>html,body{background:#0f1117}</style>
+    <title>QuecDeck</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
+    <link rel="icon" href="favicon.ico" />
+    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
+    <script src="js/utils.js?v=d126c03f"></script>
+    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="securitySettings()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=d126c03f"></script>
+
+        <div class="row gy-3 mt-4 mb-4 align-items-stretch">
+          <div class="col-lg-5">
+          <div class="panel-section h-100">
+            <div class="panel-title">Administrator Password</div>
+            <p class="text-muted small">Changing the password signs out active web sessions. QuecDeck warns if complete invalidation cannot be confirmed.</p>
+            <div class="row gy-3">
+              <div class="col-12">
+                <label class="form-label" for="current-password">Current password</label>
+                <input id="current-password" type="password" class="form-control" maxlength="256" autocomplete="current-password" x-model="currentPassword">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="new-password">New password</label>
+                <input id="new-password" type="password" class="form-control" minlength="12" maxlength="256" autocomplete="new-password" x-model="newPassword">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="confirm-password">Confirm new password</label>
+                <input id="confirm-password" type="password" class="form-control" minlength="12" maxlength="256" autocomplete="new-password" x-model="confirmPassword">
+              </div>
+            </div>
+            <div class="mt-3 d-flex justify-content-end">
+              <button type="button" class="btn btn-primary" @click="changePassword()" :disabled="busy">Change password</button>
+            </div>
+          </div>
+          </div>
+
+          <div class="col-lg-7">
+          <div class="panel-section h-100">
+            <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+              <div>
+                <div class="panel-title mb-1">SSH Access</div>
+                <p class="text-muted small mb-0">Public keys are the only SSH login method. Changing the port or disabling SSH ends active SSH sessions.</p>
+              </div>
+              <span class="badge" :class="sshActive ? 'text-bg-success' : 'text-bg-secondary'" x-text="sshLabel"></span>
+            </div>
+
+            <template x-if="loaded && !sshInstalled">
+              <div class="alert alert-secondary mb-0">Install SSH from the QuecDeck installer menu, then return here to add the first public key.</div>
+            </template>
+
+            <template x-if="sshInstalled">
+              <div>
+                <div class="alert alert-warning" x-show="!developerConfigured">
+                  Run <code>/usrdata/root/bin/quecdeckdevpasswd</code> through ADB or root SSH before managing SSH access.
+                </div>
+                <div class="alert alert-danger" x-show="!rootHomeReady">
+                  The root home permissions are incompatible. Re-run the QuecDeck installer before managing SSH keys.
+                </div>
+                <div class="alert alert-danger" x-show="!sshSettingsReady" x-cloak>
+                  The SSH port or enabled state could not be read. Check <code>/opt/etc/ssh/sshd_config</code> and the QuecDeck enable marker.
+                </div>
+
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                  <div>
+                    <div class="fw-semibold mb-1" style="font-size: 0.875rem">Enable SSH server</div>
+                    <div class="text-muted small" x-show="sshEnabled" x-cloak>Accepts key-only SSH connections on the configured port.</div>
+                    <div class="text-muted small" x-show="!sshEnabled" x-cloak>Currently disabled.</div>
+                  </div>
+                  <div class="form-check form-switch ms-3">
+                    <input class="form-check-input" type="checkbox" role="switch" x-model="sshEnabled" :disabled="busy || !developerConfigured || !rootHomeReady || !sshSettingsReady">
+                  </div>
+                </div>
+                <fieldset :disabled="!sshEnabled" :style="!sshEnabled ? 'opacity: 0.45' : ''">
+                  <div class="mb-3">
+                    <label class="form-label" for="ssh-port">SSH port</label>
+                    <input id="ssh-port" type="number" class="form-control" min="22" max="65535" inputmode="numeric" x-model.number="sshPort">
+                    <div class="form-text">Use the standard port 22 or a port from 1024 to 65535.</div>
+                  </div>
+
+                <div class="list-group list-group-flush mb-3">
+                  <template x-for="key in keys" :key="key.fingerprint">
+                    <div class="list-group-item px-0 d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                      <div class="min-w-0">
+                        <div class="fw-semibold" x-text="key.comment || key.type"></div>
+                        <div class="font-monospace small text-muted text-break" x-text="key.fingerprint"></div>
+                        <div class="small text-muted" x-show="key.comment" x-text="key.type"></div>
+                      </div>
+                      <button type="button" class="btn btn-outline-danger btn-sm" @click="confirmRemove(key)" :disabled="busy || !developerConfigured || !rootHomeReady || !sshEnabled || sshSettingsChanged">Remove</button>
+                    </div>
+                  </template>
+                  <div class="list-group-item px-0 text-muted" x-show="loaded && keys.length === 0">No supported SSH public keys are available.</div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="form-label" for="public-key-file">Upload a public key</label>
+                  <input id="public-key-file" type="file" class="form-control" accept=".pub,text/plain" @change="readKeyFile($event)" :disabled="!developerConfigured">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label" for="public-key">Public key</label>
+                  <textarea id="public-key" class="form-control font-monospace" rows="3" maxlength="8192" placeholder="ssh-ed25519 AAAA... laptop" x-model="publicKey" :disabled="!developerConfigured"></textarea>
+                  <div class="form-text">One Ed25519, ECDSA, or RSA public key. Private keys and key options are rejected.</div>
+                </div>
+                </fieldset>
+                <div class="mb-3">
+                  <label class="form-label" for="key-current-password">Current administrator password</label>
+                  <input id="key-current-password" type="password" class="form-control" maxlength="256" autocomplete="current-password" x-model="keyPassword" :disabled="!developerConfigured">
+                </div>
+                <div class="mb-3">
+                  <label class="form-label" for="key-developer-password">Developer access password</label>
+                  <input id="key-developer-password" type="password" class="form-control" maxlength="256" autocomplete="current-password" x-model="keyDeveloperPassword" :disabled="!developerConfigured">
+                  <div class="form-text">SSH settings and keys grant root access, so both passwords are required. Run <code>/usrdata/root/bin/quecdeckdevpasswd</code> through ADB or root SSH to set developer access if needed.</div>
+                </div>
+                <div class="d-flex justify-content-end gap-2 flex-wrap">
+                  <button type="button" class="btn btn-outline-primary" @click="saveSshSettings()" :disabled="busy || !developerConfigured || !rootHomeReady || !sshSettingsReady">Save SSH settings</button>
+                  <button type="button" class="btn btn-primary" @click="addKey()" :disabled="busy || !developerConfigured || !rootHomeReady || !sshEnabled || sshSettingsChanged || keys.length >= 5">Add public key</button>
+                </div>
+              </div>
+            </template>
+          </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script src="js/capslock.js?v=d126c03f"></script>
+    <script src="js/security.js?v=d126c03f"></script>
+  </body>
+</html>

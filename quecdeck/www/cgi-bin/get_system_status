@@ -32,7 +32,7 @@ fi
 # tests/device/device-test-system-status.sh.
 # The list is fixed (not filtered by what is installed) so the line count is
 # constant and the guard below can trust it.
-SERVICE_UNITS="ttyd atcmd-daemon connection-logger firewall sshd watchcat scheduled_restart"
+SERVICE_UNITS="atcmd-daemon connection-logger firewall sshd watchcat scheduled_restart"
 unit_states=()
 while IFS= read -r state; do
     unit_states+=("$state")
@@ -60,7 +60,6 @@ for unit in $SERVICE_UNITS; do
     i=$((i+1))
 done
 
-[ "$state_ttyd" = "active" ] && ttyd_running="true" || ttyd_running="false"
 [ "$state_atcmd_daemon" = "active" ] && atcmd_running="true" || atcmd_running="false"
 [ "$state_connection_logger" = "active" ] && connlog_running="true" || connlog_running="false"
 watchcat_running="false"
@@ -105,5 +104,5 @@ quecdeck_version=""
 quecdeck_version=${quecdeck_version%$'\r'}
 [ -z "$quecdeck_version" ] && quecdeck_version="unknown"
 
-printf '{"watchcat":{"running":%s,"config":%s},"scheduled_restart":{"running":%s,"config":%s},"ttyd":{"running":%s},"atcmd_daemon":{"running":%s},"connection_logger":{"running":%s},"firewall":%s,"sshd":%s,"upnp":%s,"lan_ip":%s,"quecdeck_version":"%s"}\n' \
-    "$watchcat_running" "$watchcat_config" "$scheduled_running" "$sched_config" "$ttyd_running" "$atcmd_running" "$connlog_running" "$firewall_json" "$sshd_json" "$upnp_enabled" "$lan_ip_json" "$quecdeck_version"
+printf '{"watchcat":{"running":%s,"config":%s},"scheduled_restart":{"running":%s,"config":%s},"atcmd_daemon":{"running":%s},"connection_logger":{"running":%s},"firewall":%s,"sshd":%s,"upnp":%s,"lan_ip":%s,"quecdeck_version":"%s"}\n' \
+    "$watchcat_running" "$watchcat_config" "$scheduled_running" "$sched_config" "$atcmd_running" "$connlog_running" "$firewall_json" "$sshd_json" "$upnp_enabled" "$lan_ip_json" "$quecdeck_version"

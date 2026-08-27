@@ -7,8 +7,13 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin
 GITUSER="megakerw"
 REPONAME="QuecDeck"
 GITTREE="main"
+# Default offered by the development-branch install option. Any ref may be
+# typed at the prompt.
+DEVTREE="development"
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 QUECDECK_DIR="/usrdata/quecdeck"
+INSTALL_GENERATION=2
+ENTWARE_BOOTSTRAP_MARKER="/usrdata/opt/.quecdeck-install-generation"
 # Function to remount file system as read-write
 remount_rw() {
     mount -o remount,rw /
@@ -17,22 +22,6 @@ remount_rw() {
 # Function to remount file system as read-only
 remount_ro() {
     mount -o remount,ro /
-}
-
-# Point root's home at the writable /usrdata/root and its shell at bash in the
-# Entware passwd. Matches root's line by field, so it works regardless of the
-# firmware's current root home/shell values. The previous exact-string sed
-# ('1s|/home/root:/bin/sh|...') silently did nothing on any firmware whose root
-# entry differed, quietly breaking the console menu and password tools. Warns on
-# failure so a missed patch is visible instead of silent.
-patch_root_passwd() {
-    [ -f /opt/etc/passwd ] || { echo -e "\e[1;31mWarning: /opt/etc/passwd not found. Cannot set root home.\e[0m"; return 1; }
-    sed -i 's|^\(root:[^:]*:[^:]*:[^:]*:[^:]*:\)[^:]*:[^:]*$|\1/usrdata/root:/bin/bash|' /opt/etc/passwd
-    if ! grep -q '^root:[^:]*:[^:]*:[^:]*:[^:]*:/usrdata/root:/bin/bash$' /opt/etc/passwd; then
-        echo -e "\e[1;31mWarning: could not repoint root's home to /usrdata/root in /opt/etc/passwd.\e[0m"
-        echo -e "\e[1;31mThe console menu and password tools may not work until root's entry is corrected.\e[0m"
-        return 1
-    fi
 }
 
 # Root-owned runtime dir for everything root writes. /run is root-owned and not
@@ -102,6 +91,7 @@ root_home_profile() {
 
 # Check for existing Entware/opkg installation, install if not installed
 ensure_entware_installed() {
+    require_supported_install_state || return 1
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     if ! remount_rw; then
         echo -e "\e[1;31mCannot remount / read-write. Entware setup aborted.\e[0m"
@@ -119,7 +109,7 @@ ensure_entware_installed() {
         _ent=/run/quecdeck/installentware.sh
         rm -f "$_ent"
         wget --timeout=30 --tries=2 -O "$_ent" "$GITROOT/installentware.sh"
-        echo "dd23b6fe0ce202c9f9e3c88750775940ffcc901915a247495b19a17100e4cc87  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
+        echo "9500fb69717d37639b0e15b14a6db1bb839e61963e56d78370725aee0c2ea9da  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
         echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
         # Run with the staging dir as CWD, matching the previous "cd /tmp" so a
         # relative write by the installer still lands in scratch tmpfs.
@@ -133,45 +123,25 @@ ensure_entware_installed() {
         rm -f "$_ent"
         cd /
     else
-        if [ "$(readlink /bin/login)" != "/opt/bin/login" ]; then
-            [ ! -f /bin/login.shadow ] && cp /bin/login /bin/login.shadow
-            [ ! -f /usr/bin/passwd.shadow ] && [ -f /usr/bin/passwd ] && cp /usr/bin/passwd /usr/bin/passwd.shadow
-            opkg update && opkg install shadow-login shadow-passwd shadow-useradd
-            if [ "$?" -ne 0 ]; then
-                echo -e "\e[1;31mPackage installation failed. Please check your internet connection and try again.\e[0m"
-                exit 1
-            fi
-
-            # Replace the login and passwd binaries and set home for root to a writable directory
-            rm -f /opt/etc/shadow
-            rm -f /opt/etc/passwd
-            cp /etc/shadow /opt/etc/
-            cp /etc/passwd /opt/etc
-            root_home_profile || exit 1
-            patch_root_passwd
-            rm -f /bin/login /usr/bin/passwd
-            ln -sf /opt/bin/login /bin
-            ln -sf /opt/bin/passwd /usr/bin/
-            ln -sf /opt/bin/useradd /usr/bin/
-            echo -e "\e[1;31mPlease set the root password.\e[0m"
-            /opt/bin/passwd
-        fi
-
-        if [ ! -f "/usrdata/root/.profile" ]; then
-            opkg update && opkg install shadow-useradd
-            root_home_profile || exit 1
-            patch_root_passwd
-        fi
-    fi
-    if [ ! -f "/opt/sbin/useradd" ]; then
-        echo "useradd does not exist. Installing shadow-useradd..."
-        opkg install shadow-useradd
+        root_home_profile || exit 1
     fi
 
     if ! opkg list-installed 2>/dev/null | grep -q '^wget-ssl '; then
         echo "Installing wget-ssl and ca-certificates..."
         opkg update
         opkg install wget-ssl ca-certificates || { echo -e "\e[1;31mFailed to install wget-ssl.\e[0m"; exit 1; }
+    fi
+
+    # Mark only Entware installations that this generation successfully
+    # prepared. If the later QuecDeck download is interrupted, the installer
+    # can retry without admitting an arbitrary pre-existing Entware tree.
+    _marker_tmp="${ENTWARE_BOOTSTRAP_MARKER}.tmp.$$"
+    if ! printf '%s\n' "$INSTALL_GENERATION" > "$_marker_tmp" ||
+       ! chown root:root "$_marker_tmp" || ! chmod 600 "$_marker_tmp" ||
+       ! mv -f "$_marker_tmp" "$ENTWARE_BOOTSTRAP_MARKER"; then
+        rm -f "$_marker_tmp"
+        echo -e "\e[1;31mFailed to record the QuecDeck Entware installation state.\e[0m"
+        exit 1
     fi
 
     remount_ro
@@ -229,7 +199,7 @@ uninstall_entware() {
             result_login="RESTORED"
         else
             result_login="WARNING"
-            echo -e "\e[1;31mWARNING: /bin/login.shadow not found. Could not restore login binary. Console login may be broken.\e[0m"
+            echo -e "\e[1;31mWARNING: /bin/login.shadow not found. Could not restore login binary. Firmware login may be broken.\e[0m"
         fi
     fi
 
@@ -288,11 +258,11 @@ uninstall_entware() {
 set_quecdeck_passwd(){
     root_home_dirs || return 1
     /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
-    echo "f92fb393702895662aa1fd7a04f6644e79ee899d67accac691cd87e81c2d6f4f  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
+    echo "b391e981ec659d0b5f11e0087ff06f96b136cd62cc0c6fb853b0cea409d4e9cb  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
     chmod 755 /usrdata/root/bin/quecdeckpasswd
     /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
-    echo "d93fe9ab90dd7c640d7843de08ed8037f456a0d3c9475ee012dfa0630b4e70c9  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
+    echo "66847d83b95de8802b1ae0481dc4e805d4ed2daaf6a18683a320a01423834313  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
     chmod 755 /usrdata/root/bin/quecdeckdevpasswd
     if [ -f /opt/etc/.htpasswd ]; then
@@ -306,11 +276,6 @@ set_adminpasswd() {
 
 set_devpasswd() {
     /usrdata/root/bin/quecdeckdevpasswd
-}
-
-set_root_passwd() {
-    echo -e "\e[1;31mPlease set the root/console password.\e[0m"
-    /opt/bin/passwd
 }
 
 # Downloads, verifies, and runs update_quecdeck.sh from the given release root.
@@ -366,8 +331,27 @@ fetch_and_run_installer() {
 }
 
 # Function to install/update QuecDeck from latest GitHub release
+supported_install_state() {
+    if [ -d "$QUECDECK_DIR/www" ]; then
+        grep -qx "$INSTALL_GENERATION" "$QUECDECK_DIR/install-generation" 2>/dev/null || return 1
+        return 0
+    fi
+    if [ ! -x /opt/bin/opkg ] && [ ! -e /bin/opkg ]; then
+        return 0
+    fi
+    grep -qx "$INSTALL_GENERATION" "$ENTWARE_BOOTSTRAP_MARKER" 2>/dev/null || return 1
+}
+
+require_supported_install_state() {
+    supported_install_state && return 0
+    echo -e "\e[1;31mThis release requires a clean installation.\e[0m"
+    echo "Uninstall QuecDeck and Entware from this menu, reboot, then run the installer again."
+    return 1
+}
+
 install_quecdeck_release() {
     echo -e "\e[1;32mInstalling latest QuecDeck release...\e[0m"
+    require_supported_install_state || return 1
     ensure_entware_installed
     set_quecdeck_passwd || return 1
 
@@ -399,13 +383,49 @@ install_quecdeck_release() {
     fi
 }
 
-# Function to install/update QuecDeck from main branch
-install_quecdeck() {
-    echo -e "\e[1;32mInstalling/updating QuecDeck...\e[0m"
+# Accept only refs that cannot escape the repository path in a fetch URL.
+# Git allows more than this, but the extra forms are not worth the risk here.
+valid_git_ref() { # valid_git_ref <ref>
+    case "$1" in
+        ''|-*|/*|*/|*//*|*..*) return 1 ;;
+        *[!A-Za-z0-9._/-]*) return 1 ;;
+    esac
+    [ "${#1}" -le 100 ]
+}
+
+# Function to install/update QuecDeck from a development branch. Same integrity
+# chain as the other install paths: the manifest, the installer, and the archive
+# are all fetched from the chosen ref and verified against each other. That
+# proves the download was not tampered with in transit, not that the branch is
+# fit to run. Unreleased code, so the prompt says so.
+install_quecdeck_dev() {
+    echo -e "\e[1;33mDevelopment branches carry untested changes and can leave the modem\e[0m"
+    echo -e "\e[1;33mwithout a working web interface. Use a release for normal installs.\e[0m"
+    read -p "Branch or ref to install [$DEVTREE]: " _dev_ref
+    [ -n "$_dev_ref" ] || _dev_ref="$DEVTREE"
+    if ! valid_git_ref "$_dev_ref"; then
+        echo -e "\e[1;31mInvalid branch name. Use letters, digits, dot, dash, underscore, or slash.\e[0m"
+        return 1
+    fi
+    read -p "Install QuecDeck from '$_dev_ref'? (y/n): " _dev_confirm
+    case "$_dev_confirm" in
+        y|Y) ;;
+        *) echo -e "\e[1;33mCancelled.\e[0m"; return ;;
+    esac
+    install_quecdeck "$_dev_ref"
+}
+
+# Function to install/update QuecDeck from a branch. The ref is passed through
+# to update_quecdeck.sh rather than left to its default, so the manifest, the
+# installer, and the release archive all come from the same branch.
+install_quecdeck() { # install_quecdeck [ref]
+    _ref="${1:-$GITTREE}"
+    echo -e "\e[1;32mInstalling/updating QuecDeck from $_ref...\e[0m"
+    require_supported_install_state || return 1
     ensure_entware_installed
     set_quecdeck_passwd || return 1
 
-    fetch_and_run_installer "$GITROOT" "" || return 1
+    fetch_and_run_installer "https://raw.githubusercontent.com/$GITUSER/$REPONAME/$_ref" "$_ref" || return 1
 
     if [ ! -f /opt/etc/.htpasswd ]; then
         lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
@@ -506,6 +526,7 @@ uninstall_quecdeck_components() {
         local label="$1" val="$2"
         case "$val" in
             REMOVED) echo -e "  $(printf '%-22s' "$label") \e[1;32m$val\e[0m" ;;
+            RESTORED) echo -e "  $(printf '%-22s' "$label") \e[1;32m$val\e[0m" ;;
             "REBOOT REQUIRED") echo -e "  $(printf '%-22s' "$label") \e[1;33m$val\e[0m" ;;
             SKIPPED) echo -e "  $(printf '%-22s' "$label") $val" ;;
             *)       echo -e "  $(printf '%-22s' "$label") \e[1;31m$val\e[0m" ;;
@@ -516,8 +537,9 @@ uninstall_quecdeck_components() {
     result_scheduled_restart="SKIPPED"
     result_atcmd="SKIPPED"
     result_connection_logger="SKIPPED"
+    result_sshd="SKIPPED"
+    result_auth_restore="SKIPPED"
     result_firewall="SKIPPED"
-    result_ttyd="SKIPPED"
     result_lighttpd="SKIPPED"
     result_files="SKIPPED"
     result_runtime_state="SKIPPED"
@@ -563,6 +585,18 @@ uninstall_quecdeck_components() {
     rm -f /lib/systemd/system/connection-logger.service
     rm -f /lib/systemd/system/multi-user.target.wants/connection-logger.service
 
+    # SSH is a QuecDeck-managed optional component. Remove it before the
+    # firewall so the SSH port cannot remain exposed after its LAN-only rule is gone.
+    if [ -f /lib/systemd/system/sshd.service ] || [ -x /opt/sbin/sshd ]; then
+        result_sshd="REMOVED"
+        systemctl stop sshd > /dev/null 2>&1
+        opkg remove openssh-server openssh-server-pam openssh-keygen > /dev/null 2>&1
+        cleanup_ssh_account
+        rm -rf /opt/etc/ssh
+        rm -f /lib/systemd/system/sshd.service
+        rm -f /lib/systemd/system/multi-user.target.wants/sshd.service
+    fi
+
     # Uninstall firewall
     # Ordinary service stops intentionally leave the policy in place. Remove
     # owned chains only here. The UI was already stopped before service teardown.
@@ -587,9 +621,8 @@ uninstall_quecdeck_components() {
     rm -f /lib/systemd/system/firewall.service
     rm -f /lib/systemd/system/multi-user.target.wants/firewall.service
 
-    # Uninstall ttyd
+    # Remove ttyd files left by releases that still shipped the web console.
     systemctl stop ttyd > /dev/null 2>&1
-    [ -f /lib/systemd/system/ttyd.service ] && result_ttyd="REMOVED"
     rm -f /lib/systemd/system/ttyd.service
     rm -f /lib/systemd/system/multi-user.target.wants/ttyd.service
     rm -f /bin/ttyd
@@ -628,9 +661,13 @@ uninstall_quecdeck_components() {
     rm -f /opt/etc/sudoers.d/www-data
     rm -f /opt/etc/.htpasswd
     rm -f /opt/etc/.htpasswd_dev
-    # Revert root home/shell patch applied during Entware setup
-    [ -f /opt/etc/passwd ] && sed -i '1s|/usrdata/root:/bin/bash|/home/root:/bin/sh|' /opt/etc/passwd
+    rm -f /opt/etc/.quecdeck-setup.lock
+    rm -f /opt/etc/.quecdeck-credentials.lock
+    rm -f /usrdata/root/.quecdeck-ssh-keys.lock
+    rm -f /usrdata/root/.ssh/authorized_keys
+    rmdir /usrdata/root/.ssh 2>/dev/null
     rm -f /usrdata/root/.profile
+    [ "$(readlink /bin/menu 2>/dev/null)" != /usrdata/root/bin/menu ] || rm -f /bin/menu
     rm -f /usrdata/root/bin/menu
     rm -f /usrdata/root/bin/atcli
     rm -f /usrdata/root/bin/quecdeckpasswd
@@ -656,6 +693,12 @@ uninstall_quecdeck_components() {
     # follow a symlink supplied as the final path component.
     rm -rf /tmp/quecdeck /run/quecdeck /run/quecdeck-web $_legacy
 
+    if restore_legacy_auth_commands; then
+        [ "$RESTORE_LEGACY_AUTH_CHANGED" = 1 ] && result_auth_restore="RESTORED"
+    else
+        result_auth_restore="FAILED"
+    fi
+
     remount_ro
     trap - EXIT
 
@@ -666,8 +709,9 @@ uninstall_quecdeck_components() {
     _show_uninstall_result "Scheduled restart"  "$result_scheduled_restart"
     _show_uninstall_result "atcmd daemon"       "$result_atcmd"
     _show_uninstall_result "Connection logger"  "$result_connection_logger"
+    _show_uninstall_result "SSH"                "$result_sshd"
+    _show_uninstall_result "Firmware login"     "$result_auth_restore"
     _show_uninstall_result "Firewall"           "$result_firewall"
-    _show_uninstall_result "ttyd"               "$result_ttyd"
     _show_uninstall_result "Lighttpd"           "$result_lighttpd"
     _show_uninstall_result "QuecDeck files"     "$result_files"
     _show_uninstall_result "Runtime state"       "$result_runtime_state"
@@ -683,8 +727,145 @@ uninstall_quecdeck_components() {
 }
 
 
+prepare_ssh_accounts() {
+    # Entware initially links passwd to the firmware file. OpenSSH needs its
+    # own privilege-separation account, so detach only this file before adding
+    # the account. Root keeps the firmware home, shell, and password state.
+    if [ -L /opt/etc/passwd ] || [ ! -s /opt/etc/passwd ]; then
+        rm -f /opt/etc/passwd
+        cp /etc/passwd /opt/etc/passwd || return 1
+    fi
+    [ -f /opt/etc/passwd ] && [ ! -L /opt/etc/passwd ] || return 1
+    grep -q '^root:' /opt/etc/passwd || return 1
+    _firmware_root=$(grep '^root:' /etc/passwd 2>/dev/null)
+    [ -n "$_firmware_root" ] || return 1
+    _passwd_tmp=$(mktemp /opt/etc/passwd.quecdeck.XXXXXX) || return 1
+    if ! {
+        printf '%s\n' "$_firmware_root"
+        grep -v '^root:' /opt/etc/passwd
+    } > "$_passwd_tmp" ||
+       ! chown root:root "$_passwd_tmp" || ! chmod 644 "$_passwd_tmp" ||
+       ! mv -f "$_passwd_tmp" /opt/etc/passwd; then
+        rm -f "$_passwd_tmp"
+        return 1
+    fi
+    awk -F: '$3 == 106 && $1 != "sshd" {exit 1}' /opt/etc/passwd || {
+        echo -e "\e[1;31mUID 106 is already assigned. Cannot create the SSH service account.\e[0m"
+        return 1
+    }
+    grep -q '^sshd:x:106:' /opt/etc/passwd ||
+        printf '%s\n' 'sshd:x:106:65534:SSH privilege separation:/opt/var/empty:/bin/false' >> /opt/etc/passwd
+    chown root:root /opt/etc/passwd || return 1
+    chmod 644 /opt/etc/passwd || return 1
+    mkdir -p /opt/var/empty || return 1
+    chown root:root /opt/var/empty || return 1
+    chmod 755 /opt/var/empty
+}
+
+restore_legacy_auth_commands() {
+    RESTORE_LEGACY_AUTH_CHANGED=0
+    _restore_needed=0
+    [ "$(readlink /bin/login 2>/dev/null)" = /opt/bin/login ] && _restore_needed=1
+    [ "$(readlink /usr/bin/passwd 2>/dev/null)" = /opt/bin/passwd ] && _restore_needed=1
+    case "$(readlink /usr/bin/useradd 2>/dev/null)" in /opt/*) _restore_needed=1 ;; esac
+    [ "$_restore_needed" = 1 ] || return 0
+    RESTORE_LEGACY_AUTH_CHANGED=1
+
+    if [ "$(readlink /bin/login 2>/dev/null)" = /opt/bin/login ] &&
+       { [ ! -f /bin/login.shadow ] || [ -L /bin/login.shadow ] || [ ! -x /bin/login.shadow ] || [ "$(stat -c %u /bin/login.shadow 2>/dev/null)" != 0 ]; }; then
+        echo -e "\e[1;31mCannot restore the firmware login command because its backup is missing.\e[0m"
+        return 1
+    fi
+    if [ "$(readlink /usr/bin/passwd 2>/dev/null)" = /opt/bin/passwd ] &&
+       [ -e /usr/bin/passwd.shadow ] &&
+       { [ ! -f /usr/bin/passwd.shadow ] || [ -L /usr/bin/passwd.shadow ] || [ ! -x /usr/bin/passwd.shadow ] || [ "$(stat -c %u /usr/bin/passwd.shadow 2>/dev/null)" != 0 ]; }; then
+        echo -e "\e[1;31mCannot restore the firmware password command because its backup is missing.\e[0m"
+        return 1
+    fi
+
+    (
+        trap 'remount_ro' EXIT
+        remount_rw || exit 1
+        _restore_rc=0
+        if [ "$(readlink /bin/login 2>/dev/null)" = /opt/bin/login ]; then
+            ln /bin/login.shadow "/bin/login.restore.$$" &&
+                mv -f "/bin/login.restore.$$" /bin/login || _restore_rc=1
+            rm -f "/bin/login.restore.$$"
+        fi
+    if [ "$(readlink /usr/bin/passwd 2>/dev/null)" = /opt/bin/passwd ]; then
+        if [ -e /usr/bin/passwd.shadow ]; then
+            ln /usr/bin/passwd.shadow "/usr/bin/passwd.restore.$$" &&
+                mv -f "/usr/bin/passwd.restore.$$" /usr/bin/passwd || _restore_rc=1
+        else
+            rm -f /usr/bin/passwd || _restore_rc=1
+        fi
+        rm -f "/usr/bin/passwd.restore.$$"
+        fi
+        case "$(readlink /usr/bin/useradd 2>/dev/null)" in /opt/*) rm -f /usr/bin/useradd ;; esac
+        remount_ro || _restore_rc=1
+        trap - EXIT
+        exit "$_restore_rc"
+    )
+}
+
+cleanup_ssh_account() {
+    [ -f /opt/etc/passwd ] && [ ! -L /opt/etc/passwd ] || return 0
+    sed -i '/^sshd:x:106:/d' /opt/etc/passwd
+    rmdir /opt/var/empty 2>/dev/null || true
+}
+
+configure_key_only_ssh() (
+    _ssh_config_tmp="/opt/etc/ssh/sshd_config.quecdeck.$$"
+    umask 077
+    cat > "$_ssh_config_tmp" <<'EOF'
+Port 22
+HostKey /opt/etc/ssh/ssh_host_ed25519_key
+HostKey /opt/etc/ssh/ssh_host_rsa_key
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+AuthorizedKeysFile /usrdata/root/.ssh/authorized_keys
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+AllowUsers root
+MaxAuthTries 3
+StrictModes yes
+UseDNS no
+SetEnv PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin
+Subsystem sftp internal-sftp
+EOF
+    chown root:root "$_ssh_config_tmp" && chmod 600 "$_ssh_config_tmp" || {
+            rm -f "$_ssh_config_tmp"
+            return 1
+        }
+    /opt/sbin/sshd -t -f "$_ssh_config_tmp" || {
+        rm -f "$_ssh_config_tmp"
+        return 1
+    }
+    _effective=$(/opt/sbin/sshd -T -f "$_ssh_config_tmp" 2>/dev/null) || {
+        rm -f "$_ssh_config_tmp"
+        return 1
+    }
+    { ! printf '%s\n' "$_effective" | grep -q '^usepam ' ||
+      printf '%s\n' "$_effective" | grep -qx 'usepam no'; } &&
+    printf '%s\n' "$_effective" | grep -qx 'passwordauthentication no' &&
+    printf '%s\n' "$_effective" | grep -qx 'kbdinteractiveauthentication no' &&
+    printf '%s\n' "$_effective" | grep -qx 'permitrootlogin without-password' &&
+    printf '%s\n' "$_effective" | grep -qx 'authenticationmethods publickey' &&
+    printf '%s\n' "$_effective" | grep -qx 'authorizedkeysfile /usrdata/root/.ssh/authorized_keys' &&
+    printf '%s\n' "$_effective" | grep -qx 'allowusers root' || {
+            rm -f "$_ssh_config_tmp"
+            return 1
+        }
+    mv -f "$_ssh_config_tmp" /opt/etc/ssh/sshd_config || return 1
+    printf 'enabled\n' > /opt/etc/ssh/quecdeck_enabled &&
+        chown root:root /opt/etc/ssh/quecdeck_enabled &&
+        chmod 600 /opt/etc/ssh/quecdeck_enabled
+)
+
 sshd_service() {
-    if [ -f /opt/sbin/sshd ] && [ -L /lib/systemd/system/multi-user.target.wants/sshd.service ]; then
+    if [ -f /opt/sbin/sshd ] && [ -f /lib/systemd/system/sshd.service ]; then
         echo -e "\e[1;32msshd is currently: INSTALLED\e[0m"
     else
         echo -e "\e[1;31msshd is currently: NOT INSTALLED\e[0m"
@@ -697,35 +878,7 @@ sshd_service() {
 
     case $sshd_choice in
         1)
-            ensure_entware_installed
-
-# Refuse to install if root has no password. The SSH daemon with PermitRootLogin enabled
-            # and no password set would leave the device wide open on the LAN.
-            root_pw=$(grep "^root:" /opt/etc/shadow 2>/dev/null | cut -d: -f2)
-            case "$root_pw" in
-                ""|"!"|"*"|"!!")
-                    echo -e "\e[1;31mNo root password is set.\e[0m"
-                    echo -e "\e[1;31msshd requires a root password before it can be installed safely.\e[0m"
-                    read -p "Set a root password now? (y/n): " set_pw_now
-                    case "$set_pw_now" in
-                        y|Y)
-                            /opt/bin/passwd
-                            # Re-check after passwd
-                            root_pw=$(grep "^root:" /opt/etc/shadow 2>/dev/null | cut -d: -f2)
-                            case "$root_pw" in
-                                ""|"!"|"*"|"!!")
-                                    echo -e "\e[1;31mPassword not set. Aborting sshd installation.\e[0m"
-                                    return
-                                    ;;
-                            esac
-                            ;;
-                        *)
-                            echo -e "\e[1;31mAborting sshd installation.\e[0m"
-                            return
-                            ;;
-                    esac
-                    ;;
-            esac
+            ensure_entware_installed || return
 
             # Warn if firewall is not active (port 22 will be exposed on WAN)
             if ! systemctl is-active firewall >/dev/null 2>&1; then
@@ -739,7 +892,21 @@ sshd_service() {
             fi
 
             echo -e "\e[1;32mInstalling sshd...\e[0m"
-            opkg install --force-maintainer openssh-server-pam || { echo -e "\e[1;31mFailed to install openssh-server-pam.\e[0m"; return; }
+            prepare_ssh_accounts || { echo -e "\e[1;31mFailed to prepare the SSH service account.\e[0m"; return; }
+
+            # Stage release files before replacing a working SSH package. A
+            # download or integrity failure must leave the existing daemon
+            # untouched.
+            ensure_rundir
+            _stage=/run/quecdeck
+            /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
+            echo "e78c9f52701e13fd37a5deb3cf3dd668b95d2e38ed5b2b65f464f52926cc893a  $_stage/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f $_stage/sshd.service; return; }
+            echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
+            /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
+            echo "dc10b79739f1d788cfcdfc805e4f84fe1f7da5df29aacc3e3f7f76f0cc1eef19  $_stage/update_sshd_ip.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_sshd_ip.sh.\e[0m"; rm -f $_stage/update_sshd_ip.sh; return; }
+            echo -e "\e[1;32mIntegrity verified: update_sshd_ip.sh\e[0m"
+
+            opkg install --force-maintainer openssh-server openssh-keygen || { echo -e "\e[1;31mFailed to install OpenSSH.\e[0m"; return; }
 
             # Remove opkg init.d scripts so rc.unslung doesn't manage it
             for script in /opt/etc/init.d/*sshd*; do
@@ -748,33 +915,13 @@ sshd_service() {
 
             /opt/bin/ssh-keygen -A
 
-            sed -i "s/^.*UsePAM .*/UsePAM yes/" /opt/etc/ssh/sshd_config
-            grep -q "^UsePAM" /opt/etc/ssh/sshd_config || echo "UsePAM yes" >> /opt/etc/ssh/sshd_config
-            sed -i "s/^.*PermitRootLogin .*/PermitRootLogin yes/" /opt/etc/ssh/sshd_config
-            grep -q "^PermitRootLogin" /opt/etc/ssh/sshd_config || echo "PermitRootLogin yes" >> /opt/etc/ssh/sshd_config
-            sed -i "s/^.*MaxAuthTries .*/MaxAuthTries 3/" /opt/etc/ssh/sshd_config
-            grep -q "^MaxAuthTries" /opt/etc/ssh/sshd_config || echo "MaxAuthTries 3" >> /opt/etc/ssh/sshd_config
+            configure_key_only_ssh || { echo -e "\e[1;31mFailed to enforce key-only SSH authentication.\e[0m"; return; }
 
-            # Ensure the sshd privilege-separation user exists
-            grep -q "sshd:x:106" /opt/etc/passwd || \
-                echo "sshd:x:106:65534:Linux User,,,:/opt/run/sshd:/bin/nologin" >> /opt/etc/passwd
-
-            # Download and install service file and IP update script.
-            # Staged in root-owned /run/quecdeck, not the web subtree,
-            # where www-data could both plant a symlink for wget to
-            # follow and swap the file between sha256sum and cp, installing an
-            # unverified unit as root.
-            ensure_rundir
-            _stage=/run/quecdeck
-            /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
-            echo "e332efa5fefe99c0d7f63619834646896fa03a131f0c383ca9bed061a6aa4bab  $_stage/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f $_stage/sshd.service; return; }
-            echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
-            /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
-            echo "dc10b79739f1d788cfcdfc805e4f84fe1f7da5df29aacc3e3f7f76f0cc1eef19  $_stage/update_sshd_ip.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_sshd_ip.sh.\e[0m"; rm -f $_stage/update_sshd_ip.sh; return; }
-            echo -e "\e[1;32mIntegrity verified: update_sshd_ip.sh\e[0m"
             trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
             remount_rw
             cp -f $_stage/sshd.service /lib/systemd/system/sshd.service
+            chown root:root /lib/systemd/system/sshd.service
+            chmod 644 /lib/systemd/system/sshd.service
             rm -f $_stage/sshd.service
             cp -f $_stage/update_sshd_ip.sh /opt/etc/ssh/update_sshd_ip.sh
             chown root:root /opt/etc/ssh/update_sshd_ip.sh
@@ -784,16 +931,19 @@ sshd_service() {
             remount_ro
             trap - EXIT
             systemctl daemon-reload
-            # Apply the port-22 rule before starting sshd (firewall.sh keys it off
-            # the sshd.service file) so 22 is LAN-restricted first. Restart the
+            # Apply the configured SSH rule before starting sshd. Restart the
             # service, not firewall.sh directly, to stay fail-closed. This cycles
             # lighttpd via PartOf=, sshd unaffected.
-            # The sshd start is gated on the restart: without the port-22 rules,
+            # The sshd start is gated on the restart: without the SSH rules,
             # sshd would listen unrestricted (WAN included) while the UI is down.
             if systemctl restart firewall; then
-                systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start. Check 'systemctl status sshd' for details.\e[0m"; }
+                if /usrdata/quecdeck/script/ssh_keys.sh ready; then
+                    systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start. Check 'systemctl status sshd' for details.\e[0m"; }
+                else
+                    echo -e "\e[1;33mSSH is installed but inactive. Add a public key on the Security page to start it.\e[0m"
+                fi
             else
-                echo -e "\e[1;31mWARNING: firewall failed to restart. Sshd was not started, so port 22 never listens unprotected.\e[0m"
+                echo -e "\e[1;31mWARNING: firewall failed to restart. Sshd was not started, so its port never listens unprotected.\e[0m"
                 echo -e "\e[1;31mCheck 'systemctl status firewall lighttpd', then 'systemctl start sshd' once the firewall is active.\e[0m"
             fi
             echo ""
@@ -802,7 +952,8 @@ sshd_service() {
         2)
             echo -e "\e[1;32mUninstalling sshd...\e[0m"
             systemctl stop sshd 2>/dev/null
-            opkg remove openssh-server-pam >/dev/null 2>&1
+            opkg remove openssh-server openssh-server-pam openssh-keygen >/dev/null 2>&1
+            cleanup_ssh_account
             rm -rf /opt/etc/ssh
             trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
             remount_rw
@@ -811,8 +962,7 @@ sshd_service() {
             remount_ro
             trap - EXIT
             systemctl daemon-reload
-            # Drop the port-22 rule (sshd.service removed above, so firewall.sh
-            # rebuilds without it). Restart the service, not firewall.sh directly,
+            # Drop the SSH rule. Restart the service, not firewall.sh directly,
             # to stay fail-closed. This also cycles lighttpd through PartOf=.
             systemctl restart firewall || echo -e "\e[1;31mWARNING: firewall failed to restart. The web UI may be down. Check 'systemctl status firewall lighttpd'.\e[0m"
             echo ""
@@ -874,13 +1024,13 @@ while true; do
     echo "Select an option:"
     echo -e "\e[93m1) Install/Update QuecDeck (latest release)\e[0m"
     echo -e "\e[93m2) Install/Update QuecDeck (main branch)\e[0m"
-    echo -e "\e[93m3) SSH server (install/uninstall)\e[0m"
-    echo -e "\e[91m4) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m"
-    echo -e "\e[91m5) Uninstall QuecDeck\e[0m"
-    echo -e "\e[91m6) Uninstall Entware/OPKG\e[0m"
-    echo -e "\e[95m7) Set QuecDeck (admin) password\e[0m"
-    echo -e "\e[95m8) Set Developer access (devadmin) password\e[0m"
-    echo -e "\e[94m9) Set Console/ttyd (root) password\e[0m"
+    echo -e "\e[93m3) Install/Update QuecDeck (development branch)\e[0m"
+    echo -e "\e[93m4) SSH server (install/uninstall)\e[0m"
+    echo -e "\e[91m5) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m"
+    echo -e "\e[91m6) Uninstall QuecDeck\e[0m"
+    echo -e "\e[91m7) Uninstall Entware/OPKG\e[0m"
+    echo -e "\e[95m8) Set QuecDeck (admin) password\e[0m"
+    echo -e "\e[95m9) Set Developer access (devadmin) password\e[0m"
     echo -e "\e[91m10) Reboot\e[0m"
     echo -e "\e[93m11) Exit\e[0m"
     read -p "Enter your choice: " choice
@@ -892,14 +1042,19 @@ while true; do
             read -p "Press Enter to return to menu..."
             ;;
         2)
-            install_quecdeck
+            install_quecdeck main
             echo ""
             read -p "Press Enter to return to menu..."
             ;;
         3)
-            sshd_service
+            install_quecdeck_dev
+            echo ""
+            read -p "Press Enter to return to menu..."
             ;;
         4)
+            sshd_service
+            ;;
+        5)
             echo -e "\e[1;31mThis will disable Watchcat and Scheduled Restart.\e[0m"
             read -p "Are you sure? (y/n): " confirm
             case "$confirm" in
@@ -907,14 +1062,14 @@ while true; do
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        5)
+        6)
             uninstall_quecdeck_components
             ;;
-        6)
+        7)
             if [ -d "$QUECDECK_DIR/www" ]; then
                 echo -e "\e[1;31mWARNING: QuecDeck is still installed.\e[0m"
                 echo -e "\e[1;31mUninstalling Entware will break QuecDeck and all its services.\e[0m"
-                echo -e "\e[1;31mRun option 5 to uninstall QuecDeck first.\e[0m"
+                echo -e "\e[1;31mRun option 6 to uninstall QuecDeck first.\e[0m"
                 read -p "Continue anyway? (y/n): " quecdeck_warn_confirm
                 case "$quecdeck_warn_confirm" in
                     y|Y) ;;
@@ -932,24 +1087,17 @@ while true; do
                     ;;
             esac
             ;;
-        7)
+        8)
             read -p "Set QuecDeck (admin) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_adminpasswd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        8)
+        9)
             read -p "Set Developer access (devadmin) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_devpasswd ;;
-                *) echo -e "\e[1;33mCancelled.\e[0m" ;;
-            esac
-            ;;
-        9)
-            read -p "Set Console/ttyd (root) password? (y/n): " pw_confirm
-            case "$pw_confirm" in
-                y|Y) set_root_passwd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;

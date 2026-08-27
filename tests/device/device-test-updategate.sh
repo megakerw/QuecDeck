@@ -187,8 +187,6 @@ elif grep -q "Verifying the new web stack" "$LOG"; then
 else
     bad "no health-check marker in log"
 fi
-grep -q "ttyd installed." "$LOG" && ok "ttyd install + local-manifest verify passed" || note "ttyd not reinstalled cleanly (see log)"
-grep -qi "download checksums for ttyd" "$LOG" && bad "ttyd fetched the manifest from the network (should use the local copy)" || ok "no network manifest fetch for ttyd"
 [ "$(cat /usrdata/quecdeck/version 2>/dev/null)" = "${CURRENT#v}" ] && ok "version file is ${CURRENT#v}" || bad "version file wrong"
 [ -s /usrdata/quecdeck/checksums.sha256 ] && ok "manifest retained on disk" || bad "manifest missing after install"
 cmp -s "$PLOG" "$LOG" && ok "persisted log updated for this run" || bad "persisted log stale"

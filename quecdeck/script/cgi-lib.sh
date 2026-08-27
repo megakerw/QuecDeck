@@ -359,16 +359,16 @@ bf_locked() {
     [ -n "$lockout_until" ] && [ "$lockout_until" -gt "$(date +%s)" ]
 }
 
-# Records a failed attempt for <ip> under <dir>, after a 1s delay. Sets
-# BF_FAIL_RESULT to "locked" if this attempt triggered the lockout, otherwise
-# "failed". The caller must hold bf_lock for <dir>.
+# Records a failed attempt for <ip> under <dir>. Password pacing is enforced by
+# the root-side verifier. Sets BF_FAIL_RESULT to "locked" if this attempt
+# triggered the lockout, otherwise "failed". The caller must hold bf_lock for
+# <dir>.
 # Usage: bf_fail <dir> <ip>, then read BF_FAIL_RESULT
 bf_fail() {
     local f count now
     BF_FAIL_RESULT=locked
     _bf_lock_held "$1" "$2" || return 1
     f=$(_bf_file "$1" "$2")
-    sleep 1
     count=$(grep '^count=' "$f" 2>/dev/null | cut -d= -f2)
     count=$(( ${count:-0} + 1 ))
     now=$(date +%s)

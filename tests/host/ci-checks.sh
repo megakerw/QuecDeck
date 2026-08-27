@@ -22,8 +22,8 @@ hook_list() { # hook_list <ARRAY_NAME>
 
 # ------------------------------------------------------- shell syntax ------
 for f in quecdeck.sh update_quecdeck.sh installentware.sh \
-         quecdeck/script/*.sh quecdeck/console/ttyd.bash \
-         quecdeck/console/menu/*.sh tools/*.sh tests/host/*.sh \
+         quecdeck/script/*.sh \
+         tools/*.sh tests/host/*.sh \
          tests/host/suites/*.sh \
          tests/host/guards/*.sh tests/host/integration/*.sh \
          tests/device/*.sh quecdeck/www/cgi-bin/*; do

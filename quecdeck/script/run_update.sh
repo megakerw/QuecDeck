@@ -5,6 +5,11 @@
 
 TAG="${1:-}"
 umask 022
+case "$TAG" in
+    --clear-status) [ "$#" -eq 1 ] || exit 1 ;;
+    --fetch)        [ "$#" -eq 2 ] || exit 1 ;;
+    *)              [ "$#" -eq 1 ] || { echo "Usage: run_update.sh <tag>"; exit 1; } ;;
+esac
 # Root-owned runtime state lives in /run/quecdeck, never in /tmp: www-data
 # cannot plant a name there, so these writes need no symlink ceremony.
 # Rule and rationale: tests/host/guards/runtime-path.sh.

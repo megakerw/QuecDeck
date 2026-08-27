@@ -46,10 +46,37 @@ fi
 
 # TCP ports to allow on LAN IP and block everywhere else
 PORTS=("80" "443")
-# Open port 22 only when sshd is installed
-# Check the service file on rootfs rather than the binary in /opt,
-# since /opt may not be mounted yet when the firewall starts.
-[ -f /lib/systemd/system/sshd.service ] && PORTS=("22" "${PORTS[@]}")
+SSH_HELPER=/usrdata/quecdeck/script/ssh_keys.sh
+
+# ssh_keys.sh owns sshd_config and the root-owned enable marker, and its status
+# action reports both already validated. Asking it keeps the rule here from
+# drifting from the port sshd actually binds. Both scripts are root-only, and
+# status never calls back into this one. A missing helper means SSH is not
+# managed here. Any other failure refuses to change the existing policy.
+ssh_enabled=0
+ssh_port=""
+if [ -x "$SSH_HELPER" ]; then
+    ssh_status=$("$SSH_HELPER" status 2>/dev/null)
+    ssh_status_rc=$?
+    case "$ssh_status_rc" in
+        0) IFS=$'\t' read -r ssh_enabled ssh_port <<< "$ssh_status" ;;
+        3) ;;
+        *)
+            echo "firewall: SSH state is unreadable. Refusing to apply the policy." >&2
+            exit 1
+            ;;
+    esac
+fi
+if [ "$ssh_enabled" = 1 ]; then
+    # The policy bounds live in ssh_keys.sh. Assert only the shape before the
+    # value reaches iptables.
+    case "$ssh_port" in ''|*[!0-9]*)
+        echo "firewall: SSH reported a non-numeric port. Refusing to apply the policy." >&2
+        exit 1
+        ;;
+    esac
+    PORTS=("$ssh_port" "${PORTS[@]}")
+fi
 
 # The firmware units ordered before firewall.service report started before their
 # asynchronous IPPT, Ethernet, dnsmasq, and iptables work has settled. During

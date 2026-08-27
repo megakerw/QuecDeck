@@ -42,6 +42,28 @@ t "firewall protects every admin TCP port through helper" "yes" \
   "$(grep -q '^[[:space:]]*add_v4_lan_only tcp "\$port"$' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "firewall helper updates rule-count check" "yes" \
   "$(grep -q 'expected=\$((expected + 2))' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall derives SSH exposure from the ssh_keys status action" "yes" \
+  "$(grep -q '^SSH_HELPER=/usrdata/quecdeck/script/ssh_keys.sh$' quecdeck/script/firewall.sh && grep -q '"\$SSH_HELPER" status' quecdeck/script/firewall.sh && grep -q 'PORTS=("\$ssh_port"' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall keeps one SSH port parser" "yes" \
+  "$(! grep -qE '^(SSHD_CONFIG|SSHD_ENABLED)=' quecdeck/script/firewall.sh && ! grep -q '^valid_ssh_port()' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall refuses policy on an unreadable SSH state" "yes" \
+  "$(grep -q 'SSH state is unreadable' quecdeck/script/firewall.sh && grep -q 'SSH reported a non-numeric port' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall treats an uninstalled SSH as no exposure" "yes" \
+  "$(grep -q '^        3) ;;$' quecdeck/script/firewall.sh && echo yes || echo no)"
+eval "$(extract_fn quecdeck/script/ssh_keys.sh valid_ssh_port)"
+eval "$(extract_fn quecdeck/script/ssh_keys.sh configured_port)"
+_ssh_port_fixture=$(mktemp)
+SSHD_CONFIG=$_ssh_port_fixture
+printf 'Port 2222\n' > "$_ssh_port_fixture"
+t "ssh_keys accepts one configured unprivileged SSH port" "2222" "$(configured_port)"
+printf 'Port 22\n' > "$_ssh_port_fixture"
+t "ssh_keys accepts the standard SSH port" "22" "$(configured_port)"
+printf 'Port 80\n' > "$_ssh_port_fixture"
+t "ssh_keys rejects other privileged ports" "1" "$(configured_port >/dev/null 2>&1; echo $?)"
+printf 'Port 2222\nPort 2223\n' > "$_ssh_port_fixture"
+t "ssh_keys rejects ambiguous SSH ports" "1" "$(configured_port >/dev/null 2>&1; echo $?)"
+rm -f "$_ssh_port_fixture"
+unset _ssh_port_fixture SSHD_CONFIG
 t "firewall leaves DHCP outside its policy" "yes" \
   "$(! grep -q -- '--dport 67' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "firewall never deletes jumps until absent" "yes" \
@@ -57,13 +79,13 @@ t "firewall verifies exactly one final jump" "yes" \
 t "firewall converges both family jumps" "2" \
   "$(grep -c '^converge_input_jump .* QUECDECK' quecdeck/script/firewall.sh)"
 t "firewall uninstall explicitly removes owned rules" "yes" \
-  "$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh | grep -q 'firewall.sh --remove' && echo yes || echo no)"
+  "$(sed -n '/# Uninstall firewall/,/# Remove ttyd files/p' quecdeck.sh | grep -q 'firewall.sh --remove' && echo yes || echo no)"
 t "firewall helper declares remove API" "yes" \
   "$(grep -qx 'QUECDECK_FIREWALL_REMOVE_API=1' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "uninstall checks remove API before invoking helper" "yes" \
-  "$(_fw_block=$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh); _check_line=$(printf '%s\n' "$_fw_block" | grep -n 'QUECDECK_FIREWALL_REMOVE_API=1' | cut -d: -f1); _run_line=$(printf '%s\n' "$_fw_block" | grep -n 'firewall.sh --remove' | cut -d: -f1); [ -n "$_check_line" ] && [ "$_check_line" -lt "$_run_line" ] && echo yes || echo no)"
+  "$(_fw_block=$(sed -n '/# Uninstall firewall/,/# Remove ttyd files/p' quecdeck.sh); _check_line=$(printf '%s\n' "$_fw_block" | grep -n 'QUECDECK_FIREWALL_REMOVE_API=1' | cut -d: -f1); _run_line=$(printf '%s\n' "$_fw_block" | grep -n 'firewall.sh --remove' | cut -d: -f1); [ -n "$_check_line" ] && [ "$_check_line" -lt "$_run_line" ] && echo yes || echo no)"
 t "unsupported firewall helper requires reboot" "yes" \
-  "$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh | grep -q 'result_firewall="REBOOT REQUIRED"' && grep -q 'REBOOT REQUIRED: restart the modem' quecdeck.sh && echo yes || echo no)"
+  "$(sed -n '/# Uninstall firewall/,/# Remove ttyd files/p' quecdeck.sh | grep -q 'result_firewall="REBOOT REQUIRED"' && grep -q 'REBOOT REQUIRED: restart the modem' quecdeck.sh && echo yes || echo no)"
 t "uninstall stops UI before firewall cleanup" "yes" \
   "$(_uninstall=$(sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh); _stop_line=$(printf '%s\n' "$_uninstall" | grep -n 'systemctl stop lighttpd' | head -1 | cut -d: -f1); _remove_line=$(printf '%s\n' "$_uninstall" | grep -n 'firewall.sh --remove' | cut -d: -f1); [ -n "$_stop_line" ] && [ "$_stop_line" -lt "$_remove_line" ] && echo yes || echo no)"
 t "normal firewall service stop does not remove policy" "yes" \

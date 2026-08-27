@@ -51,8 +51,14 @@ fi
 
 # Check credentials via the root sudo helper (htpasswd is not www-data readable)
 role=""
-if validate_password admin "$username" "$password"; then
+validate_password admin "$username" "$password"
+password_rc=$?
+if [ "$password_rc" = 0 ]; then
     role="admin"
+elif [ "$password_rc" = 75 ]; then
+    bf_unlock
+    json_error "unavailable"
+    exit 0
 fi
 
 if [ -z "$role" ]; then

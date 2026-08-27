@@ -1,8 +1,30 @@
 #!/bin/sh
 
+PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 CONFIG_FILE="/etc/data/mobileap_cfg.xml"
 LIGHTTPD_CONF="/usrdata/quecdeck/lighttpd.conf"
 QUECDECK_DIR="/usrdata/quecdeck"
+
+# Credential reset protection depends on www-data being unable to remove the
+# root-owned htpasswd files. Refuse to start the web tier if the Entware config
+# directory is a symlink, is not root-owned, or is writable by group or other.
+secure_entware_config_dir() { # secure_entware_config_dir [path]
+    _etc_dir=${1:-/opt/etc}
+    [ -d "$_etc_dir" ] && [ ! -L "$_etc_dir" ] || return 1
+    [ "$(stat -c %u "$_etc_dir" 2>/dev/null)" = 0 ] || return 1
+    _etc_mode=$(stat -c %a "$_etc_dir" 2>/dev/null)
+    case "$_etc_mode" in ''|*[!0-7]*) return 1 ;; esac
+    [ $((0$_etc_mode & 022)) -eq 0 ]
+}
+
+if ! command -v stat >/dev/null 2>&1; then
+    echo "FATAL: stat is unavailable, so /opt/etc permissions cannot be verified." >&2
+    exit 1
+fi
+if ! secure_entware_config_dir; then
+    echo "FATAL: /opt/etc must be a root-owned directory without group or other write access." >&2
+    exit 1
+fi
 
 LAN_IP=""
 if [ -f "$CONFIG_FILE" ]; then

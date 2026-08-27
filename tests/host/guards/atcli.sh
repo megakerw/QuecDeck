@@ -1,6 +1,6 @@
 # Shared definitions for the two atcli guards: .githooks/pre-commit and
 # tests/host/ci-checks.sh. Only the pattern and file scope live here. The
-# iteration deliberately does not: the hook reads the git index (what is being
+# iteration deliberately does not: the hook reads the Git index (what is being
 # committed), ci-checks reads the working tree, and collapsing that difference
 # would let the hook pass on unstaged content.
 #
@@ -8,8 +8,8 @@
 # path here may contain spaces.
 
 # Runtime code must reach the modem through at-lib.sh, never the binary. Catches
-# the path (any /atcli), the console symlink, and the $_ATCLI variable, but not
-# $_ATCLI_SOCK or the atcli.sock path.
+# the path (any /atcli), the root helper symlink, and the $_ATCLI variable, but
+# not $_ATCLI_SOCK or the atcli.sock path.
 ATCLI_INVOKE_RE='(/atcli|\$[{]?_ATCLI[}]?)([^A-Za-z0-9._/-]|$)'
 
 # Scoped to runtime code, so the daemon-launch unit, docs, and dev tools are not

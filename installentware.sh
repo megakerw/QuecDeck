@@ -140,20 +140,6 @@ echo -e '\033[32mInfo: Congratulations!\033[0m'
 echo -e '\033[32mInfo: If there are no errors above then Entware was successfully initialized.\033[0m'
 echo -e '\033[32mInfo: Add /opt/bin & /opt/sbin to $PATH variable\033[0m'
 ln -sf /opt/bin/opkg /bin
-echo -e '\033[32mInfo: Patching Quectel Login Binary\033[0m'
-[ ! -f /bin/login.shadow ] && cp /bin/login /bin/login.shadow
-[ ! -f /usr/bin/passwd.shadow ] && [ -f /usr/bin/passwd ] && cp /usr/bin/passwd /usr/bin/passwd.shadow
-opkg update && opkg install shadow-login shadow-passwd shadow-useradd
-if [ "$?" -ne 0 ]; then
-    echo -e "\e[1;31mPackage installation failed. Please check your internet connection and try again.\e[0m"
-    exit 1
-fi
-
-# Replace the login and passwd binaries and set home for root to a writable directory
-rm -f /opt/etc/shadow
-rm -f /opt/etc/passwd
-cp /etc/shadow /opt/etc/
-cp /etc/passwd /opt/etc
 ROOT_HOME_HARDENED=/usrdata/root/.quecdeck-home-hardened
 mkdir -p /usrdata/root || exit 1
 chown root:root /usrdata/root && chmod 700 /usrdata/root || exit 1
@@ -187,10 +173,3 @@ printf '%s\n' '# Set PATH for all shells' \
     > /usrdata/root/.profile
 chown root:root /usrdata/root/.profile
 chmod 644 /usrdata/root/.profile
-sed -i '1s|/home/root:/bin/sh|/usrdata/root:/bin/bash|' /opt/etc/passwd
-rm -f /bin/login /usr/bin/passwd
-ln -sf /opt/bin/login /bin
-ln -sf /opt/bin/passwd /usr/bin/
-ln -sf /opt/bin/useradd /usr/bin/
-echo -e "\e[1;31mPlease set the root password.\e[0m"
-/opt/bin/passwd

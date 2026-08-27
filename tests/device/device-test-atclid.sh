@@ -91,11 +91,11 @@ if [ "$binary_meta" = "root:root 755" ]; then
 else
     bad "binary is root-owned and executable" "is ${binary_meta:-missing}, expected root:root 755"
 fi
-console_target=$(readlink /usrdata/root/bin/atcli 2>/dev/null)
-if [ "$console_target" = "$_ATCLI" ]; then
-    ok "root console symlink uses the deployed binary"
+root_link_target=$(readlink /usrdata/root/bin/atcli 2>/dev/null)
+if [ "$root_link_target" = "$_ATCLI" ]; then
+    ok "root shell symlink uses the deployed binary"
 else
-    bad "root console symlink uses the deployed binary" "target: ${console_target:-missing}"
+    bad "root shell symlink uses the deployed binary" "target: ${root_link_target:-missing}"
 fi
 # Which libc, for the record: a static glibc build carries its NSS and locale
 # tables, and 'GNU C Library' with them. Not an assertion - a glibc build is
@@ -422,7 +422,7 @@ if [ "$ec_rc" -eq 0 ]; then
 elif [ -n "$ec_out" ]; then
     ok "an unterminated reply exits non-zero with its bytes on stdout (rc=$ec_rc)"
 else
-    # Status is right, bytes were dropped: the developer console is the caller
+    # Status is right, bytes were dropped: the developer AT terminal is the caller
     # that breaks, since AT+CLAC's partial reply is all there is.
     bad "an unterminated reply keeps its bytes" "rc=$ec_rc but stdout was empty"
 fi

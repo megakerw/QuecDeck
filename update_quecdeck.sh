@@ -15,13 +15,14 @@ SERVICE_NAME="install_quecdeck"
 LOG_FILE="/run/quecdeck/install.log"
 STATUS_FILE="/run/quecdeck/update.status"
 QUECDECK_DIR="/usrdata/quecdeck"
+INSTALL_GENERATION=2
 umask 022
 # Do not search the legacy root bin until harden_root_home has quarantined it.
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin
 
 # All root-owned runtime state lives here. Root-owned and not world-writable,
 # so www-data can read the log but cannot plant a name for root to follow.
-# Reachable both from run_update.sh (which also creates it) and a console run.
+# Reachable both from run_update.sh and a direct interactive run.
 if [ -L /run/quecdeck ] || ! mkdir -p /run/quecdeck ||
    ! chown root:root /run/quecdeck || ! chmod 755 /run/quecdeck; then
     echo "FATAL: cannot create the root-owned update runtime directory." >&2
@@ -74,12 +75,6 @@ RELEASE_EXTRACT_DIR=/run/quecdeck/release-extract
 OLD_DIR="${QUECDECK_DIR}.old"
 _monitoring_rollback_supported=0
 export HOME=/usrdata/root
-
-# ttyd does not publish checksums, so pin the hash of the known-good binary.
-# To update: download the new release, sha256sum it, and update TTYD_HASH +
-# TTYD_VERSION. Used by stage_release (carry-forward) and install_ttyd.
-TTYD_VERSION="1.7.7"
-TTYD_HASH="8240c8438b68d3b10b0e1a4e7c914d70fca6a7606b516f40bf40adfa1044d801"
 
 remount_rw() {
     mount -o remount,rw /
@@ -228,19 +223,30 @@ _version_lt() {
     [ "$_vc" -lt "$_wc" ]
 }
 
+_install_generation_supported() {
+    [ ! -d "$QUECDECK_DIR/www" ] && return 0
+    grep -qx "$INSTALL_GENERATION" "$QUECDECK_DIR/install-generation" 2>/dev/null || return 1
+}
+
 preflight_check() {
+    if ! _install_generation_supported; then
+        echo "FATAL: This release requires a clean installation."
+        echo "Rerun the installer to uninstall QuecDeck and Entware, reboot, then install this release again."
+        return 1
+    fi
+
     echo "Running pre-flight checks..."
 
     # Downgrade guard: refuse a target release older than the installed one,
     # so a replayed old release URL can't reintroduce fixed vulnerabilities.
     # Equal versions pass (the UI's force-reinstall re-sends the installed
     # tag). Non-semver refs such as branch names and fresh installs skip the guard.
-    # Deliberate downgrades run from the console with QUECDECK_ALLOW_DOWNGRADE=1.
+    # Deliberate downgrades run interactively with QUECDECK_ALLOW_DOWNGRADE=1.
     _installed_ver=$(cat "$QUECDECK_DIR/version" 2>/dev/null | tr -d '[:space:]')
     _target_ver=$(_tag_to_version "$GITTREE")
     if printf '%s' "$_target_ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' &&        printf '%s' "$_installed_ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' &&        [ "${QUECDECK_ALLOW_DOWNGRADE:-0}" != "1" ] &&        _version_lt "$_target_ver" "$_installed_ver"; then
         echo "FATAL: Target version $_target_ver is older than the installed $_installed_ver."
-        echo "To downgrade deliberately, run from the console: QUECDECK_ALLOW_DOWNGRADE=1 update_quecdeck.sh v$_target_ver"
+        echo "To downgrade deliberately, rerun the installer from ADB or root SSH with QUECDECK_ALLOW_DOWNGRADE=1."
         return 1
     fi
 
@@ -391,14 +397,6 @@ stage_release() {
     cp -a "$_top_dir/quecdeck/." "$STAGE_DIR/"
     rm -rf "$RELEASE_EXTRACT_DIR"
 
-    # ttyd files are intentionally not part of the staged release:
-    # install_ttyd() fetches ttyd.bash/ttyd.service itself after the swap. One
-    # list drives both this removal and the verify loop's "expected missing"
-    # exemption. The console password tools are staged and verified like any
-    # other file. The swap_in_release function copies them to /usrdata/root/bin.
-    _STAGE_EXEMPT="console/ttyd.bash systemd/ttyd.service"
-    for _f in $_STAGE_EXEMPT; do rm -f "$STAGE_DIR/$_f"; done
-
     printf '%s\n' "$(_tag_to_version "$GITTREE")" > "$STAGE_DIR/version"
 
     echo "Release staged."
@@ -427,14 +425,13 @@ stage_release() {
     chown -R root:www-data $STAGE_DIR/www/cgi-bin
     chmod 755 $STAGE_DIR/www/cgi-bin $STAGE_DIR/www/cgi-bin/*
     chmod 755 $STAGE_DIR/script/*
-    chmod 755 $STAGE_DIR/console/menu/*
     chmod 755 $STAGE_DIR/console/.profile
     # Root-only scripts (sudo targets and root-unit payloads): root:root so
     # www-data can never replace a privileged entry point, 700 since nothing
     # unprivileged runs or reads them. The rest of script/ stays 755: www-data
     # sources or executes those.
-    for _s in lighttpd_prestart.sh write_htpasswd.sh \
-              check_password.sh run_update.sh firewall.sh; do
+    for _s in lighttpd_prestart.sh write_htpasswd.sh change_password.sh \
+              ssh_keys.sh check_password.sh run_update.sh firewall.sh; do
         chown root:root "$STAGE_DIR/script/$_s"
         chmod 700 "$STAGE_DIR/script/$_s"
     done
@@ -466,13 +463,7 @@ stage_release() {
         rel=${key#*quecdeck/}
         [ "$rel" = "$key" ] && continue
         file="$STAGE_DIR/$rel"
-        # The two post-swap ttyd fetches are deliberately absent from this
-        # staged tree. Every other manifest entry contributes to the reverse
-        # inventory check below.
-        case " $_STAGE_EXEMPT " in
-            *" $rel "*) ;;
-            *) printf '%s\n' "$rel" >> "$_manifest_inventory" ;;
-        esac
+        printf '%s\n' "$rel" >> "$_manifest_inventory"
         if [ -f "$file" ]; then
             actual=$(sha256sum "$file" | awk '{print $1}')
             if [ "$actual" != "$expected" ]; then
@@ -482,13 +473,8 @@ stage_release() {
                 verify_ok=0
             fi
         else
-            case " $_STAGE_EXEMPT " in
-                *" $rel "*) ;;
-                *)
-                    echo "ERROR: File missing from staged release: $file"
-                    verify_ok=0
-                    ;;
-            esac
+            echo "ERROR: File missing from staged release: $file"
+            verify_ok=0
         fi
     done < "$CHECKSUMS_FILE"
     # Checking manifest -> tree catches missing and modified files. Check the
@@ -509,10 +495,8 @@ stage_release() {
         verify_ok=0
     fi
     rm -f "$_manifest_inventory" "$_stage_inventory"
-    # The manifest is kept in the staged tree and stays with the install:
-    # install_ttyd verifies its post-swap fetches against it (no second
-    # network fetch that could skew on a moving ref), and it remains on disk
-    # afterward as a record of what this release shipped.
+    # The manifest stays with the install as a record of what the release
+    # shipped.
     if [ "$verify_ok" != "1" ]; then
         echo "FATAL: One or more files failed checksum verification. Staged release may be compromised."
         return 1
@@ -524,13 +508,6 @@ stage_release() {
     _stage_persistent_state || return 1
     [ -f "$QUECDECK_DIR/server.crt" ] && cp -f "$QUECDECK_DIR/server.crt" "$STAGE_DIR/server.crt"
     [ -f "$QUECDECK_DIR/server.key" ] && cp -f "$QUECDECK_DIR/server.key" "$STAGE_DIR/server.key"
-
-    # Carry the ttyd binary forward when it matches the pinned hash: it only
-    # changes when TTYD_HASH does, so skip the re-download on every update.
-    # A stale/corrupt binary simply fails this check and gets re-fetched.
-    if [ -f "$QUECDECK_DIR/console/ttyd" ] &&        [ "$(sha256sum "$QUECDECK_DIR/console/ttyd" | awk '{print $1}')" = "$TTYD_HASH" ]; then
-        cp -f "$QUECDECK_DIR/console/ttyd" "$STAGE_DIR/console/ttyd"
-    fi
 
     # Generate a TLS certificate if one wasn't carried forward from a previous install
     if [ ! -f "$STAGE_DIR/server.crt" ] || [ ! -f "$STAGE_DIR/server.key" ]; then
@@ -560,7 +537,7 @@ stage_release() {
     # (deferred to the swap, since its postinst scripts may restart the
     # service) needs that controlled window.
     echo "Checking lighttpd package status..."
-    _lighttpd_pkgs="sudo lighttpd lighttpd-mod-cgi lighttpd-mod-magnet lighttpd-mod-openssl lighttpd-mod-proxy"
+    _lighttpd_pkgs="sudo lighttpd lighttpd-mod-cgi lighttpd-mod-magnet lighttpd-mod-openssl"
     _lighttpd_needs_install=0
     _lighttpd_index_fresh=1
     timeout 120 /opt/bin/opkg update >/dev/null 2>&1 || {
@@ -710,7 +687,7 @@ swap_in_release() {
     # Restore exactly the services that were active if anything fails before
     # the first successful release-tree rename makes rollback available.
     _pre_swap_active_units=""
-    for _u in watchcat scheduled_restart lighttpd atcmd-daemon connection-logger ttyd; do
+    for _u in watchcat scheduled_restart lighttpd atcmd-daemon connection-logger; do
         systemctl is-active "$_u" >/dev/null 2>&1 && _pre_swap_active_units="$_pre_swap_active_units $_u"
     done
     if ! stop_monitoring_for_swap; then
@@ -720,7 +697,6 @@ swap_in_release() {
     [ "$_need_lighttpd_restart" = "1" ] && systemctl stop lighttpd 2>/dev/null
     systemctl stop atcmd-daemon 2>/dev/null
     systemctl stop connection-logger 2>/dev/null
-    systemctl stop ttyd 2>/dev/null
 
     if ! rm -rf "$OLD_DIR"; then
         echo -e "\e[1;31mFailed to clear the previous rollback directory. Aborting swap.\e[0m"
@@ -749,8 +725,8 @@ swap_in_release() {
 
     # Delay the destructive one-time migration until the release is fully
     # staged and the rollback snapshot exists. A download/preflight failure
-    # must not disturb the current console. PATH deliberately excludes this
-    # directory for everything before (and during) the migration.
+    # must not disturb the current root shell tools. PATH deliberately excludes
+    # this directory before and during the migration.
     harden_root_home || { echo -e "\e[1;31mFATAL: could not harden /usrdata/root.\e[0m"; return 1; }
 
     # Diff the new release's unit filenames against the old snapshot. Anything
@@ -762,21 +738,23 @@ swap_in_release() {
         printf '%s\n' "$_old_systemd_units" | grep -qxF "$_u" || _newly_introduced_units="$_newly_introduced_units $_u"
     done
 
+    # Remove retired menu entry points. Management stays in the fetched
+    # installer and the standalone password helpers.
+    [ "$(readlink /bin/menu 2>/dev/null)" != /usrdata/root/bin/menu ] || rm -f /bin/menu
+    rm -f /usrdata/root/bin/menu
     if ! rm -f /usrdata/root/bin/atcli ||
        ! ln -sf "$QUECDECK_DIR/atcli" /usrdata/root/bin/atcli ||
-       ! rm -f /usrdata/root/bin/menu ||
-       ! ln -sf "$QUECDECK_DIR/console/menu/start_menu.sh" /usrdata/root/bin/menu ||
        ! cp -f "$QUECDECK_DIR/console/.profile" /usrdata/root/.profile ||
        ! chmod 644 /usrdata/root/.profile; then
-        echo -e "\e[1;31mFATAL: Could not install root console entry points.\e[0m"
+        echo -e "\e[1;31mFATAL: Could not install root shell entry points.\e[0m"
         return 1
     fi
-    # Console password tools: copies, not symlinks (a rollback must not leave
-    # dangling links), so the perms scheme they write matches this release's CGIs.
+    # QuecDeck password tools are copies, not symlinks, so a rollback cannot
+    # leave dangling links. Their permission model matches this release's CGIs.
     if ! cp -f "$QUECDECK_DIR/quecdeckpasswd" /usrdata/root/bin/quecdeckpasswd ||
        ! cp -f "$QUECDECK_DIR/quecdeckdevpasswd" /usrdata/root/bin/quecdeckdevpasswd ||
        ! chmod 755 /usrdata/root/bin/quecdeckpasswd /usrdata/root/bin/quecdeckdevpasswd; then
-        echo -e "\e[1;31mFATAL: Could not install console password helpers.\e[0m"
+        echo -e "\e[1;31mFATAL: Could not install QuecDeck password helpers.\e[0m"
         return 1
     fi
 
@@ -784,7 +762,7 @@ swap_in_release() {
     # passwords via the check_password.sh sudo helper and must not be able to
     # read stored hashes. No rollback restore: a rollback target that predates
     # the helper reads these as www-data and would need root:dialout 640 put
-    # back (console fix: chown root:dialout + chmod 640).
+    # back (ADB or root SSH recovery: chown root:dialout + chmod 640).
     for _hf in /opt/etc/.htpasswd /opt/etc/.htpasswd_dev; do
         if [ -f "$_hf" ] && { ! chown root:root "$_hf" || ! chmod 600 "$_hf"; }; then
             echo -e "\e[1;31mFATAL: Could not secure $_hf.\e[0m"
@@ -792,9 +770,9 @@ swap_in_release() {
         fi
     done
 
-    # Snapshot the live sudoers rule before rewriting it. The _revert_swap function restores
-    # it so a rollback doesn't leave the failed release's rules paired with the
-    # restored release's CGIs.
+    # Snapshot the live sudoers rule before rewriting it. _revert_swap restores
+    # it so a rollback cannot pair the failed release's rules with the restored
+    # release's CGIs.
     _sudoers_prev=$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)
 
     # No start/stop watchcat here: modem operations pause it with a marker file
@@ -803,7 +781,7 @@ swap_in_release() {
     # limit window park the unit in failed, where plain restart keeps refusing
     # until the failed state is cleared. It only clears that state, so it cannot
     # start, stop or reconfigure anything the rule does not already permit.
-    _sudoers_rule="www-data ALL = (root) NOPASSWD: /bin/systemctl restart watchcat, /bin/systemctl reset-failed watchcat, /bin/systemctl restart scheduled_restart, /bin/systemctl reset-failed scheduled_restart, /bin/systemctl start ttyd, /bin/systemctl stop ttyd, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/check_password.sh, /usrdata/quecdeck/script/run_update.sh"
+    _sudoers_rule="www-data ALL = (root) NOPASSWD: /bin/systemctl restart watchcat, /bin/systemctl reset-failed watchcat, /bin/systemctl restart scheduled_restart, /bin/systemctl reset-failed scheduled_restart, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/change_password.sh, /usrdata/quecdeck/script/ssh_keys.sh, /usrdata/quecdeck/script/check_password.sh, /usrdata/quecdeck/script/run_update.sh"
     _sudoers_mode=$(stat -c '%a' /opt/etc/sudoers.d/www-data 2>/dev/null)
     if [ "$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)" != "$_sudoers_rule" ] || [ "$_sudoers_mode" != "440" ]; then
         # On a from-scratch install, the sudo package (which would normally
@@ -823,7 +801,12 @@ swap_in_release() {
     rm -f /lib/systemd/system/lighttpd.service /lib/systemd/system/multi-user.target.wants/lighttpd.service
     rm -f /lib/systemd/system/atcmd-daemon.service /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service
     rm -f /lib/systemd/system/connection-logger.service /lib/systemd/system/multi-user.target.wants/connection-logger.service
+    # Remove the retired web console on devices that still carry its unit and
+    # command link. The clean-install gate normally makes this a no-op, but the
+    # cleanup keeps a partial or manually recovered installation coherent.
+    systemctl stop ttyd >/dev/null 2>&1
     rm -f /lib/systemd/system/ttyd.service /lib/systemd/system/multi-user.target.wants/ttyd.service
+    [ "$(readlink /bin/ttyd 2>/dev/null)" != /opt/bin/ttyd ] || rm -f /bin/ttyd
     rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
     rm -f /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
     if ! cp -rf "$QUECDECK_DIR/systemd/"* /lib/systemd/system/; then
@@ -834,8 +817,7 @@ swap_in_release() {
     if ! ln -sf /lib/systemd/system/lighttpd.service /lib/systemd/system/multi-user.target.wants/lighttpd.service ||
        ! ln -sf /lib/systemd/system/firewall.service /lib/systemd/system/multi-user.target.wants/firewall.service ||
        ! ln -sf /lib/systemd/system/atcmd-daemon.service /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service ||
-       ! ln -sf /lib/systemd/system/connection-logger.service /lib/systemd/system/multi-user.target.wants/connection-logger.service ||
-       ! ln -sf /usrdata/quecdeck/console/ttyd /bin; then
+       ! ln -sf /lib/systemd/system/connection-logger.service /lib/systemd/system/multi-user.target.wants/connection-logger.service; then
         echo -e "\e[1;31mFATAL: Could not enable systemd units.\e[0m"
         return 1
     fi
@@ -904,7 +886,7 @@ swap_in_release() {
     systemctl restart connection-logger
 
     # Monitoring stays stopped until the complete update transaction, including
-    # the health check and optional ttyd work, has finished. Neither an expected
+    # the health check, has finished. Neither an expected
     # network interruption nor a scheduled minute may reboot the modem here.
 
     # A modem-local HTTPS request enters INPUT through lo, not bridge0, and is
@@ -1089,49 +1071,11 @@ _revert_swap() {
     return 0
 }
 
-install_ttyd() {
-    echo -e "\e[1;32mInstalling ttyd...\e[0m"
-    cd $QUECDECK_DIR/console || return 1
-    # stage_release carries the binary forward when it matches TTYD_HASH.
-    # Only download when absent or the pin changed.
-    if [ "$(sha256sum ttyd 2>/dev/null | awk '{print $1}')" = "$TTYD_HASH" ]; then
-        echo "ttyd binary already current (carried forward)."
-    else
-        /opt/bin/wget --timeout=60 --tries=2 -q -O ttyd https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.armhf || { echo -e "\e[1;31mFailed to download ttyd.\e[0m"; return 1; }
-        echo "${TTYD_HASH}  ttyd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for ttyd.\e[0m"; rm -f ttyd; return 1; }
-    fi
-    chmod +x ttyd
-    # ttyd.bash and ttyd.service are fetched from the tag rather than the staged
-    # tarball, so they miss stage_release's checksum verification. Verify them
-    # against the manifest retained from the staged (already-verified) release,
-    # since both run as root.
-    _ttyd_sums="$QUECDECK_DIR/checksums.sha256"
-    [ -s "$_ttyd_sums" ] || { echo -e "\e[1;31mRelease manifest missing. Cannot verify ttyd files.\e[0m"; return 1; }
-
-    /opt/bin/wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/console/ttyd.bash" || { echo -e "\e[1;31mFailed to download ttyd.bash.\e[0m"; return 1; }
-    _exp=$(awk '$2=="*quecdeck/console/ttyd.bash"{print $1}' "$_ttyd_sums")
-    [ -n "$_exp" ] && [ "$_exp" = "$(sha256sum ttyd.bash | awk '{print $1}')" ] || { echo -e "\e[1;31mIntegrity check failed for ttyd.bash.\e[0m"; rm -f ttyd.bash; return 1; }
-    chmod +x ttyd.bash
-    cd $QUECDECK_DIR/systemd/ || return 1
-    /opt/bin/wget --timeout=30 --tries=2 -q "$GITROOT/quecdeck/systemd/ttyd.service" || { echo -e "\e[1;31mFailed to download ttyd.service.\e[0m"; return 1; }
-    _exp=$(awk '$2=="*quecdeck/systemd/ttyd.service"{print $1}' "$_ttyd_sums")
-    [ -n "$_exp" ] && [ "$_exp" = "$(sha256sum ttyd.service | awk '{print $1}')" ] || { echo -e "\e[1;31mIntegrity check failed for ttyd.service.\e[0m"; rm -f ttyd.service; return 1; }
-    cp -f $QUECDECK_DIR/systemd/ttyd.service /lib/systemd/system/
-
-    # Install the service without enabling or starting it. The Developer page launches ttyd
-    # on demand from the Developer page.
-    systemctl daemon-reload
-    rm -f /lib/systemd/system/multi-user.target.wants/ttyd.service
-
-    echo -e "\e[1;32mttyd installed.\e[0m"
-}
-
 result_stage="FAILED"
 result_swap="FAILED"
 result_quecdeck="FAILED"
 # N/A means the step was never attempted because the update failed earlier.
 # These entries are hidden from the summary.
-result_ttyd="N/A"
 result_firewall="N/A"
 result_rollback="N/A"
 result_lighttpd="N/A"
@@ -1154,10 +1098,6 @@ if [ "$result_stage" = "OK" ]; then
     }
 fi
 
-if [ "$result_quecdeck" = "OK" ]; then
-    install_ttyd && result_ttyd="OK" || result_ttyd="WARNING"
-fi
-
 systemctl is-active firewall >/dev/null 2>&1 && result_firewall="OK" || result_firewall="WARNING"
 
 _show_result() {
@@ -1177,7 +1117,6 @@ _show_result "Stage release"      "$result_stage"
 _show_result "Switch to release"  "$result_swap"
 _show_result "QuecDeck"           "$result_quecdeck"
 _show_result "Firewall"           "$result_firewall"
-[ "$result_ttyd" != "N/A" ] && _show_result "ttyd"              "$result_ttyd"
 [ "$result_lighttpd" != "N/A" ] && _show_result "Lighttpd"          "$result_lighttpd"
 [ "$result_rollback" != "N/A" ] && _show_result "Rollback"          "$result_rollback"
 echo "============================================"
@@ -1225,9 +1164,9 @@ exit "$_install_rc"
 fi
 
 # ============================ BOOTSTRAP PHASE ============================
-# Runs in the caller's context (run_update.sh via sudo, or the console). Sets up
-# and starts the install service, then relays its log. It writes only under /run
-# never touches or remounts the read-only rootfs.
+# Runs in the caller's context through run_update.sh or an interactive shell.
+# It starts the install service and relays its log. This phase writes only under
+# /run and never touches or remounts the read-only root filesystem.
 GITTREE="${1:-main}"
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 # Resolve this file to an absolute path because the install service invokes it
@@ -1289,7 +1228,7 @@ if ! echo "running" > "${STATUS_FILE}.tmp" || ! chmod 644 "${STATUS_FILE}.tmp" |
     exit 1
 fi
 
-# If stdout is a terminal (ADB, SSH, or console), stream the log while waiting.
+# If stdout is an ADB or SSH terminal, stream the log while waiting.
 # The unit's own output goes to $LOG_FILE. The web path redirects stdout to a
 # file already, so this stays off there.
 _tail_pid=""

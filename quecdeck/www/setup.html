@@ -6,11 +6,11 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=25a918f1" />
-    <link rel="stylesheet" href="css/styles.css?v=25a918f1" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=d126c03f" />
+    <link rel="stylesheet" href="css/styles.css?v=d126c03f" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=25a918f1"></script>
-    <script src="js/alpinejs.min.js?v=25a918f1" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=d126c03f"></script>
+    <script src="js/alpinejs.min.js?v=d126c03f" defer></script>
   </head>
   <body>
     <main>
@@ -36,36 +36,35 @@
                   <form @submit.prevent="nextStep()">
                     <div class="mb-3">
                       <label class="form-label">Password</label>
-                      <input type="password" class="form-control" x-model="adminPass" autocomplete="new-password" autofocus required />
+                      <input type="password" class="form-control" x-model="adminPass" minlength="12" maxlength="256" autocomplete="new-password" autofocus required />
                     </div>
                     <div class="mb-0">
                       <label class="form-label">Confirm password</label>
-                      <input type="password" class="form-control" x-model="adminPassConfirm" autocomplete="new-password" required />
+                      <input type="password" class="form-control" x-model="adminPassConfirm" minlength="12" maxlength="256" autocomplete="new-password" required />
                     </div>
-                    <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;" :disabled="!adminPass || !adminPassConfirm">Continue</button>
+                    <button type="submit" class="btn btn-primary w-100" style="margin-top: 2rem;" :disabled="submitting || !adminPass || !adminPassConfirm">Continue</button>
                   </form>
                 </div>
               </template>
 
-              <!-- Step 2: Developer password (optional) -->
+              <!-- Step 2: Developer password (required) -->
               <template x-if="step === 2">
                 <div>
                   <h5 class="mb-2">Developer Access</h5>
-                  <p class="text-muted small mb-4">Optionally set a password for developer access. This unlocks the AT terminal, web console, and cell locking features. You can skip this and set it later via the console.</p>
+                  <p class="text-muted small mb-4">Set a password for developer access. It is required and unlocks the AT terminal, cell locking, and SSH key management.</p>
                   <template x-if="error">
                     <div class="alert alert-danger mb-3" x-text="error"></div>
                   </template>
                   <form @submit.prevent="submit()">
                     <div class="mb-3">
                       <label class="form-label">Developer password</label>
-                      <input type="password" class="form-control" x-model="devPass" autocomplete="new-password" />
+                      <input type="password" class="form-control" x-model="devPass" minlength="12" maxlength="256" autocomplete="new-password" autofocus required />
                     </div>
                     <div class="mb-0">
                       <label class="form-label">Confirm password</label>
-                      <input type="password" class="form-control" x-model="devPassConfirm" autocomplete="new-password" />
+                      <input type="password" class="form-control" x-model="devPassConfirm" minlength="12" maxlength="256" autocomplete="new-password" required />
                     </div>
                     <div class="d-flex gap-2" style="margin-top: 2rem;">
-                      <button type="button" class="btn btn-secondary flex-fill" @click="skipDev()" :disabled="submitting">Skip</button>
                       <button type="submit" class="btn btn-primary flex-fill" :disabled="submitting || !devPass || !devPassConfirm">
                         <span x-show="!submitting" x-cloak>Finish</span>
                         <span x-show="submitting" x-cloak>Setting up...</span>
@@ -80,7 +79,7 @@
         </div>
       </div>
     </main>
-    <script src="js/capslock.js?v=25a918f1"></script>
-    <script src="js/setup.js?v=25a918f1"></script>
+    <script src="js/capslock.js?v=d126c03f"></script>
+    <script src="js/setup.js?v=d126c03f"></script>
   </body>
 </html>

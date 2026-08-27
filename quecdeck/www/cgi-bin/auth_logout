@@ -24,8 +24,17 @@ if printf '%s' "$token" | grep -qE '^[A-Za-z0-9]{1,128}$'; then
         ACCESS_LOG="/run/quecdeck-web/logs/access_events.jsonl"
         log_access_event "$ACCESS_LOG" "$(printf '{"ts":%s,"type":"logout","user":"%s","ip":"%s","wan_ip":"%s"}' \
             "$(date +%s)" "$logout_user" "$client_ip" "$wan_ip")"
+        # Write the marker before deleting the session. auth.lua checks it
+        # after every refresh, so an overlapping request cannot recreate a
+        # logged-out session after this removal.
+        revoked_tmp="${session_file}.revoked.tmp.$$"
+        if printf '%s\n' "$(date +%s)" > "$revoked_tmp" &&
+           mv -f "$revoked_tmp" "${session_file}.revoked"; then
+            rm -f "$session_file" "${session_file}.new" "${session_file}.dev"
+        else
+            rm -f "$revoked_tmp" "$session_file" "${session_file}.new" "${session_file}.dev"
+        fi
     fi
-    rm -f "$session_file" "${session_file}.dev"
 fi
 
 # Expire the cookie and redirect to login

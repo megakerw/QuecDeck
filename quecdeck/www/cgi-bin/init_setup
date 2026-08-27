@@ -1,6 +1,15 @@
 #!/bin/bash
 
 . /usrdata/quecdeck/script/cgi-lib.sh
+
+if [ "$REQUEST_METHOD" = "GET" ]; then
+    cgi_check_cors
+    cgi_output_json
+    [ -s /opt/etc/.htpasswd_dev ] && configured=true || configured=false
+    printf '{"developer_configured":%s}\n' "$configured"
+    exit 0
+fi
+
 cgi_require_post
 cgi_output_json
 
@@ -14,32 +23,59 @@ cgi_read_post
 admin_pass=$(get_post_param admin_pass)
 dev_pass=$(get_post_param dev_pass)
 
-if [ "${#admin_pass}" -lt 8 ]; then
-    printf '{"ok":false,"error":"Password must be at least 8 characters"}\n'
+# A developer password is mandatory unless one already exists. SSH key
+# management requires it, so an install without one cannot reach that feature.
+# The already-configured case stays blank so deleting .htpasswd still recovers
+# a forgotten administrator password.
+if [ -s /opt/etc/.htpasswd_dev ]; then
+    if [ -n "$dev_pass" ]; then
+        printf '{"ok":false,"error":"Developer access is already configured. Leave the developer password blank"}\n'
+        exit 0
+    fi
+elif [ -z "$dev_pass" ]; then
+    printf '{"ok":false,"error":"A developer password is required"}\n'
     exit 0
 fi
 
+if [ "${#admin_pass}" -lt 12 ] || [ "${#admin_pass}" -gt 256 ]; then
+    printf '{"ok":false,"error":"Password must be between 12 and 256 characters"}\n'
+    exit 0
+fi
+
+if [ -n "$dev_pass" ] && { [ "${#dev_pass}" -lt 12 ] || [ "${#dev_pass}" -gt 256 ]; }; then
+    printf '{"ok":false,"error":"Developer password must be between 12 and 256 characters"}\n'
+    exit 0
+fi
+
+# Validate and hash the complete request before committing either credential.
 admin_hash=$(printf '%s' "$admin_pass" | openssl passwd -6 -stdin)
 if [ -z "$admin_hash" ]; then
     printf '{"ok":false,"error":"Failed to hash password"}\n'
     exit 0
 fi
 
-printf 'admin:%s\n' "$admin_hash" | /opt/bin/sudo /usrdata/quecdeck/script/write_htpasswd.sh admin
-if [ $? -ne 0 ]; then
-    printf '{"ok":false,"error":"Failed to write password file"}\n'
-    exit 0
-fi
-
+dev_hash=""
 if [ -n "$dev_pass" ]; then
-    if [ "${#dev_pass}" -lt 8 ]; then
-        printf '{"ok":false,"error":"Developer password must be at least 8 characters"}\n'
+    dev_hash=$(printf '%s' "$dev_pass" | openssl passwd -6 -stdin)
+    if [ -z "$dev_hash" ]; then
+        printf '{"ok":false,"error":"Failed to hash developer password"}\n'
         exit 0
     fi
-    dev_hash=$(printf '%s' "$dev_pass" | openssl passwd -6 -stdin)
-    if [ -n "$dev_hash" ]; then
-        printf 'devadmin:%s\n' "$dev_hash" | /opt/bin/sudo /usrdata/quecdeck/script/write_htpasswd.sh dev
-    fi
+fi
+
+if [ -n "$dev_hash" ]; then
+    printf 'admin:%s\ndevadmin:%s\n' "$admin_hash" "$dev_hash"
+else
+    printf 'admin:%s\n' "$admin_hash"
+fi | /opt/bin/sudo /usrdata/quecdeck/script/write_htpasswd.sh setup
+write_rc=$?
+if [ "$write_rc" = 75 ]; then
+    printf '{"ok":false,"error":"Password setup is temporarily unavailable"}\n'
+    exit 0
+fi
+if [ "$write_rc" -ne 0 ]; then
+    printf '{"ok":false,"error":"Failed to write password files"}\n'
+    exit 0
 fi
 
 printf '{"ok":true}\n'

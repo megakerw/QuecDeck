@@ -1,0 +1,161 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/script/cgi-lib.sh
+
+cgi_require_post
+cgi_read_post 32768
+cgi_output_json
+
+json_result() { # json_result <true|false> [error]
+    if [ "$1" = true ]; then
+        printf '{"ok":true}\n'
+    else
+        printf '{"ok":false,"error":"%s"}\n' "$2"
+    fi
+}
+
+FAILURE_DIR=/run/quecdeck-web/security-auth-failures
+client_ip=$(cgi_client_ip)
+action=$(get_post_param action)
+current=$(get_post_param current_password)
+
+if [ -z "$current" ] || [ "${#current}" -gt 256 ]; then
+    json_result false "Current password is required"
+    exit 0
+fi
+if ! cgi_flock_available || ! bf_lock "$FAILURE_DIR" "$client_ip"; then
+    json_result false "Password verification is temporarily unavailable"
+    exit 0
+fi
+if bf_locked "$FAILURE_DIR" "$client_ip"; then
+    bf_unlock
+    json_result false "Too many failed attempts. Try again later"
+    exit 0
+fi
+
+case "$action" in
+    change_password)
+        new=$(get_post_param new_password)
+        confirm=$(get_post_param confirm_password)
+        if [ "${#new}" -lt 12 ] || [ "${#new}" -gt 256 ]; then
+            bf_unlock
+            json_result false "New password must be between 12 and 256 characters"
+            exit 0
+        fi
+        if [ "$new" != "$confirm" ]; then
+            bf_unlock
+            json_result false "New passwords do not match"
+            exit 0
+        fi
+        printf '%s\n%s\n' "$current" "$new" |
+            /opt/bin/sudo /usrdata/quecdeck/script/change_password.sh
+        rc=${PIPESTATUS[1]}
+        ;;
+    add_key)
+        public_key=$(get_post_param public_key)
+        developer=$(get_post_param developer_password)
+        printf '%s\n%s\n%s\n' "$current" "$developer" "$public_key" |
+            /opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh add
+        rc=${PIPESTATUS[1]}
+        ;;
+    remove_key)
+        fingerprint=$(get_post_param fingerprint)
+        developer=$(get_post_param developer_password)
+        printf '%s\n%s\n' "$current" "$developer" |
+            /opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh remove "$fingerprint"
+        rc=${PIPESTATUS[1]}
+        ;;
+    ssh_settings)
+        developer=$(get_post_param developer_password)
+        enabled=$(get_post_param ssh_enabled)
+        port=$(get_post_param ssh_port)
+        # The enabled state and port bounds are enforced by the root helper,
+        # which rejects both before it takes a lock or checks a password.
+        printf '%s\n%s\n%s\n%s\n' "$current" "$developer" "$enabled" "$port" |
+            /opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh settings
+        rc=${PIPESTATUS[1]}
+        ;;
+    *)
+        bf_unlock
+        json_result false "Unknown security action"
+        exit 0
+        ;;
+esac
+
+if [ "$rc" = 75 ]; then
+    bf_unlock
+    json_result false "Password verification is temporarily unavailable"
+    exit 0
+fi
+if [ "$rc" = 2 ]; then
+    bf_fail "$FAILURE_DIR" "$client_ip"
+    result=$BF_FAIL_RESULT
+    bf_unlock
+    if [ "$result" = locked ]; then
+        json_result false "Too many failed attempts. Try again later"
+    else
+        case "$action" in
+            add_key|remove_key|ssh_settings) json_result false "Administrator or developer password is incorrect" ;;
+            *) json_result false "Current password is incorrect" ;;
+        esac
+    fi
+    exit 0
+fi
+if [ "$rc" != 0 ]; then
+    bf_unlock
+    case "$rc" in
+        3) json_result false "SSH is not installed" ;;
+        4) json_result false "The public key is not valid or supported" ;;
+        5) json_result false "The maximum of 5 SSH keys has been reached" ;;
+        6) json_result false "This SSH key has already been added" ;;
+        7) json_result false "The SSH key was not found" ;;
+        8) json_result false "Set a developer access password before managing SSH keys" ;;
+        9) json_result false "The root home permissions are incompatible. Re-run the QuecDeck installer" ;;
+        10) json_result false "The firewall could not apply the SSH setting. SSH was left stopped" ;;
+        11) json_result false "The SSH setting was saved, but the server could not be started" ;;
+        12) json_result false "The SSH port was changed but the enabled state was not. Reload the page and try again" ;;
+        *) json_result false "The security change could not be completed" ;;
+    esac
+    exit 0
+fi
+
+bf_clear "$FAILURE_DIR" "$client_ip"
+bf_unlock
+
+ACCESS_LOG=/run/quecdeck-web/logs/access_events.jsonl
+wan_ip=$(cgi_wan_ip)
+now=$(date +%s)
+case "$action" in
+    change_password) event=security_password_changed ;;
+    add_key) event=ssh_key_added ;;
+    remove_key) event=ssh_key_removed ;;
+    ssh_settings) event=ssh_settings_changed ;;
+esac
+log_access_event "$ACCESS_LOG" \
+    "{\"ts\":$now,\"type\":\"$event\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
+
+if [ "$action" = change_password ]; then
+    # Tombstone every live token before removal. An overlapping request that
+    # refreshes a session after this loop starts sees its marker and removes it.
+    session_invalidation_failed=0
+    for session in /run/quecdeck-web/sessions/*; do
+        [ -f "$session" ] || continue
+        token=${session##*/}
+        case "$token" in *[!A-Za-z0-9]*|'') continue ;; esac
+        marker="${session}.revoked"
+        marker_tmp="${marker}.tmp.$$"
+        if printf '%s\n' "$(date +%s)" > "$marker_tmp" &&
+           mv -f "$marker_tmp" "$marker"; then
+            rm -f "$session" "${session}.new" "${session}.dev"
+        else
+            rm -f "$marker_tmp" "$session" "${session}.new" "${session}.dev"
+            session_invalidation_failed=1
+        fi
+    done
+    if [ "$session_invalidation_failed" = 1 ]; then
+        printf '{"ok":true,"warning":"session_invalidation"}\n'
+        exit 0
+    fi
+fi
+
+json_result true

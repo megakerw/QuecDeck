@@ -1,0 +1,68 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/script/cgi-lib.sh
+
+json_escape() { # json_escape <text>
+    local value="$1"
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\r'/\\r}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\t'/\\t}
+    printf '%s' "$value"
+}
+
+[ "$REQUEST_METHOD" = "GET" ] || cgi_require_post
+cgi_check_cors
+
+keys=$(/opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh list 2>/dev/null)
+rc=$?
+settings=$(/opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh status 2>/dev/null)
+settings_rc=$?
+[ -s /opt/etc/.htpasswd_dev ] && developer_configured=true || developer_configured=false
+if [ "$rc" = 3 ]; then
+    cgi_output_json
+    printf '{"ssh_installed":false,"ssh_enabled":false,"ssh_active":false,"ssh_port":22,"ssh_settings_ready":true,"root_home_ready":false,"developer_configured":%s,"keys":[]}\n' "$developer_configured"
+    exit 0
+fi
+# An unreadable SSH port or enable marker degrades the SSH section only. The
+# password form on this page must stay usable when SSH state is unreadable.
+if [ "$settings_rc" = 0 ]; then
+    IFS=$'\t' read -r enabled port <<< "$settings"
+    case "$enabled" in 1) enabled=true ;; *) enabled=false ;; esac
+    settings_ready=true
+else
+    enabled=false
+    port=22
+    settings_ready=false
+fi
+if [ "$rc" = 9 ]; then
+    systemctl is-active --quiet sshd 2>/dev/null && active=true || active=false
+    cgi_output_json
+    printf '{"ssh_installed":true,"ssh_enabled":%s,"ssh_active":%s,"ssh_port":%s,"ssh_settings_ready":%s,"root_home_ready":false,"developer_configured":%s,"keys":[]}\n' "$enabled" "$active" "$port" "$settings_ready" "$developer_configured"
+    exit 0
+fi
+if [ "$rc" != 0 ]; then
+    printf 'Status: 500 Internal Server Error\r\n'
+    cgi_output_json
+    printf '{"ok":false,"error":"SSH key storage could not be read. Check its ownership and permissions."}\n'
+    exit 1
+fi
+
+systemctl is-active --quiet sshd 2>/dev/null && active=true || active=false
+cgi_output_json
+printf '{"ssh_installed":true,"ssh_enabled":%s,"ssh_active":%s,"ssh_port":%s,"ssh_settings_ready":%s,"root_home_ready":true,"developer_configured":%s,"keys":[' "$enabled" "$active" "$port" "$settings_ready" "$developer_configured"
+first=1
+while IFS=$'\t' read -r fingerprint type comment; do
+    [ -n "$fingerprint" ] || continue
+    type=$(printf '%s' "$type" | tr -cd 'A-Za-z0-9@._+-' | cut -c1-80)
+    [ -n "$type" ] || type=unknown
+    fingerprint=$(json_escape "$fingerprint")
+    type=$(json_escape "$type")
+    comment=$(json_escape "$comment")
+    [ "$first" = 1 ] || printf ','
+    first=0
+    printf '{"fingerprint":"%s","type":"%s","comment":"%s"}' \
+        "$fingerprint" "$type" "$comment"
+done <<< "$keys"
+printf ']}\n'

@@ -7,31 +7,60 @@ function setupWizard() {
     devPassConfirm: '',
     error: '',
     submitting: false,
+    developerConfigured: false,
+    setupReady: false,
+
+    init() {
+      fetch('/cgi-bin/init_setup')
+        .then((response) => {
+          if (!response.ok) throw new Error('Setup status request failed');
+          return response.json();
+        })
+        .then((data) => {
+          this.developerConfigured = data.developer_configured === true;
+          this.setupReady = true;
+        })
+        .catch(() => {
+          this.error = 'Could not determine the current setup state. Please reload the page.';
+        });
+    },
 
     nextStep() {
+      if (this.submitting) return;
       this.error = '';
-      if (this.adminPass.length < 8) {
-        this.error = 'Password must be at least 8 characters.';
+      if (!this.setupReady) {
+        this.error = 'Could not determine the current setup state. Please reload the page.';
+        return;
+      }
+      if (this.adminPass.length < 12) {
+        this.error = 'Password must be at least 12 characters.';
         return;
       }
       if (this.adminPass !== this.adminPassConfirm) {
         this.error = 'Passwords do not match.';
         return;
       }
-      this.step = 2;
+      if (this.developerConfigured) {
+        this.submitExistingDev();
+      } else {
+        this.step = 2;
+      }
     },
 
-    skipDev() {
+    // Developer access already exists, so the wizard is only resetting the
+    // administrator password. The developer fields must stay blank.
+    submitExistingDev() {
       this.devPass = '';
       this.devPassConfirm = '';
       this.submit();
     },
 
     submit() {
+      if (this.submitting) return;
       this.error = '';
-      if (this.devPass) {
-        if (this.devPass.length < 8) {
-          this.error = 'Developer password must be at least 8 characters.';
+      if (!this.developerConfigured) {
+        if (this.devPass.length < 12) {
+          this.error = 'Developer password must be at least 12 characters.';
           return;
         }
         if (this.devPass !== this.devPassConfirm) {

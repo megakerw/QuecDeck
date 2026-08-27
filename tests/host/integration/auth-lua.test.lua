@@ -6,6 +6,20 @@
 local AUTH = "quecdeck/auth.lua"
 local SESSIONS = "/run/quecdeck-web/sessions/"
 local HTPASSWD = "/opt/etc/.htpasswd"
+local revoke_on_rename
+local real_rename = os.rename
+
+-- Inject a logout marker immediately after auth.lua refreshes a selected
+-- session. This deterministically exercises the race without timing sleeps.
+os.rename = function(old, new)
+    local ok, err = real_rename(old, new)
+    if ok and revoke_on_rename and new == SESSIONS .. revoke_on_rename then
+        local f = assert(io.open(new .. ".revoked", "w"))
+        f:write(tostring(os.time()), "\n")
+        f:close()
+    end
+    return ok, err
+end
 
 local pass, fail = 0, 0
 local function t(name, expected, actual)
@@ -116,12 +130,24 @@ t("valid session: token after other cookie", 0, rc)
 local la = tonumber((read_file(SESSIONS .. "tokA1") or ""):match("last_access=(%d+)"))
 t("valid session: last_access refreshed", true, la ~= nil and (now - la) < 10)
 
+write_session("tokR1", { user = "admin", role = "admin",
+    created = tostring(now), last_access = tostring(now) })
+revoke_on_rename = "tokR1"
+rc, L = run("/index.html", "session=tokR1")
+revoke_on_rename = nil
+t("logout race: request redirected", 302, rc)
+t("logout race: login location", "/login.html?next=/index.html", L.header["Location"])
+t("logout race: refreshed session removed", nil, read_file(SESSIONS .. "tokR1"))
+
 write_session("tokB2", { user = "admin", role = "admin",
     created = tostring(now), last_access = tostring(now - 3600) })
+local expired_marker = assert(io.open(SESSIONS .. "tokB2.revoked", "w"))
+expired_marker:write(tostring(now), "\n"); expired_marker:close()
 rc, L = run("/index.html", "session=tokB2")
 t("inactivity expiry: redirect", 302, rc)
 t("inactivity expiry: expired flag", "/login.html?expired=1&next=/index.html", L.header["Location"])
 t("inactivity expiry: file removed", nil, read_file(SESSIONS .. "tokB2"))
+t("inactivity expiry: revocation marker removed", nil, read_file(SESSIONS .. "tokB2.revoked"))
 
 write_session("tokC3", { user = "admin", role = "admin",
     created = tostring(now - 30000), last_access = tostring(now) })
@@ -133,8 +159,6 @@ write_session("tokD4", { user = "admin", role = "admin",
     created = tostring(now), last_access = tostring(now) })
 rc = run("/cgi-bin/user_atcommand", "session=tokD4")
 t("dev endpoint locked: 403", 403, rc)
-rc = run("/console/", "session=tokD4")
-t("console locked: 403", 403, rc)
 rc = run("/cgi-bin/get_dashboard", "session=tokD4")
 t("non-dev endpoint: passes while locked", 0, rc)
 
@@ -142,8 +166,6 @@ local df = assert(io.open(SESSIONS .. "tokD4.dev", "w"))
 df:write("dev_unlocked=1\n"); df:close()
 rc = run("/cgi-bin/user_atcommand", "session=tokD4")
 t("dev endpoint unlocked: passes", 0, rc)
-rc = run("/console/", "session=tokD4")
-t("console unlocked: passes", 0, rc)
 
 -- ---------------------------------------- setup-check shell-test fallback
 -- A build without lighty.c.stat must fall back to the shell test instead of

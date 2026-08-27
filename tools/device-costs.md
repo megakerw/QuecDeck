@@ -7,7 +7,7 @@ comments can cite a number instead of carrying a copy of it. Cite as
 Everything here was measured on the real device, not estimated. If you change a
 number, say how you measured it.
 
-**Hardware:** Quectel RM520N (sdxlemur), single-core `armv7l`, bash 3.2.57,
+**Hardware:** Quectel RM520N (sdxlemur), single-core `armv7l`, Bash 3.2.57,
 busybox userland. Governor `ondemand`, **345 MHz to 1805 MHz**.
 
 ---
@@ -40,7 +40,7 @@ pays the TLS handshake once, not per request. Confirm with
 
 **A/B properly.** Install one version, measure, install the other, measure, in
 the same session. Comparing a fresh measurement against a number from earlier in
-the day compares CPU states, not code. Get the "before" from git if the file is
+the day compares CPU states, not code. Get the "before" from Git if the file is
 otherwise unmodified: `git show HEAD:path > /tmp/old`.
 
 Better still, **alternate rounds** rather than measuring each variant once, so
@@ -58,7 +58,7 @@ user's first request after an idle period pays.
 | Operation | Cost | Notes |
 |---|---|---|
 | `read -r var < file` (builtin) | **150 us** | one line |
-| passing a large string to a function | **~10 ms per 49 KB** | bash copies it. Window instead |
+| passing a large string to a function | **~10 ms per 49 KB** | Bash copies it. Window instead |
 | whole-file read via `read -r -d ''` | **400-450 us** | includes the open |
 | `_epoch_now` (two procfs reads) | **800-1000 us** | no fork |
 | `var=$(<file)` | **1750-1800 us** | subshell, no exec |
@@ -67,22 +67,22 @@ user's first request after an idle period pays.
 | `date +%s` | **3600 us** | fork + exec |
 | `stat -c %Y` | **3700-4100 us** | fork + exec |
 | `grep` over a 462-line file, in `$( )` | **7400 us** | subshell + exec + heredoc |
-| bash `read` loop | **~82 us per line** | see the threshold below |
+| Bash `read` loop | **~82 us per line** | see the threshold below |
 
 ### The threshold that decides these calls
 
-**A fork costs about the same as 40 lines of bash line-processing.**
+**A fork costs about the same as 40 lines of Bash line-processing.**
 
 3200 us per fork against ~82 us per line. So replacing a `grep`/`awk` with a
-pure-bash scan is a *loss* on anything bigger than a few dozen lines. Measured
+pure-Bash scan is a *loss* on anything bigger than a few dozen lines. Measured
 directly on `mobileap_read` over the real 462-line `/etc/data/mobileap_cfg.xml`,
 all variants returning identical values:
 
 | Variant | Cost |
 |---|---|
 | `grep` + heredoc (what ships) | **7400 us** |
-| pure bash, full scan | 37800 us (5.1x worse) |
-| pure bash, stopping at the last tag (~23% of the file) | 11900 us (1.6x worse) |
+| pure Bash, full scan | 37800 us (5.1x worse) |
+| pure Bash, stopping at the last tag (~23% of the file) | 11900 us (1.6x worse) |
 
 Every fork removed successfully in this codebase was a single operation on a
 handful of lines. Don't generalise the wins to bulk text processing.
@@ -95,7 +95,7 @@ handful of lines. Don't generalise the wins to bulk text processing.
 |---|---|---|
 | Static asset, warm connection | 2.8 ms | - |
 | TLS handshake | ~42 ms | once per connection, not per request |
-| CGI floor: fork + bash + source `cgi-lib.sh` + Lua auth | **19 ms** | only by leaving bash |
+| CGI floor: fork + Bash + source `cgi-lib.sh` + Lua auth | **19 ms** | only by leaving Bash |
 | `atcli` spawn + socket round trip, no AT | 2 ms | - |
 | `systemctl is-active` for 7 units | **~24 ms** | already one batched D-Bus call |
 | a Lua `os.execute` fork in `auth.lua` | **~3 ms** | removed, see below |

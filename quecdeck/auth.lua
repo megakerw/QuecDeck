@@ -25,11 +25,11 @@ if path:find("%.%.", 1, true) or path:lower():find("%2e", 1, true) then
 end
 
 -- Redirect to setup wizard if no admin password has been configured yet.
--- lighty.c.stat is available in mod_magnet 1.4.60 and later. Every install's Entware lighttpd is
--- newer) needs no read permission (htpasswd files are root:root 600) and
--- no fork. Served from lighttpd's stat cache with about one second of staleness on setup/reset
--- transitions is fine. The shell test keeps auth alive on a build without
--- the API rather than 500ing every request.
+-- lighty.c.stat is available in mod_magnet 1.4.60 and later. Every supported
+-- Entware lighttpd is newer. It needs no read permission for the root-owned
+-- htpasswd file and avoids a process spawn. About one second of stat-cache
+-- staleness during setup or recovery is acceptable. The shell fallback keeps
+-- authentication working on an older build instead of returning 500 errors.
 local setup_needed
 if lighty.c and lighty.c.stat then
     local st = lighty.c.stat("/opt/etc/.htpasswd")
@@ -93,6 +93,13 @@ local function read_session(p)
     return t
 end
 
+local function file_exists(p)
+    local fh = io.open(p, "r")
+    if not fh then return false end
+    fh:close()
+    return true
+end
+
 local safe_path = url_encode(path)
 
 if not token or not token:match("^[A-Za-z0-9]+$") or #token > 128 then
@@ -101,6 +108,19 @@ end
 
 -- Read session file
 local sf   = SESSIONS .. token
+local revoked = sf .. ".revoked"
+
+-- Logout leaves a short-lived revocation marker. It closes the race where a
+-- request reads the session before logout, then refreshes it after logout has
+-- deleted it. One check after the atomic refresh covers every ordering without
+-- adding locking or a process spawn to authenticated requests.
+local function session_revoked()
+    local fh = io.open(revoked, "r")
+    if not fh then return false end
+    fh:close()
+    return true
+end
+
 local sess = read_session(sf)
 if not sess then
     return redirect(LOGIN .. "?next=" .. safe_path)
@@ -114,6 +134,7 @@ local created     = tonumber(sess.created)     or 0
 if (now - last_access) > TIMEOUT or (now - created) > MAX_AGE then
     os.remove(sf)
     os.remove(sf .. ".dev")
+    os.remove(revoked)
     return redirect(LOGIN .. "?expired=1&next=" .. safe_path)
 end
 
@@ -121,9 +142,8 @@ end
 -- The dev-unlock flag lives in a separate "<token>.dev" file (written only by
 -- auth_dev) so the per-request last_access refresh below can't clobber it.
 -- Read it only on dev-gated paths, not on every request.
-local requires_dev_unlocked = path:match("^/console")
-    or path == "/cgi-bin/user_atcommand"
-    or path == "/cgi-bin/toggle_ttyd"   or path == "/cgi-bin/set_cell_lock"
+local requires_dev_unlocked = path == "/cgi-bin/user_atcommand"
+    or path == "/cgi-bin/set_cell_lock"
 if requires_dev_unlocked then
     local unlocked = false
     local devf = io.open(sf .. ".dev", "r")
@@ -154,6 +174,15 @@ if wf then
     os.rename(tmp, sf)
 end
 
+-- If logout landed before or during the refresh, the marker wins here. If it
+-- lands after this check, logout removes the refreshed session itself.
+if session_revoked() then
+    os.remove(sf)
+    os.remove(tmp)
+    os.remove(sf .. ".dev")
+    return redirect(LOGIN .. "?next=" .. safe_path)
+end
+
 -- Opportunistic cleanup: scan for and remove expired session files (~1% of requests)
 if math.random(100) == 1 then
     local d = io.popen("find " .. SESSIONS .. " -maxdepth 1 -type f 2>/dev/null")
@@ -164,9 +193,63 @@ if math.random(100) == 1 then
                 local s = read_session(SESSIONS .. name)
                 if s then
                     local la = tonumber(s.last_access) or 0
-                    if (now - la) > TIMEOUT then
+                    local cr = tonumber(s.created) or 0
+                    if (now - la) > TIMEOUT or (now - cr) > MAX_AGE then
                         os.remove(SESSIONS .. name)
                         os.remove(SESSIONS .. name .. ".dev")
+                        os.remove(SESSIONS .. name .. ".revoked")
+                    end
+                end
+            else
+                local revoked_token = name and name:match("^([A-Za-z0-9]+)%.revoked$")
+                if revoked_token then
+                    local revoked_at = 0
+                    local rf = io.open(SESSIONS .. name, "r")
+                    if rf then
+                        revoked_at = tonumber(rf:read("*a")) or 0
+                        rf:close()
+                    end
+                    if (now - revoked_at) > MAX_AGE then
+                        os.remove(SESSIONS .. name)
+                    end
+                else
+                    local new_token = name and name:match("^([A-Za-z0-9]+)%.new$")
+                    if new_token then
+                        local pending = read_session(SESSIONS .. name)
+                        local pending_at = pending and tonumber(pending.last_access) or now
+                        if (now - pending_at) > TIMEOUT then
+                            os.remove(SESSIONS .. name)
+                        end
+                    else
+                        local dev_token = name and name:match("^([A-Za-z0-9]+)%.dev$")
+                        if dev_token then
+                            local base = SESSIONS .. dev_token
+                            if not file_exists(base) and not file_exists(base .. ".new") then
+                                os.remove(SESSIONS .. name)
+                            end
+                        else
+                            local dev_tmp_token = name and name:match("^([A-Za-z0-9]+)%.dev%.tmp%.%d+$")
+                            if dev_tmp_token then
+                                local pending = read_session(SESSIONS .. name)
+                                local pending_at = pending and tonumber(pending.created) or now
+                                if (now - pending_at) > TIMEOUT then
+                                    os.remove(SESSIONS .. name)
+                                end
+                            else
+                                local tmp_token = name and name:match("^([A-Za-z0-9]+)%.revoked%.tmp%.%d+$")
+                                if tmp_token then
+                                    local tmp_at = now
+                                    local tf = io.open(SESSIONS .. name, "r")
+                                    if tf then
+                                        tmp_at = tonumber(tf:read("*a")) or now
+                                        tf:close()
+                                    end
+                                    if (now - tmp_at) > MAX_AGE then
+                                        os.remove(SESSIONS .. name)
+                                    end
+                                end
+                            end
+                        end
                     end
                 end
             end

@@ -174,9 +174,8 @@ FRESH=/tmp/qdfresh
 $SUDO -u www-data rm -rf "$FRESH" 2>/dev/null; rm -rf "$FRESH" 2>/dev/null
 # Exercise the cache and authentication-state creators as www-data. Run them
 # www-data with their targets redirected, so a missing umask shows up as a
-# loose parent or file. bf_fail deliberately sleeps for one second as part of
-# the production brute-force path. Exercising it here avoids a vacuous glob
-# over a directory that _bf_file alone would leave empty.
+# loose parent or file. Exercising bf_fail here avoids a vacuous glob over a
+# directory that _bf_file alone would leave empty.
 $SUDO -u www-data bash -c "
     . /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null
     _CACHE_DIR=$FRESH/cache

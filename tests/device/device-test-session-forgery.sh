@@ -8,17 +8,11 @@
 # against a web-tier compromise, and any CGI code-execution bug is immediately
 # full admin with no password.
 #
-# This is a DESIGN QUESTION, not a regression test. It is expected to hold by
-# design today. The open decision is whether to accept or fix it:
-#
-#   accept: record it as a known tradeoff (any www-data RCE == admin), which is
-#           defensible because ttyd.service runs the web console as root, so an
-#           authenticated admin already has root by design.
-#   fix:    split identity from liveness. Identity (user/role) in a root-owned,
-#           www-data-readable file minted by a sudo helper that re-validates the
-#           password itself. Liveness (last_access) stays in the www-data-writable
-#           sibling, refreshed fork-free per request. Touches auth.lua,
-#           auth_login, auth_dev, sudoers, and host/integration/auth-lua.sh.
+# This is an accepted design limitation, not a regression. A www-data
+# compromise can forge administrator and developer application state. Root
+# helpers remain fixed-operation. Credential changes still require the current
+# administrator password, and SSH key changes also require the developer
+# password. The test documents that boundary explicitly.
 #
 # Run as ROOT on a CONFIGURED device (setup complete):
 #

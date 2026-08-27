@@ -1,0 +1,474 @@
+#!/bin/bash
+# Root-only sudo helper for key-only SSH access. Operations and paths are fixed
+# so the web tier cannot use this as a general root file writer.
+
+PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
+umask 077
+
+ROOT_HOME=/usrdata/root
+SSH_DIR=$ROOT_HOME/.ssh
+KEYS=$SSH_DIR/authorized_keys
+LOCK=$ROOT_HOME/.quecdeck-ssh-keys.lock
+SSHD_CONFIG=/opt/etc/ssh/sshd_config
+ENABLED_MARKER=/opt/etc/ssh/quecdeck_enabled
+MAX_KEYS=5
+RUNTIME_DIR=/run/quecdeck
+
+ssh_installed() {
+    [ -x /opt/sbin/sshd ] && [ -f /lib/systemd/system/sshd.service ]
+}
+
+safe_root_home() {
+    [ -d "$ROOT_HOME" ] && [ ! -L "$ROOT_HOME" ] &&
+        [ "$(stat -c %u "$ROOT_HOME" 2>/dev/null)" = 0 ] &&
+        [ "$(stat -c %a "$ROOT_HOME" 2>/dev/null)" = 700 ]
+}
+
+prepare_store() {
+    safe_root_home || return 1
+    [ ! -L "$SSH_DIR" ] || return 1
+    if [ ! -e "$SSH_DIR" ]; then
+        mkdir "$SSH_DIR" || return 1
+        chown root:root "$SSH_DIR" && chmod 700 "$SSH_DIR" || return 1
+    fi
+    [ -d "$SSH_DIR" ] && [ ! -L "$SSH_DIR" ] || return 1
+    [ "$(stat -c %u "$SSH_DIR" 2>/dev/null)" = 0 ] || return 1
+    chmod 700 "$SSH_DIR" || return 1
+    [ ! -L "$KEYS" ] || return 1
+    if [ -e "$KEYS" ]; then
+        [ -f "$KEYS" ] && [ ! -L "$KEYS" ] || return 1
+        [ "$(stat -c %u "$KEYS" 2>/dev/null)" = 0 ] || return 1
+        chmod 600 "$KEYS" || return 1
+    fi
+}
+
+prepare_runtime_dir() {
+    [ ! -L "$RUNTIME_DIR" ] || return 1
+    mkdir -p "$RUNTIME_DIR" || return 1
+    [ -d "$RUNTIME_DIR" ] && [ ! -L "$RUNTIME_DIR" ] || return 1
+    chown root:root "$RUNTIME_DIR" && chmod 755 "$RUNTIME_DIR"
+}
+
+fingerprint_line() { # fingerprint_line <public key line>
+    local tmp output bits fp rest
+    prepare_runtime_dir || return 1
+    tmp=$(mktemp "$RUNTIME_DIR/ssh-key.XXXXXX") || return 1
+    printf '%s\n' "$1" > "$tmp"
+    output=$(ssh-keygen -lf "$tmp" -E sha256 2>/dev/null)
+    rm -f "$tmp"
+    IFS=' ' read -r bits fp rest <<< "$output"
+    [ -n "$fp" ] || return 1
+    printf '%s' "$fp"
+}
+
+valid_key_syntax() { # valid_key_syntax <line>
+    local type blob comment
+    [ -n "$1" ] && [ "${#1}" -le 8192 ] || return 1
+    type=${1%% *}
+    case "$type" in
+        ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521) ;;
+        *) return 1 ;;
+    esac
+    blob=${1#* }
+    [ "$blob" != "$1" ] || return 1
+    blob=${blob%% *}
+    case "$blob" in ''|*[!A-Za-z0-9+/=]*) return 1 ;; esac
+    comment=${1#"$type $blob"}
+    comment=${comment# }
+    [ "${#comment}" -le 80 ] || return 1
+    [ -z "$comment" ] || printf '%s' "$comment" | LC_ALL=C grep -qE '^[ -~]{1,80}$'
+}
+
+parse_key_line() { # parse_key_line <authorized_keys line>
+    local line="$1" index
+    local -a fields
+    KEY_TYPE=""
+    KEY_BLOB=""
+    KEY_COMMENT=""
+    read -r -a fields <<< "$line"
+    for ((index = 0; index + 1 < ${#fields[@]}; index++)); do
+        case "${fields[$index]}" in
+            ssh-*|ecdsa-sha2-*|sk-ssh-*|sk-ecdsa-*)
+                KEY_TYPE=${fields[$index]}
+                KEY_BLOB=${fields[$((index + 1))]}
+                case "$KEY_BLOB" in ''|*[!A-Za-z0-9+/=]*) continue ;; esac
+                KEY_COMMENT=${line#*"$KEY_TYPE $KEY_BLOB"}
+                KEY_COMMENT=${KEY_COMMENT# }
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+load_store() {
+    local line fp batch_output bits rest
+    local -a batch_fingerprints
+    KEY_COUNT=0
+    KEY_USABLE_COUNT=0
+    KEY_LINES=()
+    KEY_FINGERPRINTS=()
+    [ -f "$KEYS" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] || continue
+        KEY_LINES+=("$line")
+        KEY_COUNT=$((KEY_COUNT + 1))
+    done < "$KEYS"
+
+    # ssh-keygen handles the complete store in one process. Its rows align
+    # with source lines only when every non-blank line parses, so use this fast
+    # path only when the counts match exactly. A malformed imported line falls
+    # back to per-line parsing and cannot hide the valid entries around it.
+    batch_output=$(ssh-keygen -lf "$KEYS" -E sha256 2>/dev/null)
+    batch_fingerprints=()
+    while IFS=' ' read -r bits fp rest; do
+        [ -n "$fp" ] && batch_fingerprints+=("$fp")
+    done <<< "$batch_output"
+    if [ "${#batch_fingerprints[@]}" -eq "$KEY_COUNT" ]; then
+        KEY_FINGERPRINTS=("${batch_fingerprints[@]}")
+        KEY_USABLE_COUNT=$KEY_COUNT
+        return 0
+    fi
+
+    KEY_FINGERPRINTS=()
+    for line in "${KEY_LINES[@]}"; do
+        fp=$(fingerprint_line "$line") || fp=""
+        KEY_FINGERPRINTS+=("$fp")
+        [ -z "$fp" ] || KEY_USABLE_COUNT=$((KEY_USABLE_COUNT + 1))
+    done
+}
+
+keys_ready() {
+    local effective
+    safe_root_home || return 1
+    [ -d "$SSH_DIR" ] && [ ! -L "$SSH_DIR" ] || return 1
+    [ "$(stat -c '%u %a' "$SSH_DIR" 2>/dev/null)" = "0 700" ] || return 1
+    [ -f "$KEYS" ] && [ ! -L "$KEYS" ] || return 1
+    [ "$(stat -c '%u %a' "$KEYS" 2>/dev/null)" = "0 600" ] || return 1
+    load_store || return 1
+    [ "$KEY_USABLE_COUNT" -gt 0 ] || return 1
+    effective=$(/opt/sbin/sshd -T 2>/dev/null) || return 1
+    if printf '%s\n' "$effective" | grep -q '^usepam '; then
+        printf '%s\n' "$effective" | grep -qx 'usepam no' || return 1
+    fi
+    printf '%s\n' "$effective" | grep -qx 'passwordauthentication no' || return 1
+    printf '%s\n' "$effective" | grep -qx 'kbdinteractiveauthentication no' || return 1
+    printf '%s\n' "$effective" | grep -qx 'permitrootlogin without-password' || return 1
+    printf '%s\n' "$effective" | grep -qx 'pubkeyauthentication yes' || return 1
+    printf '%s\n' "$effective" | grep -qx 'authenticationmethods publickey' || return 1
+    printf '%s\n' "$effective" | grep -qx 'authorizedkeysfile /usrdata/root/.ssh/authorized_keys' || return 1
+}
+
+configured_port() {
+    local port count
+    count=$(grep -c '^Port [0-9][0-9]*$' "$SSHD_CONFIG" 2>/dev/null) || return 1
+    [ "$count" = 1 ] || return 1
+    port=$(sed -n 's/^Port \([0-9][0-9]*\)$/\1/p' "$SSHD_CONFIG")
+    valid_ssh_port "$port" || return 1
+    printf '%s' "$port"
+}
+
+valid_ssh_port() { # valid_ssh_port <port>
+    case "$1" in ''|*[!0-9]*) return 1 ;; esac
+    [ "${#1}" -le 5 ] || return 1
+    [ "$1" = 22 ] || { [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]; }
+}
+
+enabled_marker_safe() {
+    [ -f "$ENABLED_MARKER" ] && [ ! -L "$ENABLED_MARKER" ] &&
+        [ "$(stat -c '%u %a' "$ENABLED_MARKER" 2>/dev/null)" = "0 600" ] &&
+        grep -qx 'enabled' "$ENABLED_MARKER"
+}
+
+validate_sshd_config() { # validate_sshd_config <path> <port>
+    local effective
+    /opt/sbin/sshd -t -f "$1" || return 1
+    effective=$(/opt/sbin/sshd -T -f "$1" 2>/dev/null) || return 1
+    if printf '%s\n' "$effective" | grep -q '^usepam '; then
+        printf '%s\n' "$effective" | grep -qx 'usepam no' || return 1
+    fi
+    printf '%s\n' "$effective" | grep -qx 'passwordauthentication no' || return 1
+    printf '%s\n' "$effective" | grep -qx 'kbdinteractiveauthentication no' || return 1
+    printf '%s\n' "$effective" | grep -qx 'permitrootlogin without-password' || return 1
+    printf '%s\n' "$effective" | grep -qx 'pubkeyauthentication yes' || return 1
+    printf '%s\n' "$effective" | grep -qx 'authenticationmethods publickey' || return 1
+    printf '%s\n' "$effective" | grep -qx 'authorizedkeysfile /usrdata/root/.ssh/authorized_keys' || return 1
+    printf '%s\n' "$effective" | grep -qx "port $2" || return 1
+}
+
+# Rebuild the firewall policy for the current port, then match the daemon to
+# the enabled state. Always refresh the firewall first so the port is permitted
+# before sshd binds it. A firewall failure leaves sshd stopped.
+activate_settings() { # activate_settings <0|1>
+    if ! systemctl is-active --quiet firewall 2>/dev/null ||
+       ! /bin/bash /usrdata/quecdeck/script/firewall.sh >/dev/null 2>&1; then
+        systemctl stop sshd >/dev/null 2>&1 || true
+        return 10
+    fi
+    if [ "$1" = 0 ]; then
+        systemctl stop sshd >/dev/null 2>&1 || true
+        return 0
+    fi
+    keys_ready || return 0
+    systemctl is-active --quiet sshd 2>/dev/null && return 0
+    systemctl reset-failed sshd >/dev/null 2>&1
+    systemctl start sshd >/dev/null 2>&1 || return 11
+}
+
+apply_settings() { # apply_settings <0|1> <port>
+    local enabled=$1 port=$2 current_port current_enabled=0 tmp
+    case "$enabled" in 0|1) ;; *) return 1 ;; esac
+    valid_ssh_port "$port" || return 1
+    current_port=$(configured_port) || return 1
+    if [ -e "$ENABLED_MARKER" ]; then
+        enabled_marker_safe || return 1
+        current_enabled=1
+    fi
+    # Re-saving the same values must not rewrite the config or bounce a live
+    # daemon. Reapplying the policy still repairs a drifted firewall.
+    if [ "$enabled" = "$current_enabled" ] && [ "$port" = "$current_port" ]; then
+        activate_settings "$enabled"
+        return
+    fi
+
+    tmp=$(mktemp "${SSHD_CONFIG}.tmp.XXXXXX") || return 1
+    sed "s/^Port [0-9][0-9]*$/Port $port/" "$SSHD_CONFIG" > "$tmp" || {
+        rm -f "$tmp"
+        return 1
+    }
+    chown root:root "$tmp" && chmod 600 "$tmp" && validate_sshd_config "$tmp" "$port" || {
+        rm -f "$tmp"
+        return 1
+    }
+
+    systemctl stop sshd >/dev/null 2>&1 || true
+    mv -f "$tmp" "$SSHD_CONFIG" || {
+        rm -f "$tmp"
+        return 1
+    }
+    # The port is committed from here on. Marker failures return 12, not 1, so
+    # the caller never reports an unchanged system after the config changed.
+    # The marker was already validated above, under the same lock.
+    if [ "$enabled" = 1 ]; then
+        printf 'enabled\n' > "$ENABLED_MARKER" &&
+            chown root:root "$ENABLED_MARKER" && chmod 600 "$ENABLED_MARKER" || return 12
+    else
+        rm -f "$ENABLED_MARKER" || return 12
+    fi
+
+    activate_settings "$enabled"
+}
+
+list_keys() {
+    local line comment index=0
+    load_store || return 1
+    [ -f "$KEYS" ] || return 0
+    for line in "${KEY_LINES[@]}"; do
+        if [ -n "${KEY_FINGERPRINTS[$index]}" ] && parse_key_line "$line"; then
+            comment=$(printf '%s' "$KEY_COMMENT" | tr -cd 'A-Za-z0-9@._+ -' | cut -c1-80)
+            printf '%s\t%s\t%s\n' "${KEY_FINGERPRINTS[$index]}" "$KEY_TYPE" "$comment"
+        fi
+        index=$((index + 1))
+    done
+}
+
+verify_credentials() {
+    local admin_rc dev_rc
+    # Always check both credentials so timing and the generic error do not
+    # reveal which one failed. A successful check has no pacing delay.
+    printf '%s\n' "$1" | /usrdata/quecdeck/script/check_password.sh admin admin
+    admin_rc=${PIPESTATUS[1]}
+    printf '%s\n' "$2" | /usrdata/quecdeck/script/check_password.sh dev devadmin
+    dev_rc=${PIPESTATUS[1]}
+    [ "$admin_rc" != 75 ] && [ "$dev_rc" != 75 ] || return 75
+    [ "$admin_rc" = 0 ] && [ "$dev_rc" = 0 ]
+}
+
+ssh_installed || exit 3
+case "${1:-}" in
+    status)
+        [ "$#" -eq 1 ] || exit 1
+        port=$(configured_port) || exit 1
+        if [ -e "$ENABLED_MARKER" ]; then
+            enabled_marker_safe || exit 1
+            enabled=1
+        else
+            enabled=0
+        fi
+        printf '%s\t%s\n' "$enabled" "$port"
+        ;;
+    settings)
+        [ "$#" -eq 1 ] || exit 1
+        safe_root_home || exit 9
+        [ -s /opt/etc/.htpasswd_dev ] || exit 8
+        PAYLOAD=$(
+            head -c 1033
+            printf .
+        )
+        PAYLOAD=${PAYLOAD%.}
+        [ "${#PAYLOAD}" -le 1032 ] || exit 1
+        PAYLOAD=${PAYLOAD%$'\n'}
+        {
+            IFS= read -r ADMIN_PASSWORD || exit 1
+            IFS= read -r DEV_PASSWORD || exit 1
+            IFS= read -r SSH_ENABLED || exit 1
+            IFS= read -r SSH_PORT || exit 1
+            IFS= read -r EXTRA && exit 1
+        } <<< "$PAYLOAD"
+        [ -n "$ADMIN_PASSWORD" ] && [ "${#ADMIN_PASSWORD}" -le 256 ] || exit 2
+        [ -n "$DEV_PASSWORD" ] && [ "${#DEV_PASSWORD}" -le 256 ] || exit 2
+        case "$SSH_ENABLED" in 0|1) ;; *) exit 1 ;; esac
+        valid_ssh_port "$SSH_PORT" || exit 1
+        exec 9>>"$LOCK" || exit 1
+        chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
+        flock -w 5 -x 9 || exit 75
+        verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
+        credential_rc=$?
+        [ "$credential_rc" != 75 ] || exit 75
+        [ "$credential_rc" = 0 ] || exit 2
+        apply_settings "$SSH_ENABLED" "$SSH_PORT"
+        ;;
+    ready)
+        [ "$#" -eq 1 ] || exit 1
+        safe_root_home || exit 9
+        enabled_marker_safe || exit 1
+        keys_ready
+        ;;
+    list)
+        [ "$#" -eq 1 ] || exit 1
+        safe_root_home || exit 9
+        [ ! -L "$SSH_DIR" ] || exit 1
+        if [ -e "$SSH_DIR" ]; then
+            [ -d "$SSH_DIR" ] && [ "$(stat -c %u "$SSH_DIR" 2>/dev/null)" = 0 ] || exit 1
+        fi
+        [ ! -L "$KEYS" ] || exit 1
+        [ ! -e "$KEYS" ] || [ -f "$KEYS" ] || exit 1
+        list_keys
+        ;;
+    add)
+        [ "$#" -eq 1 ] || exit 1
+        safe_root_home || exit 9
+        [ -s /opt/etc/.htpasswd_dev ] || exit 8
+        PAYLOAD=$(
+            head -c 9001
+            printf .
+        )
+        PAYLOAD=${PAYLOAD%.}
+        [ "${#PAYLOAD}" -le 9000 ] || exit 1
+        PAYLOAD=${PAYLOAD%$'\n'}
+        {
+            IFS= read -r ADMIN_PASSWORD || exit 1
+            IFS= read -r DEV_PASSWORD || exit 1
+            IFS= read -r KEY_LINE || exit 1
+            IFS= read -r EXTRA && exit 1
+        } <<< "$PAYLOAD"
+        [ -n "$ADMIN_PASSWORD" ] && [ "${#ADMIN_PASSWORD}" -le 256 ] || exit 2
+        [ -n "$DEV_PASSWORD" ] && [ "${#DEV_PASSWORD}" -le 256 ] || exit 2
+        valid_key_syntax "$KEY_LINE" || exit 4
+        fingerprint_line "$KEY_LINE" >/dev/null || exit 4
+        exec 9>>"$LOCK" || exit 1
+        chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
+        flock -w 5 -x 9 || exit 75
+        verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
+        credential_rc=$?
+        [ "$credential_rc" != 75 ] || exit 75
+        [ "$credential_rc" = 0 ] || exit 2
+        prepare_store || exit 1
+        load_store || exit 1
+        [ "$KEY_USABLE_COUNT" -lt "$MAX_KEYS" ] || exit 5
+        new_type=${KEY_LINE%% *}
+        new_blob=${KEY_LINE#* }
+        new_blob=${new_blob%% *}
+        if [ -f "$KEYS" ]; then
+            while IFS= read -r existing || [ -n "$existing" ]; do
+                [ -n "$existing" ] || continue
+                if parse_key_line "$existing"; then
+                    [ "$KEY_TYPE $KEY_BLOB" != "$new_type $new_blob" ] || exit 6
+                fi
+            done < "$KEYS"
+        fi
+        TMP=$(mktemp "${KEYS}.tmp.XXXXXX") || exit 1
+        if {
+           if [ -f "$KEYS" ]; then
+               while IFS= read -r existing || [ -n "$existing" ]; do
+                   printf '%s\n' "$existing"
+               done < "$KEYS"
+           fi
+           printf '%s\n' "$KEY_LINE"
+           } > "$TMP" &&
+           chown root:root "$TMP" && chmod 600 "$TMP" && mv -f "$TMP" "$KEYS"; then
+            # The unit itself refuses to bind unless the firewall is active.
+            # Starting it here also lets Restart=on-failure recover when the
+            # firewall becomes available.
+            if enabled_marker_safe; then
+                systemctl reset-failed sshd >/dev/null 2>&1
+                systemctl start sshd >/dev/null 2>&1 || true
+            fi
+            exit 0
+        fi
+        rm -f "$TMP"
+        exit 1
+        ;;
+    remove)
+        [ "$#" -eq 2 ] || exit 1
+        safe_root_home || exit 9
+        [ -s /opt/etc/.htpasswd_dev ] || exit 8
+        FINGERPRINT=${2:-}
+        case "$FINGERPRINT" in
+            SHA256:*) ;;
+            *) exit 4 ;;
+        esac
+        fp_body=${FINGERPRINT#SHA256:}
+        [ "${#fp_body}" -ge 20 ] && [ "${#fp_body}" -le 64 ] || exit 4
+        case "$fp_body" in *[!A-Za-z0-9+/]*) exit 4 ;; esac
+        PAYLOAD=$(
+            head -c 1025
+            printf .
+        )
+        PAYLOAD=${PAYLOAD%.}
+        [ "${#PAYLOAD}" -le 1024 ] || exit 1
+        PAYLOAD=${PAYLOAD%$'\n'}
+        {
+            IFS= read -r ADMIN_PASSWORD || exit 1
+            IFS= read -r DEV_PASSWORD || exit 1
+            IFS= read -r EXTRA && exit 1
+        } <<< "$PAYLOAD"
+        [ -n "$ADMIN_PASSWORD" ] && [ "${#ADMIN_PASSWORD}" -le 256 ] || exit 2
+        [ -n "$DEV_PASSWORD" ] && [ "${#DEV_PASSWORD}" -le 256 ] || exit 2
+        exec 9>>"$LOCK" || exit 1
+        chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
+        flock -w 5 -x 9 || exit 75
+        verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
+        credential_rc=$?
+        [ "$credential_rc" != 75 ] || exit 75
+        [ "$credential_rc" = 0 ] || exit 2
+        prepare_store || exit 1
+        load_store || exit 1
+        [ -f "$KEYS" ] || exit 7
+        TMP=$(mktemp "${KEYS}.tmp.XXXXXX") || exit 1
+        found=0
+        index=0
+        while IFS= read -r existing || [ -n "$existing" ]; do
+            if [ -n "$existing" ] && [ "${KEY_FINGERPRINTS[$index]}" = "$FINGERPRINT" ]; then
+                found=1
+                index=$((index + 1))
+                continue
+            fi
+            printf '%s\n' "$existing" >> "$TMP" || { rm -f "$TMP"; exit 1; }
+            [ -z "$existing" ] || index=$((index + 1))
+        done < "$KEYS"
+        [ "$found" = 1 ] || { rm -f "$TMP"; exit 7; }
+        chown root:root "$TMP" && chmod 600 "$TMP" && mv -f "$TMP" "$KEYS" || {
+            rm -f "$TMP"
+            exit 1
+        }
+        load_store || exit 1
+        if [ "$KEY_COUNT" = 0 ]; then
+            rm -f "$KEYS"
+            systemctl stop sshd >/dev/null 2>&1 || true
+        elif systemctl is-active --quiet sshd 2>/dev/null; then
+            systemctl restart sshd >/dev/null 2>&1 || systemctl stop sshd >/dev/null 2>&1
+        fi
+        ;;
+    *) exit 1 ;;
+esac

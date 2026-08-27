@@ -1,6 +1,6 @@
 #!/bin/sh
 # sshd firewall-gate verification. Exercises the ExecStartPre gate added to
-# sshd.service (sshd must never bind port 22 while the firewall is not
+# sshd.service (sshd must never bind its configured port while the firewall is not
 # active) and its recovery loop:
 #
 #   1. Loaded sshd unit carries the gate and RestartSec=10 (read-only).
@@ -33,7 +33,7 @@ pass=0; fail=0
 ok()  { echo "  PASS: $1"; pass=$((pass+1)); }
 bad() { echo "  FAIL: $1"; fail=$((fail+1)); }
 
-port22_listening() { netstat -tln 2>/dev/null | grep -q ':22 '; }
+ssh_port_listening() { netstat -tln 2>/dev/null | grep -q ":$SSH_PORT "; }
 
 wait_state() {
     _ws_u="$1"; _ws_want="$2"; _ws_t="${3:-15}"; _ws_i=0
@@ -76,6 +76,9 @@ echo "=================================================================="
 [ "$(id -u)" = "0" ] || { echo "FATAL: run as root."; exit 1; }
 [ -f /lib/systemd/system/sshd.service ] || { echo "FATAL: sshd.service not installed -- install SSH first."; exit 1; }
 [ -f "$FW_SCRIPT" ] || { echo "FATAL: $FW_SCRIPT missing -- is QuecDeck installed?"; exit 1; }
+SSH_PORT=$(sed -n 's/^Port \([0-9][0-9]*\)$/\1/p' /opt/etc/ssh/sshd_config)
+case "$SSH_PORT" in ''|*[!0-9]*) echo "FATAL: configured SSH port is invalid"; exit 1 ;; esac
+[ -f /opt/etc/ssh/quecdeck_enabled ] || { echo "FATAL: SSH is disabled. Enable it before this test."; exit 1; }
 mkdir -p "$DIR"
 systemctl is-active sshd >/dev/null 2>&1 && SSHD_WAS_ACTIVE=1
 
@@ -124,18 +127,18 @@ if systemctl start sshd >/dev/null 2>&1 && wait_state sshd active 10; then
     # rather than checking once and racing it.
     _p22=0; _p22_i=0
     while [ "$_p22_i" -lt 5 ]; do
-        port22_listening && { _p22=1; break; }
+        ssh_port_listening && { _p22=1; break; }
         sleep 1; _p22_i=$((_p22_i+1))
     done
-    [ "$_p22" = "1" ] && ok "sshd started and port 22 is listening with the firewall up" \
-        || bad "sshd active but port 22 never started listening within 5s"
+    [ "$_p22" = "1" ] && ok "sshd started and port $SSH_PORT is listening with the firewall up" \
+        || bad "sshd active but port $SSH_PORT never started listening within 5s"
 else
     bad "sshd did not start cleanly with the firewall active"
 fi
 
 # ---- Check 3: gate blocks while the firewall is failed ------------------
 echo ""
-echo "[Check 3] failed firewall -> sshd start is refused, nothing on port 22"
+echo "[Check 3] failed firewall -> sshd start is refused, nothing on port $SSH_PORT"
 systemctl stop sshd >/dev/null 2>&1
 cat "$FW_SCRIPT" > "$DIR/firewall.sh.bak"
 printf '#!/bin/bash\n# sshd-gate test stub\nexit 1\n' > "$FW_SCRIPT"
@@ -148,8 +151,8 @@ if systemctl start sshd >/dev/null 2>&1; then
 else
     ok "sshd start refused while the firewall is failed"
 fi
-port22_listening && bad "something is listening on port 22 despite the gate" \
-    || ok "nothing listening on port 22"
+ssh_port_listening && bad "something is listening on port $SSH_PORT despite the gate" \
+    || ok "nothing listening on port $SSH_PORT"
 
 # ---- Check 4: automatic recovery ----------------------------------------
 echo ""
@@ -159,7 +162,7 @@ chown root:root "$FW_SCRIPT"; chmod 700 "$FW_SCRIPT"
 STUBBED=0
 wait_state firewall active 40 && ok "firewall self-healed" \
     || bad "firewall did not return within 40s of the script being fixed"
-if wait_state sshd active 30 && port22_listening; then
+if wait_state sshd active 30 && ssh_port_listening; then
     ok "sshd recovered on its own via its retry loop (no manual start)"
 else
     bad "sshd did not recover automatically within 30s of the firewall healing"
