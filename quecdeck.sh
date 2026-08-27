@@ -419,13 +419,18 @@ install_quecdeck_dev() {
 # to update_quecdeck.sh rather than left to its default, so the manifest, the
 # installer, and the release archive all come from the same branch.
 install_quecdeck() { # install_quecdeck [ref]
-    _ref="${1:-$GITTREE}"
-    echo -e "\e[1;32mInstalling/updating QuecDeck from $_ref...\e[0m"
+    # Repoint every fetch in this session at the selected ref. The sha256 pins
+    # below live in this script, so they describe the ref this script came
+    # from: installentware.sh, the password tools, and the SSH unit must all be
+    # fetched from that same ref or their pins cannot match.
+    GITTREE="${1:-$GITTREE}"
+    GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
+    echo -e "\e[1;32mInstalling/updating QuecDeck from $GITTREE...\e[0m"
     require_supported_install_state || return 1
     ensure_entware_installed
     set_quecdeck_passwd || return 1
 
-    fetch_and_run_installer "https://raw.githubusercontent.com/$GITUSER/$REPONAME/$_ref" "$_ref" || return 1
+    fetch_and_run_installer "$GITROOT" "$GITTREE" || return 1
 
     if [ ! -f /opt/etc/.htpasswd ]; then
         lan_ip=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml 2>/dev/null | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')

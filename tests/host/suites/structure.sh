@@ -83,7 +83,11 @@ unset _entware_base _ssh_accounts _sshd_menu _ssh_config _ssh_prepare_line _ssh_
 # silently pairs a branch installer with a main-branch release.
 _install_fn=$(sed -n '/^install_quecdeck() {/,/^}/p' quecdeck.sh)
 t "branch install passes its ref to the updater" "yes" \
-  "$(printf '%s\n' "$_install_fn" | grep -q 'fetch_and_run_installer "https://raw.githubusercontent.com/\$GITUSER/\$REPONAME/\$_ref" "\$_ref"' && echo yes || echo no)"
+  "$(printf '%s\n' "$_install_fn" | grep -q 'fetch_and_run_installer "\$GITROOT" "\$GITTREE"' && echo yes || echo no)"
+# Every pinned fetch reads the global GITROOT, and the pins live in this same
+# script. Repointing GITROOT before the first fetch is what keeps them matched.
+t "branch install repoints GITROOT before any pinned fetch" "yes" \
+  "$( _set=$(printf '%s\n' "$_install_fn" | grep -n 'GITROOT="https://raw.githubusercontent.com/\$GITUSER/\$REPONAME/\$GITTREE"' | cut -d: -f1); _ent=$(printf '%s\n' "$_install_fn" | grep -n 'ensure_entware_installed' | cut -d: -f1); _pw=$(printf '%s\n' "$_install_fn" | grep -n 'set_quecdeck_passwd' | cut -d: -f1); [ -n "$_set" ] && [ "$_set" -lt "$_ent" ] && [ "$_set" -lt "$_pw" ] && echo yes || echo no)"
 t "menu install options name their ref explicitly" "yes" \
   "$(grep -q '^            install_quecdeck main$' quecdeck.sh && grep -q '^            install_quecdeck_dev$' quecdeck.sh && echo yes || echo no)"
 t "development branch install is offered and confirmed" "yes" \
