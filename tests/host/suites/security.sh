@@ -499,12 +499,13 @@ unset _i _pub _cfg _u _ready _t
 # address now comes from a tmpfs fragment and the file is never rewritten.
 t "lighttpd binds through the published fragment" "yes" \
   "$(grep -qx 'include "/run/quecdeck/lighttpd-listen.conf"' quecdeck/lighttpd.conf && grep -qx 'server.bind = var.lan_ip' quecdeck/lighttpd.conf && grep -q 'var.lan_ip + ":443"' quecdeck/lighttpd.conf && echo yes || echo no)"
-# A skipped include must cost reachability, never WAN exposure, so the default
-# assigned before it is loopback rather than the wildcard address.
-t "lighttpd default bind is loopback not wildcard" "yes" \
-  "$(grep -qx 'var.lan_ip = "127.0.0.1"' quecdeck/lighttpd.conf && ! grep -qE '^(server\.bind = "0\.0\.0\.0"|\$SERVER\["socket"\] == "0\.0\.0\.0:443")' quecdeck/lighttpd.conf && echo yes || echo no)"
-t "lighttpd default is assigned before the fragment overrides it" "yes" \
-  "$([ "$(grep -n 'var.lan_ip = "127.0.0.1"' quecdeck/lighttpd.conf | cut -d: -f1)" -lt "$(grep -n 'include "/run/quecdeck/lighttpd-listen.conf"' quecdeck/lighttpd.conf | cut -d: -f1)" ] && echo yes || echo no)"
+# lighttpd variables are write-once: assigning a default here and letting the
+# fragment override it is a "Duplicate config variable" parse error. The
+# fragment must be the only definition. Device-verified that this fails closed:
+# with the fragment absent the parse aborts with "include file not found"
+# (rc=255), so the server can never fall back to binding every interface.
+t "lighttpd declares no bind default of its own" "yes" \
+  "$(! grep -qE '^var\.lan_ip *=' quecdeck/lighttpd.conf && ! grep -qE '^(server\.bind = "[0-9.]+"|\$SERVER\["socket"\] == "[0-9.]+:443")' quecdeck/lighttpd.conf && echo yes || echo no)"
 t "lighttpd prestart publishes instead of editing its config" "yes" \
   "$( _p=quecdeck/script/lighttpd_prestart.sh; grep -q 'mv -f "\$_tmp" "\$LISTEN_CONF"' "$_p" && ! grep -q 'sed -i "s/server' "$_p" && echo yes || echo no)"
 # One parser for the address every publisher binds or protects.
