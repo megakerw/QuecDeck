@@ -139,6 +139,32 @@ load_store() {
     done
 }
 
+# The authentication and forwarding posture every running daemon must report.
+# One list, checked against both a candidate file and the live configuration,
+# so the two callers cannot drift apart. Tuning knobs such as LoginGraceTime
+# are deliberately absent: only the directives that bound what a key grants
+# belong here, since a mismatch here refuses to start the daemon.
+SSHD_POLICY="passwordauthentication no
+kbdinteractiveauthentication no
+permitrootlogin prohibit-password
+pubkeyauthentication yes
+authenticationmethods publickey
+authorizedkeysfile /usrdata/root/.ssh/authorized_keys
+allowtcpforwarding no
+allowagentforwarding no
+allowstreamlocalforwarding no
+gatewayports no
+permittunnel no
+x11forwarding no"
+
+sshd_policy_ok() { # sshd_policy_ok <sshd -T output>
+    local line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        printf '%s\n' "$1" | grep -qx "$line" || return 1
+    done <<< "$SSHD_POLICY"
+}
+
 keys_ready() {
     local effective
     safe_root_home || return 1
@@ -149,12 +175,7 @@ keys_ready() {
     load_store || return 1
     [ "$KEY_USABLE_COUNT" -gt 0 ] || return 1
     effective=$(/opt/sbin/sshd -T 2>/dev/null) || return 1
-    printf '%s\n' "$effective" | grep -qx 'passwordauthentication no' || return 1
-    printf '%s\n' "$effective" | grep -qx 'kbdinteractiveauthentication no' || return 1
-    printf '%s\n' "$effective" | grep -qx 'permitrootlogin without-password' || return 1
-    printf '%s\n' "$effective" | grep -qx 'pubkeyauthentication yes' || return 1
-    printf '%s\n' "$effective" | grep -qx 'authenticationmethods publickey' || return 1
-    printf '%s\n' "$effective" | grep -qx 'authorizedkeysfile /usrdata/root/.ssh/authorized_keys' || return 1
+    sshd_policy_ok "$effective"
 }
 
 configured_port() {
@@ -182,12 +203,7 @@ validate_sshd_config() { # validate_sshd_config <path> <port>
     local effective
     /opt/sbin/sshd -t -f "$1" || return 1
     effective=$(/opt/sbin/sshd -T -f "$1" 2>/dev/null) || return 1
-    printf '%s\n' "$effective" | grep -qx 'passwordauthentication no' || return 1
-    printf '%s\n' "$effective" | grep -qx 'kbdinteractiveauthentication no' || return 1
-    printf '%s\n' "$effective" | grep -qx 'permitrootlogin without-password' || return 1
-    printf '%s\n' "$effective" | grep -qx 'pubkeyauthentication yes' || return 1
-    printf '%s\n' "$effective" | grep -qx 'authenticationmethods publickey' || return 1
-    printf '%s\n' "$effective" | grep -qx 'authorizedkeysfile /usrdata/root/.ssh/authorized_keys' || return 1
+    sshd_policy_ok "$effective" || return 1
     printf '%s\n' "$effective" | grep -qx "port $2" || return 1
 }
 

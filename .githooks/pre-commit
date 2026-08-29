@@ -18,6 +18,8 @@ CHECKSUMMED_FILES=(
   quecdeck/script/connection_logger.sh
   quecdeck/script/connection-log.sh
   quecdeck/script/lighttpd_prestart.sh
+  quecdeck/script/install_sshd.sh
+  quecdeck/script/lan-ip-lib.sh
   quecdeck/script/lock-lib.sh
   quecdeck/script/write_htpasswd.sh
   quecdeck/script/change_password.sh
@@ -35,10 +37,13 @@ CHECKSUMMED_FILES=(
   quecdeck/auth.lua
   quecdeck/install-generation
   quecdeck/monitoring-generation
+  quecdeck/optional/sshd/sshd.service
+  quecdeck/optional/sshd/update_sshd_ip.sh
   quecdeck/www/index.html
   quecdeck/www/network.html
   quecdeck/www/settings.html
   quecdeck/www/security.html
+  quecdeck/www/ssh.html
   quecdeck/www/watchcat.html
   quecdeck/www/scheduled-restart.html
   quecdeck/www/logs.html
@@ -132,8 +137,6 @@ CHECKSUMMED_FILES=(
 # pin ship and fail integrity checks on-device.
 PINNED_FILES=(
   installentware.sh
-  optional/sshd/sshd.service
-  optional/sshd/update_sshd_ip.sh
   quecdeck/quecdeckpasswd
   quecdeck/quecdeckdevpasswd
 )
@@ -199,6 +202,7 @@ HTML_FILES=(
   quecdeck/www/network.html
   quecdeck/www/settings.html
   quecdeck/www/security.html
+  quecdeck/www/ssh.html
   quecdeck/www/watchcat.html
   quecdeck/www/scheduled-restart.html
   quecdeck/www/logs.html

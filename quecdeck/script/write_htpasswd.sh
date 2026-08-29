@@ -1,8 +1,11 @@
 #!/bin/bash
 # Called via sudo by the init_setup CGI to create htpasswd files with correct
-# ownership. The setup mode accepts the administrator line followed by an
-# developer line when needed and commits them as one transaction.
-# Usage: printf 'admin:%s\n' "$hash" | sudo write_htpasswd.sh setup
+# ownership. The setup mode accepts the administrator line followed by a
+# developer line when needed, and commits them as one transaction along with
+# the developer-credential generation token.
+# Usage: printf 'admin:%s\ndevadmin:%s\n' "$admin_hash" "$dev_hash" |
+#            sudo write_htpasswd.sh setup
+# The developer line is omitted only when that credential already exists.
 #
 # This script is for ONE-TIME initial setup only and refuses to overwrite an
 # already-configured (non-empty) file. Later administrator changes use the
@@ -46,6 +49,19 @@ install_line() { # install_line <path> <line>
     fi
 }
 
+install_generation() {
+    local path=/opt/etc/.htpasswd_dev.generation value tmp
+    value=$(openssl rand -hex 16 2>/dev/null) || return 1
+    printf '%s' "$value" | grep -qE '^[a-f0-9]{32}$' || return 1
+    tmp=$(mktemp "${path}.tmp.XXXXXX") || return 1
+    if ! printf '%s\n' "$value" > "$tmp" ||
+       ! chown root:www-data "$tmp" || ! chmod 640 "$tmp" ||
+       ! mv -f "$tmp" "$path"; then
+        rm -f "$tmp"
+        return 1
+    fi
+}
+
 TYPE="${1:-}"
 [ "$#" -eq 1 ] || exit 1
 case "$TYPE" in
@@ -74,11 +90,18 @@ case "$TYPE" in
         # auth.lua treats the administrator file as the setup commit point.
         dev_created=0
         if [ -n "$DEV_LINE" ]; then
+            rm -f /opt/etc/.htpasswd_dev.generation || exit 1
             install_line /opt/etc/.htpasswd_dev "$DEV_LINE" || exit 1
             dev_created=1
         fi
+        if [ ! -s /opt/etc/.htpasswd_dev.generation ]; then
+            install_generation || {
+                [ "$dev_created" = "0" ] || rm -f /opt/etc/.htpasswd_dev
+                exit 1
+            }
+        fi
         if ! install_line /opt/etc/.htpasswd "$ADMIN_LINE"; then
-            [ "$dev_created" = "0" ] || rm -f /opt/etc/.htpasswd_dev
+            [ "$dev_created" = "0" ] || rm -f /opt/etc/.htpasswd_dev /opt/etc/.htpasswd_dev.generation
             exit 1
         fi
         ;;

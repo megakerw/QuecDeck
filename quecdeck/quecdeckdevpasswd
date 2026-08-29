@@ -8,9 +8,40 @@ while true; do
     read -r -s -p "Password: " pw1; echo
     read -r -s -p "Confirm password: " pw2; echo
     if [ "$pw1" = "$pw2" ] && [ "${#pw1}" -ge 12 ] && [ "${#pw1}" -le 256 ]; then
-        echo "devadmin:$(printf '%s' "$pw1" | openssl passwd -6 -stdin)" > /opt/etc/.htpasswd_dev
-        chown root:root /opt/etc/.htpasswd_dev
-        chmod 600 /opt/etc/.htpasswd_dev
+        if [ -s /opt/etc/.htpasswd ]; then
+            printf '%s\n' "$pw1" | /usrdata/quecdeck/script/check_password.sh admin admin
+            compare_rc=${PIPESTATUS[1]}
+            if [ "$compare_rc" = 75 ]; then
+                echo -e "\e[1;31mPassword verification is temporarily unavailable. Please try again.\e[0m"
+                continue
+            fi
+            if [ "$compare_rc" = 0 ]; then
+                echo -e "\e[1;31mAdministrator and developer passwords must be different. Please try again.\e[0m"
+                continue
+            fi
+        fi
+        hash=$(printf '%s' "$pw1" | openssl passwd -6 -stdin)
+        generation=$(openssl rand -hex 16 2>/dev/null)
+        printf '%s' "$generation" | grep -qE '^[a-f0-9]{32}$' || continue
+        password_tmp=$(mktemp /opt/etc/.htpasswd_dev.tmp.XXXXXX) || continue
+        generation_tmp=$(mktemp /opt/etc/.htpasswd_dev.generation.tmp.XXXXXX) || {
+            rm -f "$password_tmp"
+            continue
+        }
+        if ! printf 'devadmin:%s\n' "$hash" > "$password_tmp" ||
+           ! chown root:root "$password_tmp" || ! chmod 600 "$password_tmp" ||
+           ! printf '%s\n' "$generation" > "$generation_tmp" ||
+           ! chown root:www-data "$generation_tmp" || ! chmod 640 "$generation_tmp"; then
+            rm -f "$password_tmp" "$generation_tmp"
+            continue
+        fi
+        rm -f /opt/etc/.htpasswd_dev.generation
+        if ! mv -f "$password_tmp" /opt/etc/.htpasswd_dev ||
+           ! mv -f "$generation_tmp" /opt/etc/.htpasswd_dev.generation; then
+            rm -f "$password_tmp" "$generation_tmp"
+            echo -e "\e[1;31mFailed to store the developer password. Please try again.\e[0m"
+            continue
+        fi
         echo -e "\e[1;32mDeveloper password set.\e[0m"
         break
     elif [ "$pw1" != "$pw2" ]; then

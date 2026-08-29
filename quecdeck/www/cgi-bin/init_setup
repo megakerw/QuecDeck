@@ -47,6 +47,11 @@ if [ -n "$dev_pass" ] && { [ "${#dev_pass}" -lt 12 ] || [ "${#dev_pass}" -gt 256
     exit 0
 fi
 
+if [ -n "$dev_pass" ] && [ "$admin_pass" = "$dev_pass" ]; then
+    printf '{"ok":false,"error":"Administrator and developer passwords must be different"}\n'
+    exit 0
+fi
+
 # Validate and hash the complete request before committing either credential.
 admin_hash=$(printf '%s' "$admin_pass" | openssl passwd -6 -stdin)
 if [ -z "$admin_hash" ]; then

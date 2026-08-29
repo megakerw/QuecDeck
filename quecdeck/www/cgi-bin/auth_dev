@@ -24,8 +24,8 @@ _json() { cgi_output_json; printf '%s\n' "$1"; }
 token=$(printf '%s' "${HTTP_COOKIE:-}" | tr ';' '\n' | sed 's/^ *//' | \
     grep '^session=' | head -1 | cut -d= -f2)
 
-# Validate the token format before using it in a file path. This is defense in depth
-# auth.lua enforces the same constraint before this script runs).
+# Validate the token format before using it in a file path. This is defense in
+# depth because auth.lua enforces the same constraint before this script runs.
 if ! printf '%s' "$token" | grep -qE '^[A-Za-z0-9]{1,128}$'; then
     _json '{"unlocked":false}'
     exit 0
@@ -34,10 +34,18 @@ fi
 SESSION_FILE="/run/quecdeck-web/sessions/${token}"
 # The dev-unlock flag lives in a sibling "<token>.dev" file rather than inside
 # the session file. auth.lua rewrites the session file on every request (to
-# refresh last_access). Keeping dev_unlocked in a separate file that only this
-# script writes prevents that frequent rewrite from clobbering the flag, with no
-# shared lock needed (auth.lua would have to fork to take one).
+# refresh last_access). Keeping developer state in a separate file prevents
+# that frequent rewrite from clobbering the flag. The credential generation
+# closes races with password rotation without adding a shared session lock.
 DEV_FILE="${SESSION_FILE}.dev"
+GENERATION_FILE=/opt/etc/.htpasswd_dev.generation
+
+read_generation() {
+    local value
+    IFS= read -r value < "$GENERATION_FILE" 2>/dev/null || return 1
+    printf '%s' "$value" | grep -qE '^[a-f0-9]{32}$' || return 1
+    printf '%s' "$value"
+}
 
 if [ ! -f "$SESSION_FILE" ]; then
     _json '{"unlocked":false}'
@@ -45,12 +53,19 @@ if [ ! -f "$SESSION_FILE" ]; then
 fi
 
 dev_unlocked=$(grep '^dev_unlocked=' "$DEV_FILE" 2>/dev/null | cut -d= -f2)
+dev_generation=$(grep '^generation=' "$DEV_FILE" 2>/dev/null | cut -d= -f2)
+current_generation=$(read_generation 2>/dev/null) || current_generation=""
 
 # GET: return current unlock status and whether a dev password has been configured.
 if [ "$REQUEST_METHOD" = "GET" ]; then
     configured="false"
     [ -s /opt/etc/.htpasswd_dev ] && configured="true"
-    [ "$dev_unlocked" = "1" ] && unlocked="true" || unlocked="false"
+    if [ "$dev_unlocked" = "1" ] && [ -n "$current_generation" ] &&
+       [ "$dev_generation" = "$current_generation" ]; then
+        unlocked="true"
+    else
+        unlocked="false"
+    fi
     _json "$(printf '{"unlocked":%s,"configured":%s}' "$unlocked" "$configured")"
     exit 0
 fi
@@ -89,16 +104,36 @@ if bf_locked "$FAILURE_DIR" "$client_ip"; then
     exit 0
 fi
 
+generation_before=$(read_generation) || {
+    bf_unlock
+    _json '{"unlocked":false,"error":"unavailable"}'
+    exit 0
+}
 validate_password dev devadmin "$password"
 password_rc=$?
 if [ "$password_rc" = 75 ]; then
     bf_unlock
     _json '{"unlocked":false,"error":"unavailable"}'
 elif [ "$password_rc" = 0 ]; then
-    # Success: clear failures, mark dev-unlocked (own file, temp+rename, no lock).
+    # Bind the unlock to the credential generation. Rechecking after the
+    # rename closes a rotation that overlaps password verification.
+    if ! (umask 077; printf 'dev_unlocked=1\ngeneration=%s\ncreated=%s\n' \
+         "$generation_before" "$(date +%s)" > "${DEV_FILE}.tmp.$$") ||
+       ! mv "${DEV_FILE}.tmp.$$" "$DEV_FILE"; then
+        rm -f "${DEV_FILE}.tmp.$$"
+        bf_unlock
+        _json '{"unlocked":false,"error":"unavailable"}'
+        exit 0
+    fi
+    generation_after=$(read_generation 2>/dev/null) || generation_after=""
+    if [ "$generation_before" != "$generation_after" ]; then
+        rm -f "$DEV_FILE"
+        bf_unlock
+        _json '{"unlocked":false,"error":"unavailable"}'
+        exit 0
+    fi
     bf_clear "$FAILURE_DIR" "$client_ip"
     bf_unlock
-    (umask 077; printf 'dev_unlocked=1\ncreated=%s\n' "$(date +%s)" > "${DEV_FILE}.tmp.$$") && mv "${DEV_FILE}.tmp.$$" "$DEV_FILE"
     log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"dev_unlock_success\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
     _json '{"unlocked":true}'
 else

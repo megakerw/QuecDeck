@@ -430,9 +430,9 @@ stage_release() {
     # www-data can never replace a privileged entry point, 700 since nothing
     # unprivileged runs or reads them. The rest of script/ stays 755: www-data
     # sources or executes those.
-    for _s in lighttpd_prestart.sh write_htpasswd.sh change_password.sh \
+    for _s in lighttpd_prestart.sh install_sshd.sh write_htpasswd.sh change_password.sh \
               ssh_keys.sh check_password.sh run_update.sh firewall.sh \
-              lock-lib.sh; do
+              lock-lib.sh lan-ip-lib.sh; do
         chown root:root "$STAGE_DIR/script/$_s"
         chmod 700 "$STAGE_DIR/script/$_s"
     done

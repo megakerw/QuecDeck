@@ -5,6 +5,7 @@ local TIMEOUT  = 1800            -- seconds of inactivity before session expires
 local MAX_AGE  = 28800           -- 8 hours absolute session lifetime
 local SESSIONS = "/run/quecdeck-web/sessions/"
 local LOGIN    = "/login.html"
+local DEV_GENERATION = "/opt/etc/.htpasswd_dev.generation"
 
 local uri  = lighty.env["request.uri"]
 local path = uri:match("^([^?#]*)")
@@ -146,12 +147,21 @@ local requires_dev_unlocked = path == "/cgi-bin/user_atcommand"
     or path == "/cgi-bin/set_cell_lock"
 if requires_dev_unlocked then
     local unlocked = false
-    local devf = io.open(sf .. ".dev", "r")
-    if devf then
-        unlocked = devf:read("*a"):match("dev_unlocked=1") ~= nil
-        devf:close()
+    local dev = read_session(sf .. ".dev")
+    local generation_file = io.open(DEV_GENERATION, "r")
+    local generation
+    if generation_file then
+        generation = generation_file:read("*l")
+        generation_file:close()
+    end
+    if dev and dev.dev_unlocked == "1" and generation
+        and generation:match("^[a-f0-9]+$") and #generation == 32
+        and dev.generation == generation
+    then
+        unlocked = true
     end
     if not unlocked then
+        os.remove(sf .. ".dev")
         lighty.status = 403
         return 403
     end

@@ -1,4 +1,4 @@
-function securitySettings() {
+function securitySettings(sshPage = false) {
   return {
     busy: false,
     loaded: false,
@@ -13,8 +13,13 @@ function securitySettings() {
     rootHomeReady: true,
     keys: [],
     currentPassword: '',
+    adminDeveloperPassword: '',
     newPassword: '',
     confirmPassword: '',
+    developerAdminPassword: '',
+    currentDeveloperPassword: '',
+    newDeveloperPassword: '',
+    confirmDeveloperPassword: '',
     publicKey: '',
     keyPassword: '',
     keyDeveloperPassword: '',
@@ -61,8 +66,8 @@ function securitySettings() {
     },
 
     changePassword() {
-      if (!this.currentPassword) {
-        this.$store.errorModal.open('Enter your current password.');
+      if (!this.currentPassword || !this.adminDeveloperPassword) {
+        this.$store.errorModal.open('Enter both current passwords.');
         return;
       }
       if (this.newPassword.length < 12 || this.newPassword.length > 256) {
@@ -73,10 +78,15 @@ function securitySettings() {
         this.$store.errorModal.open('The new passwords do not match.');
         return;
       }
+      if (this.newPassword === this.adminDeveloperPassword) {
+        this.$store.errorModal.open('Administrator and developer passwords must be different.');
+        return;
+      }
       this.busy = true;
       this.securityAction({
         action: 'change_password',
         current_password: this.currentPassword,
+        developer_password: this.adminDeveloperPassword,
         new_password: this.newPassword,
         confirm_password: this.confirmPassword,
       }).then((data) => {
@@ -85,6 +95,42 @@ function securitySettings() {
         window.location.replace(`/login.html?password_changed=1${warning}`);
       }).catch((error) => {
         this.$store.errorModal.open(error.message || 'Password change failed.');
+      }).finally(() => { this.busy = false; });
+    },
+
+    changeDeveloperPassword() {
+      if (!this.developerAdminPassword || !this.currentDeveloperPassword) {
+        this.$store.errorModal.open('Enter both current passwords.');
+        return;
+      }
+      if (this.newDeveloperPassword.length < 12 || this.newDeveloperPassword.length > 256) {
+        this.$store.errorModal.open('The new developer password must be between 12 and 256 characters.');
+        return;
+      }
+      if (this.newDeveloperPassword !== this.confirmDeveloperPassword) {
+        this.$store.errorModal.open('The new developer passwords do not match.');
+        return;
+      }
+      if (this.newDeveloperPassword === this.developerAdminPassword) {
+        this.$store.errorModal.open('Administrator and developer passwords must be different.');
+        return;
+      }
+      this.busy = true;
+      this.securityAction({
+        action: 'change_developer_password',
+        current_password: this.developerAdminPassword,
+        developer_password: this.currentDeveloperPassword,
+        new_password: this.newDeveloperPassword,
+        confirm_password: this.confirmDeveloperPassword,
+      }).then((data) => {
+        if (!data.ok) throw new Error(data.error || 'Developer password change failed.');
+        this.developerAdminPassword = '';
+        this.currentDeveloperPassword = '';
+        this.newDeveloperPassword = '';
+        this.confirmDeveloperPassword = '';
+        this.$store.errorModal.open('Developer password changed.', 'Success');
+      }).catch((error) => {
+        this.$store.errorModal.open(error.message || 'Developer password change failed.');
       }).finally(() => { this.busy = false; });
     },
 
@@ -112,7 +158,7 @@ function securitySettings() {
         return;
       }
       if (!this.developerConfigured) {
-        this.$store.errorModal.open('Run /usrdata/root/bin/quecdeckdevpasswd through ADB or root SSH before managing SSH keys.');
+        this.$store.errorModal.open('Set a developer password on the Security page before managing SSH keys.');
         return;
       }
       if (!publicKey || !this.keyPassword || !this.keyDeveloperPassword) {
@@ -149,7 +195,7 @@ function securitySettings() {
         return;
       }
       if (!this.developerConfigured) {
-        this.$store.errorModal.open('Run /usrdata/root/bin/quecdeckdevpasswd through ADB or root SSH before changing SSH settings.');
+        this.$store.errorModal.open('Set a developer password on the Security page before changing SSH settings.');
         return;
       }
       if (!Number.isInteger(port) || (port !== 22 && (port < 1024 || port > 65535))) {
@@ -187,7 +233,7 @@ function securitySettings() {
         return;
       }
       if (!this.developerConfigured) {
-        this.$store.errorModal.open('Run /usrdata/root/bin/quecdeckdevpasswd through ADB or root SSH before managing SSH keys.');
+        this.$store.errorModal.open('Set a developer password on the Security page before managing SSH keys.');
         return;
       }
       if (!this.keyPassword || !this.keyDeveloperPassword) {
@@ -220,7 +266,7 @@ function securitySettings() {
     },
 
     init() {
-      this.loadSecurity();
+      if (sshPage) this.loadSecurity();
     },
   };
 }

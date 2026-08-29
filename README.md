@@ -78,7 +78,13 @@ Scan for nearby cells and display network, provider, band, frequency, PCI, and R
 
 ### Security
 - Change the web administrator password after confirming the current password. QuecDeck signs out active web sessions and warns if complete invalidation cannot be confirmed
-- When OpenSSH is installed, enable or disable the server, choose its LAN-only port, and manage up to 5 root public keys. QuecDeck accepts Ed25519, ECDSA, and RSA keys without key options. Private keys are rejected
+- Change the developer access password after confirming both the administrator and the current developer password. Any active developer unlock is revoked, so the new password is required before destructive features can be used again
+
+### SSH
+Available when OpenSSH is installed from the installer menu.
+- Enable or disable the server and choose its LAN-only port. The firewall opens that port only while SSH is enabled
+- Manage up to 5 root public keys. QuecDeck accepts Ed25519, ECDSA, and RSA keys without key options. Private keys are rejected
+- Every change requires both the administrator and the developer password. The service does not start without a key or while disabled
 
 ### Monitoring
 - **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics, consecutive failure tracking, and a persistent reboot-activity log. Each round rotates which configured target is checked first and stops at the first response. A reboot requires at least three rounds where every target fails. If a reboot doesn't restore connectivity, Watchcat waits progressively longer before trying again instead of rebooting in a tight loop
@@ -108,7 +114,7 @@ Requires a separate developer password to unlock. Provides access to:
 - **Cell Locking:** lock the primary cell for LTE or NR5G-SA by EARFCN and PCI (not persistent across reboots)
 
 ### Shell Management
-Run `/usrdata/root/bin/quecdeckpasswd` or `/usrdata/root/bin/quecdeckdevpasswd` through ADB or root SSH to change passwords. Fetch `quecdeck.sh` again for installation, removal, and optional SSH management.
+Both passwords can also be changed from the Security page. Run `/usrdata/root/bin/quecdeckpasswd` or `/usrdata/root/bin/quecdeckdevpasswd` through ADB or root SSH when the web interface is unavailable, or to recover a forgotten password. Fetch `quecdeck.sh` again for installation, removal, and optional SSH management.
 
 ## Implementation
 
@@ -158,7 +164,8 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 - Failed login attempts are delayed by 1 second and trigger a 15-minute lockout after 5 failures. Password verification waits at most 5 seconds for another check to finish. All login events are written to the access log
 - Session tokens are 64-character random strings stored in `0600` files inside a `0700` directory. Cookies are flagged `HttpOnly`, `Secure`, and `SameSite=Strict`. Session file writes are atomic (temp file plus rename), and the developer-unlock flag is kept in a separate per-session file to avoid write races
 - Passwords must be between 12 and 256 characters and are validated before any credential check is performed
-- Administrator password changes require the current administrator password. SSH key changes require both administrator and developer passwords. Root helpers use fixed operations and paths, reject symlinks, and replace credential files atomically
+- Administrator and developer password changes require both current passwords. SSH key changes also require both passwords. Root helpers use fixed operations and paths, reject symlinks, and replace credential files atomically
+- Each developer unlock records the current developer-credential generation, a random token rewritten by root whenever the developer password changes. The auth layer compares the two on every developer-gated request, so changing that password revokes existing unlocks instead of leaving them valid until they expire
 - Path traversal is rejected in depth: lighttpd is pinned to reject encoded slashes (`%2f`) and dot-segments rather than silently decode them, and the auth layer independently rejects both literal `..` and percent-encoded (`%2e`) sequences before any access-exemption check
 
 **Data at rest:** private web runtime state follows one invariant: it is owned by
@@ -200,7 +207,7 @@ QuecDeck is intended for an owner-operated modem on a trusted local network. Its
 - **Login throttling protects the HTTP login path.** Password hashes remain root-only, but a process already executing as `www-data` can invoke the narrowly allowed password-check helper directly and bypass the CGI's per-IP lockout. The root helper serializes checks per credential, delays failures by 1 second, and abandons a contended check after 5 seconds. This is bounded pacing rather than a lockout, so use strong, unique admin and developer passwords rather than relying on throttling alone.
 - **Root-side password pacing trades availability for brute-force resistance.** Failed checks share a per-credential lock across all clients because the root helper cannot trust client identity supplied by the web tier. Sustained failed verification can therefore make legitimate login or security requests return temporarily unavailable. The 5-second lock timeout bounds each request and this availability cost is accepted deliberately.
 - **Clean installation boundary.** Releases from before the current installation generation are not updated in place. Rerun the installer to uninstall QuecDeck and Entware, reboot, then install the current release. This prevents legacy login, SSH, web console, and package configuration from being carried into the new installation.
-- **A compromised web process can forge application sessions.** Session state belongs to `www-data`, so code already running as that account can mint an administrator session or hijack a live one. An administrator session may view public-key metadata, and changing the web password requires the current administrator password. Adding or removing root SSH keys requires both administrator and developer passwords at a root-owned helper. Root-side checks are serialized and paced, which limits a web-tier compromise from becoming persistent root access without additional credentials.
+- **A compromised web process can forge application sessions.** Session state belongs to `www-data`, so code already running as that account can mint an administrator session or hijack a live one. An administrator session may view public-key metadata. Password changes and root SSH key changes require both administrator and developer passwords at a root-owned helper. Root-side checks are serialized and paced, which limits a web-tier compromise from becoming persistent root access without additional credentials.
 - **The sudo allowlist is a fixed security budget.** Root helpers use fixed operations and paths and revalidate security-sensitive credentials themselves. New sudo entries require an explicit review of what fully compromised `www-data` could do with them.
 - **Release checksums detect corruption and inconsistent files, not publisher compromise.** The release and its checksum manifest are obtained from the same GitHub repository. Verification does not protect against compromise of the publishing account or replacement of both artifacts by an authorized publisher.
 - **HTTPS uses a self-signed device certificate.** Encryption is provided after the certificate is accepted, but users should verify and trust the expected certificate rather than dismissing an unexpected certificate change, especially on an untrusted LAN.
@@ -221,7 +228,7 @@ Updates can be triggered from the Update page in the web UI or by re-running `qu
 Watchcat and Scheduled Restart settings are preserved between releases that use the current monitoring implementation. If a compatible update fails after the switch begins, rollback restores monitoring boot enablement and attempts to restart both workers. A future release that changes the monitoring state contract starts those features unconfigured instead of loading incompatible state.
 
 ### Optional Components
-- **SSH:** OpenSSH server with public-key-only root login. A pre-start script (`update_sshd_ip.sh`) updates `sshd_config`'s `ListenAddress` to the current LAN IP before the daemon starts, restricting it to LAN only. Install SSH from the installer menu, then manage its enabled state, port, and public keys on the Security page. SSH changes require both administrator and developer passwords. The service does not start without a key or while disabled. QuecDeck does not replace firmware login or password commands.
+- **SSH:** OpenSSH server with public-key-only root login. The installed QuecDeck release carries the SSH installer and unit files, so SSH installation always uses assets from that same release. A pre-start script (`update_sshd_ip.sh`) updates `sshd_config`'s `ListenAddress` to the current LAN IP before the daemon starts, restricting it to LAN only. Install SSH from the installer menu, then manage its enabled state, port, and public keys on the SSH page. SSH changes require both administrator and developer passwords. The service does not start without a key or while disabled. QuecDeck does not replace firmware login or password commands.
 
 ## Development
 
@@ -233,6 +240,8 @@ The repository includes the following host and device checks. The applicable hos
 - **On-device scripts** (`tests/device/device-test-*.sh`): copied to the device manually for behavior that host tests cannot verify, including firmware networking, firewall behavior, privilege dropping, socket permissions, and real modem timing. Run the relevant tests before tagging a release. Individual headers identify disruptive cases.
 
 The pre-commit hook is enabled with `git config core.hooksPath .githooks`.
+
+To test an unreleased branch on hardware, choose **Install/Update QuecDeck (development branch)** from the installer menu and enter the branch name. The manifest, the installer, and the release archive are all fetched from that branch and verified against each other, exactly as a release install is. The branch is unreleased code and can leave the modem without a working web interface, so it is not a supported way to run QuecDeck.
 
 **Shell performance rule** (measured on the device's single Cortex-A7): Bash builtins are used only for small or fixed-size data. Bulk transformation of unbounded AT responses uses `tr`/`awk`, never Bash pattern replacement, whose cost scales with size times match count (48 seconds on a 44 KB SMS list, versus 20 ms for `tr`). The atcli repo's CI guards the daemon path with a large-response test.
 

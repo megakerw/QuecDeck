@@ -1,22 +1,17 @@
 #!/bin/sh
-# quecdeck.sh SSH-install gate verification. The device-test-sshd-gate.sh script already
+# SSH-install gate verification. The device-test-sshd-gate.sh script already
 # proves the UNIT-level gate (sshd.service's ExecStartPre) blocks a bind while
-# the firewall is down. This script proves the OTHER gate: the
-# the conditional firewall restart block inside
-# quecdeck.sh's sshd_service() install path (case 1), which decides whether
-# to even ATTEMPT `systemctl start sshd` in the first place. That was the
+# the firewall is down. This script proves the other gate, which is the
+# conditional firewall restart inside the installed SSH helper. It decides
+# whether to attempt `systemctl start sshd` in the first place. That was the
 # CONFIRMED finding from the review this whole session's SSH work responds
 # to (port 22 could bind unprotected during install if the firewall restart
 # failed and nothing gated the subsequent start).
 #
-# Scope note: exercising the real sshd_service() end to end would require
-# downloading sshd.service from GITROOT (GitHub main), whose pinned hash in
-# a released quecdeck.sh may not match a not-yet-released sshd.service, so
-# this test instead runs the exact gate snippet mirrored below against a
-# real broken/healthy firewall. KEEP THIS IN SYNC with quecdeck.sh's
-# sshd_service() install case if that logic changes. A line-count sanity
-# check against the live quecdeck.sh's gate block guards against silent drift
-# if a copy of it is available at the path below.
+# Scope note: exercising the complete install would modify packages and keys.
+# This test instead runs the gate snippet against a real broken and healthy
+# firewall. Keep it in sync with the installed helper. A text check against
+# that helper guards against silent drift.
 #
 # Run as root on a device with SSH ALREADY INSTALLED:
 #
@@ -28,7 +23,7 @@
 # sshd and the firewall are restored on exit (including Ctrl-C).
 
 FW_SCRIPT=/usrdata/quecdeck/script/firewall.sh
-QUECDECK_SH_COPY=/tmp/quecdeck.sh
+SSH_INSTALLER=/usrdata/quecdeck/script/install_sshd.sh
 DIR=/tmp/quecdeck-sshdinstallgate
 
 YES=0
@@ -54,13 +49,13 @@ wait_state() {
 
 port22_listening() { netstat -tln 2>/dev/null | grep -q ':22 '; }
 
-# The mirrored gate. Keep verbatim in sync with quecdeck.sh's sshd_service().
+# The mirrored gate. Keep it in sync with install_sshd.sh.
 run_install_gate() {
     if systemctl restart firewall; then
         systemctl start sshd || echo "WARNING: sshd failed to start. Check 'systemctl status sshd' for details."
     else
-        echo "WARNING: firewall failed to restart. Sshd NOT started so port 22 never listens unprotected."
-        echo "Check 'systemctl status firewall lighttpd', then 'systemctl start sshd' once the firewall is active."
+        echo "WARNING: firewall failed to restart. Sshd was not started."
+        echo "Check 'systemctl status firewall lighttpd', then start sshd after the firewall is active."
     fi
 }
 
@@ -96,15 +91,15 @@ systemctl is-active sshd >/dev/null 2>&1 && SSHD_WAS_ACTIVE=1
 
 # ---- drift guard (best-effort, non-fatal) ----------------------------------
 echo ""
-echo "[Check 0] drift guard: mirrored gate vs. the live quecdeck.sh, if present at $QUECDECK_SH_COPY"
-if [ -f "$QUECDECK_SH_COPY" ]; then
-    if grep -q 'sshd NOT started so port 22 never listens unprotected' "$QUECDECK_SH_COPY"; then
-        ok "the live quecdeck.sh still contains the gate's warning text -- mirror likely still accurate"
+echo "[Check 0] drift guard: mirrored gate vs. $SSH_INSTALLER"
+if [ -f "$SSH_INSTALLER" ]; then
+    if grep -q 'Sshd was not started' "$SSH_INSTALLER"; then
+        ok "the installed helper contains the gate warning text"
     else
-        bad "the live quecdeck.sh's sshd_service() no longer contains the expected gate warning text -- update run_install_gate() in this script to match"
+        bad "the installed helper no longer contains the expected gate warning text"
     fi
 else
-    echo "  SKIP: $QUECDECK_SH_COPY not found. Push the working-tree quecdeck.sh there to enable this check"
+    bad "$SSH_INSTALLER is missing"
 fi
 
 echo ""
@@ -130,8 +125,8 @@ printf '#!/bin/bash\n# install-gate test stub\nexit 1\n' > "$FW_SCRIPT"
 chown root:root "$FW_SCRIPT"; chmod 700 "$FW_SCRIPT"
 STUBBED=1
 _out=$(run_install_gate 2>&1)
-echo "$_out" | grep -q 'sshd NOT started' \
-    && ok "gate printed the 'sshd NOT started' warning" \
+echo "$_out" | grep -q 'Sshd was not started' \
+    && ok "gate printed the not-started warning" \
     || bad "gate did not print the expected warning. Output was: $_out"
 if systemctl is-active sshd >/dev/null 2>&1; then
     bad "sshd is ACTIVE despite the firewall being down -- the gate let it through"

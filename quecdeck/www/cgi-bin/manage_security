@@ -35,6 +35,7 @@ fi
 
 case "$action" in
     change_password)
+        developer=$(get_post_param developer_password)
         new=$(get_post_param new_password)
         confirm=$(get_post_param confirm_password)
         if [ "${#new}" -lt 12 ] || [ "${#new}" -gt 256 ]; then
@@ -47,8 +48,21 @@ case "$action" in
             json_result false "New passwords do not match"
             exit 0
         fi
-        printf '%s\n%s\n' "$current" "$new" |
+        printf '%s\n%s\n%s\n' "$current" "$developer" "$new" |
             /opt/bin/sudo /usrdata/quecdeck/script/change_password.sh
+        rc=${PIPESTATUS[1]}
+        ;;
+    change_developer_password)
+        developer=$(get_post_param developer_password)
+        new=$(get_post_param new_password)
+        confirm=$(get_post_param confirm_password)
+        if [ "${#new}" -lt 12 ] || [ "${#new}" -gt 256 ] || [ "$new" != "$confirm" ]; then
+            bf_unlock
+            json_result false "New developer passwords must match and be between 12 and 256 characters"
+            exit 0
+        fi
+        printf '%s\n%s\n%s\n' "$current" "$developer" "$new" |
+            /opt/bin/sudo /usrdata/quecdeck/script/change_password.sh dev
         rc=${PIPESTATUS[1]}
         ;;
     add_key)
@@ -95,7 +109,7 @@ if [ "$rc" = 2 ]; then
         json_result false "Too many failed attempts. Try again later"
     else
         case "$action" in
-            add_key|remove_key|ssh_settings) json_result false "Administrator or developer password is incorrect" ;;
+            change_password|change_developer_password|add_key|remove_key|ssh_settings) json_result false "Administrator or developer password is incorrect" ;;
             *) json_result false "Current password is incorrect" ;;
         esac
     fi
@@ -114,6 +128,7 @@ if [ "$rc" != 0 ]; then
         10) json_result false "The firewall could not apply the SSH setting. SSH was left stopped" ;;
         11) json_result false "The SSH setting was saved, but the server could not be started" ;;
         12) json_result false "The SSH port was changed but the enabled state was not. Reload the page and try again" ;;
+        13) json_result false "Administrator and developer passwords must be different" ;;
         *) json_result false "The security change could not be completed" ;;
     esac
     exit 0
@@ -127,6 +142,7 @@ wan_ip=$(cgi_wan_ip)
 now=$(date +%s)
 case "$action" in
     change_password) event=security_password_changed ;;
+    change_developer_password) event=security_developer_password_changed ;;
     add_key) event=ssh_key_added ;;
     remove_key) event=ssh_key_removed ;;
     ssh_settings) event=ssh_settings_changed ;;

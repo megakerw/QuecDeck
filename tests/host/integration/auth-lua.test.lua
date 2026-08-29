@@ -6,6 +6,7 @@
 local AUTH = "quecdeck/auth.lua"
 local SESSIONS = "/run/quecdeck-web/sessions/"
 local HTPASSWD = "/opt/etc/.htpasswd"
+local DEV_GENERATION = "/opt/etc/.htpasswd_dev.generation"
 local revoke_on_rename
 local real_rename = os.rename
 
@@ -91,6 +92,8 @@ t("setup: other CGI redirected", 302, rc)
 
 -- ------------------------------------------------------------ normal mode
 local f = assert(io.open(HTPASSWD, "w")); f:write("admin:x\n"); f:close()
+local gf = assert(io.open(DEV_GENERATION, "w"));
+gf:write("0123456789abcdef0123456789abcdef\n"); gf:close()
 
 rc, L = run("/setup.html", nil)
 t("post-setup: setup.html redirects away", 302, rc)
@@ -163,9 +166,16 @@ rc = run("/cgi-bin/get_dashboard", "session=tokD4")
 t("non-dev endpoint: passes while locked", 0, rc)
 
 local df = assert(io.open(SESSIONS .. "tokD4.dev", "w"))
-df:write("dev_unlocked=1\n"); df:close()
+df:write("dev_unlocked=1\ngeneration=0123456789abcdef0123456789abcdef\n"); df:close()
 rc = run("/cgi-bin/user_atcommand", "session=tokD4")
 t("dev endpoint unlocked: passes", 0, rc)
+
+gf = assert(io.open(DEV_GENERATION, "w"))
+gf:write("fedcba9876543210fedcba9876543210\n"); gf:close()
+rc = run("/cgi-bin/user_atcommand", "session=tokD4")
+t("developer rotation rejects an old unlock generation", 403, rc)
+t("developer rotation removes the stale unlock", nil,
+    read_file(SESSIONS .. "tokD4.dev"))
 
 -- ---------------------------------------- setup-check shell-test fallback
 -- A build without lighty.c.stat must fall back to the shell test instead of

@@ -186,8 +186,22 @@ for _helper in change_password.sh ssh_keys.sh; do
     t "$_helper has an explicit sudo grant" "yes" \
       "$(printf '%s\n' "$_sudo_rule" | grep -q "/usrdata/quecdeck/script/$_helper" && echo yes || echo no)"
 done
+t "installed SSH component helper is staged root-only" "yes" \
+  "$(printf '%s\n' "$_root_helpers" | grep -q 'install_sshd.sh' && grep -q '^    _helper="\$QUECDECK_DIR/script/install_sshd.sh"$' quecdeck.sh && grep -q 'stat -c.*0 700' quecdeck.sh && echo yes || echo no)"
 t "password helper verifies current password before replacement" "yes" \
-  "$([ "$(grep -n 'check_password.sh admin admin' quecdeck/script/change_password.sh | cut -d: -f1)" -lt "$(grep -n 'mv -f.*HTPASSWD' quecdeck/script/change_password.sh | cut -d: -f1)" ] && echo yes || echo no)"
+  "$([ "$(grep -n 'check_password.sh admin admin' quecdeck/script/change_password.sh | cut -d: -f1)" -lt "$(grep -n 'mv -f.*HTPASSWD' quecdeck/script/change_password.sh | head -1 | cut -d: -f1)" ] && echo yes || echo no)"
+t "initial setup rejects matching administrator and developer passwords" "yes" \
+  "$(grep -q '\[ "$admin_pass" = "$dev_pass" \]' quecdeck/www/cgi-bin/init_setup && grep -q 'this.devPass === this.adminPass' quecdeck/www/js/setup.js && echo yes || echo no)"
+t "root console password setters reject the other credential" "yes" \
+  "$(grep -q 'check_password.sh dev devadmin' quecdeck/quecdeckpasswd && grep -q 'check_password.sh admin admin' quecdeck/quecdeckdevpasswd && echo yes || echo no)"
+t "developer password change requires both credentials without short-circuiting" "yes" \
+  "$( _change=$(cat quecdeck/script/change_password.sh); printf '%s\n' "$_change" | grep -q 'check_password.sh admin admin' && printf '%s\n' "$_change" | grep -q 'check_password.sh dev devadmin' && [ "$(printf '%s\n' "$_change" | grep -n 'developer_rc=' | cut -d: -f1)" -lt "$(printf '%s\n' "$_change" | grep -n '\[ "$password_rc" = 0 \].*developer_rc' | cut -d: -f1)" ] && grep -q 'change_developer_password' quecdeck/www/cgi-bin/manage_security quecdeck/www/js/security.js && echo yes || echo no)"
+t "administrator password change requires both credentials" "yes" \
+  "$( _admin=$(sed -n '/^    change_password)/,/^        ;;/p' quecdeck/www/cgi-bin/manage_security); printf '%s\n' "$_admin" | grep -q 'developer_password' && printf '%s\n' "$_admin" | grep -Fq "printf '%s\\n%s\\n%s\\n'" && grep -q '\[ "$NEW" != "$DEVELOPER" \] || exit 13' quecdeck/script/change_password.sh && echo yes || echo no)"
+t "developer unlocks are bound to the credential generation" "yes" \
+  "$(grep -q '^GENERATION_FILE=/opt/etc/\.htpasswd_dev\.generation$' quecdeck/www/cgi-bin/auth_dev && grep -q 'generation_before.*generation_after' quecdeck/www/cgi-bin/auth_dev && grep -q 'dev.generation == generation' quecdeck/auth.lua && echo yes || echo no)"
+t "every developer credential writer rotates the generation" "3" \
+  "$(grep -l '\.htpasswd_dev\.generation' quecdeck/script/write_htpasswd.sh quecdeck/script/change_password.sh quecdeck/quecdeckdevpasswd | wc -l | tr -d ' ')"
 t "root-side web password verification is serialized and paced" "yes" \
   "$(grep -q '^LIMIT_DIR=/run/quecdeck/auth-limit$' quecdeck/script/check_password.sh && grep -q '^flock_wait 9 5 || exit 75$' quecdeck/script/check_password.sh && grep -q '^sleep 1$' quecdeck/script/check_password.sh && echo yes || echo no)"
 t "password pacing availability tradeoff is documented" "yes" \
@@ -201,7 +215,7 @@ t "web startup verifies the Entware credential boundary" "yes" \
 t "SSH key upload trims pasted whitespace" "yes" \
   "$(grep -q 'const publicKey = this.publicKey.trim()' quecdeck/www/js/security.js && grep -q 'public_key: publicKey' quecdeck/www/js/security.js && echo yes || echo no)"
 t "password policy is consistently 12 to 256 characters" "yes" \
-  "$(grep -q 'minimum of 12 characters' README.md && grep -q 'between 12 and 256' README.md quecdeck/quecdeckpasswd quecdeck/quecdeckdevpasswd quecdeck/www/cgi-bin/init_setup quecdeck/www/cgi-bin/manage_security quecdeck/www/js/security.js && [ "$(grep -c 'minlength="12" maxlength="256"' quecdeck/www/setup.html)" -eq 4 ] && [ "$(grep -c 'minlength="12" maxlength="256"' quecdeck/www/security.html)" -eq 2 ] && echo yes || echo no)"
+  "$(grep -q 'minimum of 12 characters' README.md && grep -q 'between 12 and 256' README.md quecdeck/quecdeckpasswd quecdeck/quecdeckdevpasswd quecdeck/www/cgi-bin/init_setup quecdeck/www/cgi-bin/manage_security quecdeck/www/js/security.js && [ "$(grep -c 'minlength="12" maxlength="256"' quecdeck/www/setup.html)" -eq 4 ] && [ "$(grep -c 'minlength="12" maxlength="256"' quecdeck/www/security.html)" -eq 4 ] && echo yes || echo no)"
 t "sudo payload parsers reject even blank extra lines" "5" \
   "$(grep -h 'IFS= read -r EXTRA && exit 1' quecdeck/script/write_htpasswd.sh quecdeck/script/change_password.sh quecdeck/script/ssh_keys.sh | wc -l | tr -d ' ')"
 t "password pacing applies only after failed verification" "yes" \
@@ -275,11 +289,11 @@ t "SSH starts only after the firewall accepts the new port" "yes" \
 t "SSH activation has one firewall and daemon path" "yes" \
   "$( _apply=$(extract_fn quecdeck/script/ssh_keys.sh apply_settings); printf '%s\n' "$_apply" | grep -q 'activate_settings' && ! printf '%s\n' "$_apply" | grep -q 'firewall.sh' && ! printf '%s\n' "$_apply" | grep -q 'systemctl start sshd' && echo yes || echo no)"
 t "SSH enable marker is fixed, root-only, and shared with the unit" "yes" \
-  "$(grep -q '^ENABLED_MARKER=/opt/etc/ssh/quecdeck_enabled$' quecdeck/script/ssh_keys.sh && grep -q 'chmod 600 "\$ENABLED_MARKER"' quecdeck/script/ssh_keys.sh && grep -q '^ConditionPathExists=/opt/etc/ssh/quecdeck_enabled$' optional/sshd/sshd.service && echo yes || echo no)"
+  "$(grep -q '^ENABLED_MARKER=/opt/etc/ssh/quecdeck_enabled$' quecdeck/script/ssh_keys.sh && grep -q 'chmod 600 "\$ENABLED_MARKER"' quecdeck/script/ssh_keys.sh && grep -q '^ConditionPathExists=/opt/etc/ssh/quecdeck_enabled$' quecdeck/optional/sshd/sshd.service && echo yes || echo no)"
 t "SSH settings API and UI expose enabled state and port" "yes" \
-  "$(grep -q 'ssh_enabled' quecdeck/www/cgi-bin/get_security quecdeck/www/js/security.js && grep -q 'ssh_port' quecdeck/www/cgi-bin/get_security quecdeck/www/cgi-bin/manage_security quecdeck/www/js/security.js && grep -q 'form-check form-switch' quecdeck/www/security.html && echo yes || echo no)"
+  "$(grep -q 'ssh_enabled' quecdeck/www/cgi-bin/get_security quecdeck/www/js/security.js && grep -q 'ssh_port' quecdeck/www/cgi-bin/get_security quecdeck/www/cgi-bin/manage_security quecdeck/www/js/security.js && grep -q 'form-check form-switch' quecdeck/www/ssh.html && echo yes || echo no)"
 t "pending SSH settings block key mutations in the UI" "yes" \
-  "$(grep -q 'get sshSettingsChanged' quecdeck/www/js/security.js && [ "$(grep -c 'Save the SSH settings before managing public keys' quecdeck/www/js/security.js)" = 2 ] && [ "$(grep -c 'sshSettingsChanged' quecdeck/www/security.html)" -ge 2 ] && echo yes || echo no)"
+  "$(grep -q 'get sshSettingsChanged' quecdeck/www/js/security.js && [ "$(grep -c 'Save the SSH settings before managing public keys' quecdeck/www/js/security.js)" = 2 ] && [ "$(grep -c 'sshSettingsChanged' quecdeck/www/ssh.html)" -ge 2 ] && echo yes || echo no)"
 t "password-change reports success with an invalidation warning" "yes" \
   "$(grep -q 'session_invalidation_failed=1' quecdeck/www/cgi-bin/manage_security && grep -q '"ok":true,"warning":"session_invalidation"' quecdeck/www/cgi-bin/manage_security && grep -q 'session_warning=1' quecdeck/www/js/security.js quecdeck/www/js/login.js && echo yes || echo no)"
 t "hidden unsupported SSH entries do not consume the UI key limit" "yes" \
@@ -289,7 +303,7 @@ t "SSH readiness enforces effective key-only policy" "yes" \
 t "SSH stops when the final key is removed" "yes" \
   "$(grep -q 'KEY_COUNT.*= 0' quecdeck/script/ssh_keys.sh && grep -q 'systemctl stop sshd' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
 t "explicit SSH stops terminate sessions" "yes" \
-  "$(grep -q '^KillMode=control-group$' optional/sshd/sshd.service && grep -q '^TimeoutStopSec=10$' optional/sshd/sshd.service && grep -q 'systemctl restart sshd' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
+  "$(grep -q '^KillMode=control-group$' quecdeck/optional/sshd/sshd.service && grep -q '^TimeoutStopSec=10$' quecdeck/optional/sshd/sshd.service && grep -q 'systemctl restart sshd' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
 t "full uninstall removes SSH before firewall" "yes" \
   "$(_uninstall=$(sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh); _ssh_stop=$(printf '%s\n' "$_uninstall" | grep -n 'systemctl stop sshd' | head -1 | cut -d: -f1); _fw_remove=$(printf '%s\n' "$_uninstall" | grep -n '# Uninstall firewall' | cut -d: -f1); [ -n "$_ssh_stop" ] && [ -n "$_fw_remove" ] && [ "$_ssh_stop" -lt "$_fw_remove" ] && echo yes || echo no)"
 _security_lock=$(grep -n 'bf_lock "\$FAILURE_DIR"' quecdeck/www/cgi-bin/manage_security | cut -d: -f1)
@@ -439,3 +453,65 @@ done
 t "lock library is installed root-only" "yes" \
   "$(sed -n '/for _s in lighttpd_prestart.sh/,/done/p' update_quecdeck.sh | grep -q 'lock-lib.sh' && grep -q '  quecdeck/script/lock-lib.sh$' .githooks/pre-commit && echo yes || echo no)"
 unset _lock_lib
+
+# The SSH posture is asserted in two places: at install and on every daemon
+# start. A three-site edit to the permitrootlogin spelling once passed the whole
+# suite, so pin the list to one definition and require the installer to cover it.
+_policy=$(sed -n '/^SSHD_POLICY="/,/"$/p' quecdeck/script/ssh_keys.sh | sed '1s/^SSHD_POLICY="//; $s/"$//')
+t "runtime SSH policy list is populated" "yes" \
+  "$([ "$(printf '%s\n' "$_policy" | grep -c .)" -ge 10 ] && echo yes || echo no)"
+t "both runtime checkers share one policy list" "yes" \
+  "$( _k=$(extract_fn quecdeck/script/ssh_keys.sh keys_ready); _v=$(extract_fn quecdeck/script/ssh_keys.sh validate_sshd_config); printf '%s\n' "$_k" | grep -q 'sshd_policy_ok' && printf '%s\n' "$_v" | grep -q 'sshd_policy_ok' && ! printf '%s\n' "$_k$_v" | grep -q "grep -qx 'passwordauthentication" && echo yes || echo no)"
+_policy_missing=0
+while IFS= read -r _line; do
+    [ -n "$_line" ] || continue
+    grep -qF "grep -qx '$_line'" quecdeck/script/install_sshd.sh || _policy_missing=1
+done <<< "$_policy"
+t "installer asserts every runtime SSH policy directive" "0" "$_policy_missing"
+for _d in 'AllowTcpForwarding no' 'AllowAgentForwarding no' 'AllowStreamLocalForwarding no' \
+          'GatewayPorts no' 'PermitTunnel no' 'X11Forwarding no'; do
+    t "shipped sshd_config sets $_d" "yes" \
+      "$(grep -qx "$_d" quecdeck/script/install_sshd.sh && echo yes || echo no)"
+done
+t "developer generation token is not world readable" "yes" \
+  "$(! grep -rn 'chmod 644.*generation\|generation.*chmod 644' quecdeck/ >/dev/null 2>&1 && grep -q 'chmod 640 "\$GENERATION_TMP"' quecdeck/script/change_password.sh && grep -q 'chmod 640 "\$tmp"' quecdeck/script/write_htpasswd.sh && grep -q 'chmod 640 "\$generation_tmp"' quecdeck/quecdeckdevpasswd && echo yes || echo no)"
+unset _policy _policy_missing _line _d _k _v
+
+# The bind address is the one thing that used to be edited into sshd_config on
+# every boot. It now lives in a tmpfs Include, so the configuration file stays
+# byte-identical to what the installer verified and no boot write reaches flash.
+t "sshd_config includes the bind fragment by literal path" "yes" \
+  "$(grep -qx 'Include /run/quecdeck/sshd-listen.conf' quecdeck/script/install_sshd.sh && ! grep -q 'Include .*\*' quecdeck/script/install_sshd.sh && ! grep -q '^ListenAddress' quecdeck/script/install_sshd.sh && echo yes || echo no)"
+t "bind publisher writes only to the runtime tree" "yes" \
+  "$(grep -q 'LISTEN_CONF="\$RUNTIME_DIR/sshd-listen.conf"' quecdeck/optional/sshd/update_sshd_ip.sh && grep -q 'mv -f "\$_tmp" "\$LISTEN_CONF"' quecdeck/optional/sshd/update_sshd_ip.sh && ! grep -q '>> *"\$SSHD_CONF"' quecdeck/optional/sshd/update_sshd_ip.sh && echo yes || echo no)"
+t "legacy ListenAddress removal is anchored and conditional" "yes" \
+  "$(grep -q "grep -q '\^ListenAddress' \"\$SSHD_CONF\"" quecdeck/optional/sshd/update_sshd_ip.sh && grep -q "sed -i '/\^ListenAddress/d'" quecdeck/optional/sshd/update_sshd_ip.sh && echo yes || echo no)"
+t "bind publisher rejects a symlinked runtime target" "yes" \
+  "$(grep -q '\[ ! -L "\$RUNTIME_DIR" \]' quecdeck/optional/sshd/update_sshd_ip.sh && grep -q '\[ ! -L "\$LISTEN_CONF" \]' quecdeck/optional/sshd/update_sshd_ip.sh && echo yes || echo no)"
+t "installer publishes the bind fragment before validating" "yes" \
+  "$( _i=$(sed -n '/^install_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh); _pub=$(printf '%s\n' "$_i" | grep -n 'update_sshd_ip.sh' | head -1 | cut -d: -f1); _cfg=$(printf '%s\n' "$_i" | grep -n 'configure_key_only_ssh ||' | cut -d: -f1); [ -n "$_pub" ] && [ -n "$_cfg" ] && [ "$_pub" -lt "$_cfg" ] && echo yes || echo no)"
+t "unit publishes the bind fragment before every config read" "yes" \
+  "$( _u=quecdeck/optional/sshd/sshd.service; _pub=$(grep -n 'update_sshd_ip.sh' "$_u" | cut -d: -f1); _ready=$(grep -n 'ssh_keys.sh ready' "$_u" | cut -d: -f1); _t=$(grep -n 'sshd -t$' "$_u" | cut -d: -f1); [ "$_pub" -lt "$_ready" ] && [ "$_ready" -lt "$_t" ] && echo yes || echo no)"
+unset _i _pub _cfg _u _ready _t
+
+# lighttpd.conf is checksummed, so the old in-place sed moved the installed copy
+# away from its manifest hash on the first boot after every install. The bind
+# address now comes from a tmpfs fragment and the file is never rewritten.
+t "lighttpd binds through the published fragment" "yes" \
+  "$(grep -qx 'include "/run/quecdeck/lighttpd-listen.conf"' quecdeck/lighttpd.conf && grep -qx 'server.bind = var.lan_ip' quecdeck/lighttpd.conf && grep -q 'var.lan_ip + ":443"' quecdeck/lighttpd.conf && echo yes || echo no)"
+# A skipped include must cost reachability, never WAN exposure, so the default
+# assigned before it is loopback rather than the wildcard address.
+t "lighttpd default bind is loopback not wildcard" "yes" \
+  "$(grep -qx 'var.lan_ip = "127.0.0.1"' quecdeck/lighttpd.conf && ! grep -qE '^(server\.bind = "0\.0\.0\.0"|\$SERVER\["socket"\] == "0\.0\.0\.0:443")' quecdeck/lighttpd.conf && echo yes || echo no)"
+t "lighttpd default is assigned before the fragment overrides it" "yes" \
+  "$([ "$(grep -n 'var.lan_ip = "127.0.0.1"' quecdeck/lighttpd.conf | cut -d: -f1)" -lt "$(grep -n 'include "/run/quecdeck/lighttpd-listen.conf"' quecdeck/lighttpd.conf | cut -d: -f1)" ] && echo yes || echo no)"
+t "lighttpd prestart publishes instead of editing its config" "yes" \
+  "$( _p=quecdeck/script/lighttpd_prestart.sh; grep -q 'mv -f "\$_tmp" "\$LISTEN_CONF"' "$_p" && ! grep -q 'sed -i "s/server' "$_p" && echo yes || echo no)"
+# One parser for the address every publisher binds or protects.
+t "boot publishers share one LAN address parser" "3" \
+  "$(grep -lc '^\. /usrdata/quecdeck/script/lan-ip-lib.sh' quecdeck/script/lighttpd_prestart.sh quecdeck/script/firewall.sh quecdeck/optional/sshd/update_sshd_ip.sh 2>/dev/null | wc -l | tr -d ' ')"
+t "only the shared library and cgi-lib parse the modem config" "yes" \
+  "$([ "$(grep -rl 'APIPAddr' quecdeck/script/*.sh quecdeck/optional/sshd/*.sh | sort | tr '\n' ' ')" = "quecdeck/script/cgi-lib.sh quecdeck/script/lan-ip-lib.sh " ] && echo yes || echo no)"
+t "shared parser always yields an address" "yes" \
+  "$( _r=$(extract_fn quecdeck/script/lan-ip-lib.sh resolve_lan_ip); printf '%s\n' "$_r" | grep -q 'LAN_IP=\$QUECDECK_DEFAULT_LAN_IP' && printf '%s\n' "$_r" | grep -q 'grep -qE' && echo yes || echo no)"
+unset _p _r

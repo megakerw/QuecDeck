@@ -258,11 +258,11 @@ uninstall_entware() {
 set_quecdeck_passwd(){
     root_home_dirs || return 1
     /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
-    echo "b391e981ec659d0b5f11e0087ff06f96b136cd62cc0c6fb853b0cea409d4e9cb  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
+    echo "3e46ef7eb52234397f3195dbfd79fa3cec40a7b567c71874b7b74aa053f30766  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
     chmod 755 /usrdata/root/bin/quecdeckpasswd
     /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
-    echo "66847d83b95de8802b1ae0481dc4e805d4ed2daaf6a18683a320a01423834313  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
+    echo "60c7ac7ecb819ab3e3025d684879afcfda1ddbe67e611ed517f14b4a2e50ec37  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
     chmod 755 /usrdata/root/bin/quecdeckdevpasswd
     if [ -f /opt/etc/.htpasswd ]; then
@@ -421,8 +421,8 @@ install_quecdeck_dev() {
 install_quecdeck() { # install_quecdeck [ref]
     # Repoint every fetch in this session at the selected ref. The sha256 pins
     # below live in this script, so they describe the ref this script came
-    # from: installentware.sh, the password tools, and the SSH unit must all be
-    # fetched from that same ref or their pins cannot match.
+    # from. Installentware and the password tools must be fetched from that
+    # same ref or their pins cannot match. SSH uses the installed release.
     GITTREE="${1:-$GITTREE}"
     GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
     echo -e "\e[1;32mInstalling/updating QuecDeck from $GITTREE...\e[0m"
@@ -732,41 +732,6 @@ uninstall_quecdeck_components() {
 }
 
 
-prepare_ssh_accounts() {
-    # Entware initially links passwd to the firmware file. OpenSSH needs its
-    # own privilege-separation account, so detach only this file before adding
-    # the account. Root keeps the firmware home, shell, and password state.
-    if [ -L /opt/etc/passwd ] || [ ! -s /opt/etc/passwd ]; then
-        rm -f /opt/etc/passwd
-        cp /etc/passwd /opt/etc/passwd || return 1
-    fi
-    [ -f /opt/etc/passwd ] && [ ! -L /opt/etc/passwd ] || return 1
-    grep -q '^root:' /opt/etc/passwd || return 1
-    _firmware_root=$(grep '^root:' /etc/passwd 2>/dev/null)
-    [ -n "$_firmware_root" ] || return 1
-    _passwd_tmp=$(mktemp /opt/etc/passwd.quecdeck.XXXXXX) || return 1
-    if ! {
-        printf '%s\n' "$_firmware_root"
-        grep -v '^root:' /opt/etc/passwd
-    } > "$_passwd_tmp" ||
-       ! chown root:root "$_passwd_tmp" || ! chmod 644 "$_passwd_tmp" ||
-       ! mv -f "$_passwd_tmp" /opt/etc/passwd; then
-        rm -f "$_passwd_tmp"
-        return 1
-    fi
-    awk -F: '$3 == 106 && $1 != "sshd" {exit 1}' /opt/etc/passwd || {
-        echo -e "\e[1;31mUID 106 is already assigned. Cannot create the SSH service account.\e[0m"
-        return 1
-    }
-    grep -q '^sshd:x:106:' /opt/etc/passwd ||
-        printf '%s\n' 'sshd:x:106:65534:SSH privilege separation:/opt/var/empty:/bin/false' >> /opt/etc/passwd
-    chown root:root /opt/etc/passwd || return 1
-    chmod 644 /opt/etc/passwd || return 1
-    mkdir -p /opt/var/empty || return 1
-    chown root:root /opt/var/empty || return 1
-    chmod 755 /opt/var/empty
-}
-
 restore_legacy_auth_commands() {
     RESTORE_LEGACY_AUTH_CHANGED=0
     _restore_needed=0
@@ -819,163 +784,14 @@ cleanup_ssh_account() {
     rmdir /opt/var/empty 2>/dev/null || true
 }
 
-configure_key_only_ssh() (
-    _ssh_config_tmp="/opt/etc/ssh/sshd_config.quecdeck.$$"
-    umask 077
-    cat > "$_ssh_config_tmp" <<'EOF'
-Port 22
-HostKey /opt/etc/ssh/ssh_host_ed25519_key
-HostKey /opt/etc/ssh/ssh_host_rsa_key
-PermitRootLogin prohibit-password
-PubkeyAuthentication yes
-AuthenticationMethods publickey
-AuthorizedKeysFile /usrdata/root/.ssh/authorized_keys
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-AllowUsers root
-MaxAuthTries 3
-StrictModes yes
-UseDNS no
-SetEnv PATH=/bin:/usr/sbin:/usr/bin:/sbin:/opt/sbin:/opt/bin:/usrdata/root/bin
-Subsystem sftp internal-sftp
-EOF
-    chown root:root "$_ssh_config_tmp" && chmod 600 "$_ssh_config_tmp" || {
-            rm -f "$_ssh_config_tmp"
-            return 1
-        }
-    /opt/sbin/sshd -t -f "$_ssh_config_tmp" || {
-        rm -f "$_ssh_config_tmp"
-        return 1
-    }
-    _effective=$(/opt/sbin/sshd -T -f "$_ssh_config_tmp" 2>/dev/null) || {
-        rm -f "$_ssh_config_tmp"
-        return 1
-    }
-    printf '%s\n' "$_effective" | grep -qx 'passwordauthentication no' &&
-    printf '%s\n' "$_effective" | grep -qx 'kbdinteractiveauthentication no' &&
-    printf '%s\n' "$_effective" | grep -qx 'permitrootlogin without-password' &&
-    printf '%s\n' "$_effective" | grep -qx 'authenticationmethods publickey' &&
-    printf '%s\n' "$_effective" | grep -qx 'authorizedkeysfile /usrdata/root/.ssh/authorized_keys' &&
-    printf '%s\n' "$_effective" | grep -qx 'allowusers root' || {
-            rm -f "$_ssh_config_tmp"
-            return 1
-        }
-    mv -f "$_ssh_config_tmp" /opt/etc/ssh/sshd_config || return 1
-    printf 'enabled\n' > /opt/etc/ssh/quecdeck_enabled &&
-        chown root:root /opt/etc/ssh/quecdeck_enabled &&
-        chmod 600 /opt/etc/ssh/quecdeck_enabled
-)
-
 sshd_service() {
-    if [ -f /opt/sbin/sshd ] && [ -f /lib/systemd/system/sshd.service ]; then
-        echo -e "\e[1;32msshd is currently: INSTALLED\e[0m"
-    else
-        echo -e "\e[1;31msshd is currently: NOT INSTALLED\e[0m"
+    _helper="$QUECDECK_DIR/script/install_sshd.sh"
+    if [ ! -f "$_helper" ] || [ -L "$_helper" ] ||
+       [ "$(stat -c '%u %a' "$_helper" 2>/dev/null)" != "0 700" ]; then
+        echo -e "\e[1;31mInstall or update QuecDeck before managing SSH.\e[0m"
+        return 1
     fi
-    echo "OpenSSH Server: allows SSH login to the modem."
-    echo -e "\e[1;32m1) Install/Update sshd\e[0m"
-    echo -e "\e[1;31m2) Uninstall sshd\e[0m"
-    echo -e "\e[1;33m3) Cancel\e[0m"
-    read -p "Enter your choice (1-3): " sshd_choice
-
-    case $sshd_choice in
-        1)
-            ensure_entware_installed || return
-
-            # Warn if firewall is not active (port 22 will be exposed on WAN)
-            if ! systemctl is-active firewall >/dev/null 2>&1; then
-                echo -e "\e[1;31mWARNING: Firewall is not running.\e[0m"
-                echo -e "\e[1;31mWithout it, SSH port 22 will be accessible from the WAN interface.\e[0m"
-                read -p "Install sshd anyway? (y/n): " fw_warning_confirm
-                case "$fw_warning_confirm" in
-                    y|Y) ;;
-                    *) echo -e "\e[1;31mAborting sshd installation.\e[0m"; return ;;
-                esac
-            fi
-
-            echo -e "\e[1;32mInstalling sshd...\e[0m"
-            prepare_ssh_accounts || { echo -e "\e[1;31mFailed to prepare the SSH service account.\e[0m"; return; }
-
-            # Stage release files before replacing a working SSH package. A
-            # download or integrity failure must leave the existing daemon
-            # untouched.
-            ensure_rundir
-            _stage=/run/quecdeck
-            /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/sshd.service "$GITROOT/optional/sshd/sshd.service" || { echo -e "\e[1;31mFailed to download sshd.service.\e[0m"; return; }
-            echo "e78c9f52701e13fd37a5deb3cf3dd668b95d2e38ed5b2b65f464f52926cc893a  $_stage/sshd.service" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for sshd.service.\e[0m"; rm -f $_stage/sshd.service; return; }
-            echo -e "\e[1;32mIntegrity verified: sshd.service\e[0m"
-            /opt/bin/wget --timeout=30 --tries=2 -q -O $_stage/update_sshd_ip.sh "$GITROOT/optional/sshd/update_sshd_ip.sh" || { echo -e "\e[1;31mFailed to download update_sshd_ip.sh.\e[0m"; return; }
-            echo "dc10b79739f1d788cfcdfc805e4f84fe1f7da5df29aacc3e3f7f76f0cc1eef19  $_stage/update_sshd_ip.sh" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for update_sshd_ip.sh.\e[0m"; rm -f $_stage/update_sshd_ip.sh; return; }
-            echo -e "\e[1;32mIntegrity verified: update_sshd_ip.sh\e[0m"
-
-            opkg install --force-maintainer openssh-server openssh-keygen || { echo -e "\e[1;31mFailed to install OpenSSH.\e[0m"; return; }
-
-            # Remove opkg init.d scripts so rc.unslung doesn't manage it
-            for script in /opt/etc/init.d/*sshd*; do
-                [ -f "$script" ] && rm -f "$script"
-            done
-
-            /opt/bin/ssh-keygen -A
-
-            configure_key_only_ssh || { echo -e "\e[1;31mFailed to enforce key-only SSH authentication.\e[0m"; return; }
-
-            trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
-            remount_rw
-            cp -f $_stage/sshd.service /lib/systemd/system/sshd.service
-            chown root:root /lib/systemd/system/sshd.service
-            chmod 644 /lib/systemd/system/sshd.service
-            rm -f $_stage/sshd.service
-            cp -f $_stage/update_sshd_ip.sh /opt/etc/ssh/update_sshd_ip.sh
-            chown root:root /opt/etc/ssh/update_sshd_ip.sh
-            chmod 700 /opt/etc/ssh/update_sshd_ip.sh
-            rm -f $_stage/update_sshd_ip.sh
-            ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service
-            remount_ro
-            trap - EXIT
-            systemctl daemon-reload
-            # Apply the configured SSH rule before starting sshd. Restart the
-            # service, not firewall.sh directly, to stay fail-closed. This cycles
-            # lighttpd via PartOf=, sshd unaffected.
-            # The sshd start is gated on the restart: without the SSH rules,
-            # sshd would listen unrestricted (WAN included) while the UI is down.
-            if systemctl restart firewall; then
-                if /usrdata/quecdeck/script/ssh_keys.sh ready; then
-                    systemctl start sshd || { echo -e "\e[1;31mWARNING: sshd failed to start. Check 'systemctl status sshd' for details.\e[0m"; }
-                else
-                    echo -e "\e[1;33mSSH is installed but inactive. Add a public key on the Security page to start it.\e[0m"
-                fi
-            else
-                echo -e "\e[1;31mWARNING: firewall failed to restart. Sshd was not started, so its port never listens unprotected.\e[0m"
-                echo -e "\e[1;31mCheck 'systemctl status firewall lighttpd', then 'systemctl start sshd' once the firewall is active.\e[0m"
-            fi
-            echo ""
-            echo -e "\e[1;32msshd installed.\e[0m"
-            ;;
-        2)
-            echo -e "\e[1;32mUninstalling sshd...\e[0m"
-            systemctl stop sshd 2>/dev/null
-            opkg remove openssh-server openssh-server-pam openssh-keygen >/dev/null 2>&1
-            cleanup_ssh_account
-            rm -rf /opt/etc/ssh
-            trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
-            remount_rw
-            rm -f /lib/systemd/system/sshd.service
-            rm -f /lib/systemd/system/multi-user.target.wants/sshd.service
-            remount_ro
-            trap - EXIT
-            systemctl daemon-reload
-            # Drop the SSH rule. Restart the service, not firewall.sh directly,
-            # to stay fail-closed. This also cycles lighttpd through PartOf=.
-            systemctl restart firewall || echo -e "\e[1;31mWARNING: firewall failed to restart. The web UI may be down. Check 'systemctl status firewall lighttpd'.\e[0m"
-            echo ""
-            echo -e "\e[1;32msshd uninstalled.\e[0m"
-            ;;
-        3)
-            ;;
-        *)
-            echo -e "\e[1;31mInvalid option\e[0m"
-            ;;
-    esac
+    "$_helper"
 }
 
 disable_monitoring_services() {

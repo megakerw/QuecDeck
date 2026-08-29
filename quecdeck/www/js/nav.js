@@ -30,6 +30,8 @@
         '<path d="M1.8 9.6h2.6l2-5.2 2.8 8 1.9-3.4h3.1"/>') },
       { href: '/scheduled-restart.html', label: 'Scheduled Restart', icon: icon(
         '<circle cx="8" cy="8" r="5.7"/><path d="M8 4.8v3.5l2.4 1.4"/>') },
+      { href: '/ssh.html', label: 'SSH', icon: icon(
+        '<rect x="2.3" y="6.5" width="11.4" height="7" rx="1.4"/><path d="M5 6.5V4.7a3 3 0 0 1 6 0v1.8"/>') },
       { href: '/sms.html', label: 'SMS', icon: icon(
         '<path d="M2.2 3.6h11.6v7.2H6.6L3.6 13.6v-2.8H2.2z"/>') },
     ] },
@@ -85,7 +87,7 @@
   }
 
   // Above 992px each labelled group is a dropdown. Below it the menu is forced
-  // open and static (see styles.css) so the drawer still shows all eleven.
+  // open and static (see styles.css) so the drawer still shows every page.
   function renderLinks() {
     return groups.map(function (group) {
       if (!group.label) {

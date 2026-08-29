@@ -8,6 +8,18 @@ while true; do
     read -r -s -p "Password: " pw1; echo
     read -r -s -p "Confirm password: " pw2; echo
     if [ "$pw1" = "$pw2" ] && [ "${#pw1}" -ge 12 ] && [ "${#pw1}" -le 256 ]; then
+        if [ -s /opt/etc/.htpasswd_dev ]; then
+            printf '%s\n' "$pw1" | /usrdata/quecdeck/script/check_password.sh dev devadmin
+            compare_rc=${PIPESTATUS[1]}
+            if [ "$compare_rc" = 75 ]; then
+                echo -e "\e[1;31mPassword verification is temporarily unavailable. Please try again.\e[0m"
+                continue
+            fi
+            if [ "$compare_rc" = 0 ]; then
+                echo -e "\e[1;31mAdministrator and developer passwords must be different. Please try again.\e[0m"
+                continue
+            fi
+        fi
         echo "admin:$(printf '%s' "$pw1" | openssl passwd -6 -stdin)" > /opt/etc/.htpasswd
         chown root:root /opt/etc/.htpasswd
         chmod 600 /opt/etc/.htpasswd

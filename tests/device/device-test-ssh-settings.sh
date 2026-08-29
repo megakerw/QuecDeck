@@ -43,5 +43,34 @@ else
         bad "disabled SSH port still has $rules firewall rules"
 fi
 
+# The posture assertions in ssh_keys.sh and install_sshd.sh grep the CANONICAL
+# spelling sshd prints, which is not always the spelling accepted in the config
+# file. A mismatch refuses every start, so pin it against the real daemon here.
+effective=$(/opt/sbin/sshd -T 2>/dev/null)
+if [ -z "$effective" ]; then
+    bad "sshd -T produced no output"
+else
+    for directive in \
+        "passwordauthentication no" \
+        "kbdinteractiveauthentication no" \
+        "permitrootlogin prohibit-password" \
+        "pubkeyauthentication yes" \
+        "authenticationmethods publickey" \
+        "authorizedkeysfile /usrdata/root/.ssh/authorized_keys" \
+        "allowtcpforwarding no" \
+        "allowagentforwarding no" \
+        "allowstreamlocalforwarding no" \
+        "gatewayports no" \
+        "permittunnel no" \
+        "x11forwarding no"
+    do
+        if printf '%s\n' "$effective" | grep -qx "$directive"; then
+            ok "sshd reports: $directive"
+        else
+            bad "sshd does NOT report '$directive' (got: $(printf '%s\n' "$effective" | grep -i "^${directive%% *} " || echo absent))"
+        fi
+    done
+fi
+
 echo "Result: $pass passed, $fail failed"
 [ "$fail" = 0 ]

@@ -67,6 +67,10 @@ function setupWizard() {
           this.error = 'Passwords do not match.';
           return;
         }
+        if (this.devPass === this.adminPass) {
+          this.error = 'Administrator and developer passwords must be different.';
+          return;
+        }
       }
 
       this.submitting = true;

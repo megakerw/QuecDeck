@@ -11,10 +11,10 @@ t "monitoring controllers call only their own endpoints" "yes" \
 t "navigation exposes both monitoring pages" "yes" \
   "$(grep -q "href: '/watchcat.html', label: 'Watchcat'" quecdeck/www/js/nav.js && grep -q "href: '/scheduled-restart.html', label: 'Scheduled Restart'" quecdeck/www/js/nav.js && grep -q 'href="/watchcat.html"' quecdeck/www/deviceinfo.html && grep -q 'href="/scheduled-restart.html"' quecdeck/www/deviceinfo.html && ! grep -q '/monitoring.html' quecdeck/www/js/nav.js quecdeck/www/deviceinfo.html && echo yes || echo no)"
 
-t "Security page is wired to its controller and navigation" "yes" \
-  "$(grep -q 'x-data="securitySettings()"' quecdeck/www/security.html && grep -q 'js/security.js' quecdeck/www/security.html && grep -q "href: '/security.html', label: 'Security'" quecdeck/www/js/nav.js && echo yes || echo no)"
-t "Security page supports public-key upload and multiple key rows" "yes" \
-  "$(grep -q 'type="file".*accept=".pub,text/plain"' quecdeck/www/security.html && grep -q 'x-for="key in keys"' quecdeck/www/security.html && grep -q 'keys.length >= 5' quecdeck/www/security.html && echo yes || echo no)"
+t "Security and SSH pages are wired to their controller and navigation" "yes" \
+  "$(grep -q 'x-data="securitySettings()"' quecdeck/www/security.html && grep -q 'x-data="securitySettings(true)"' quecdeck/www/ssh.html && grep -q 'js/security.js' quecdeck/www/security.html quecdeck/www/ssh.html && grep -q "href: '/security.html', label: 'Security'" quecdeck/www/js/nav.js && grep -q "href: '/ssh.html', label: 'SSH'" quecdeck/www/js/nav.js && grep -q 'href="/ssh.html"' quecdeck/www/deviceinfo.html && echo yes || echo no)"
+t "SSH page supports public-key upload and multiple key rows" "yes" \
+  "$(grep -q 'type="file".*accept=".pub,text/plain"' quecdeck/www/ssh.html && grep -q 'x-for="key in keys"' quecdeck/www/ssh.html && grep -q 'keys.length >= 5' quecdeck/www/ssh.html && echo yes || echo no)"
 t "Password change returns to a clear login state" "yes" \
   "$(grep -q 'password_changed=1' quecdeck/www/js/security.js && grep -q 'passwordChanged' quecdeck/www/js/login.js quecdeck/www/login.html && echo yes || echo no)"
 
@@ -36,8 +36,8 @@ t "root home hardens before helper writes" "yes" \
   "$([ -n "$_harden_line" ] && [ "$_harden_line" -lt "$_helper_line" ] && echo yes || echo no)"
 t "installed console menu is retired" "yes" \
   "$([ ! -e quecdeck/console/menu/start_menu.sh ] && ! grep -q '/usrdata/quecdeck/console' quecdeck/console/.profile && ! grep -q 'root/bin/menu.*ln -s\|ln -s.*root/bin/menu' update_quecdeck.sh quecdeck.sh && grep -q 'rm -f /usrdata/root/bin/menu' update_quecdeck.sh quecdeck.sh && echo yes || echo no)"
-t "security UI gives the absolute developer-password helper" "yes" \
-  "$([ -x quecdeck/quecdeckdevpasswd ] && ! grep -q 'console menu' quecdeck/www/security.html quecdeck/www/js/security.js && grep -q '/usrdata/root/bin/quecdeckdevpasswd' quecdeck/www/security.html quecdeck/www/js/security.js && grep -q 'cp -f.*quecdeckdevpasswd.*usrdata/root/bin/quecdeckdevpasswd' update_quecdeck.sh && echo yes || echo no)"
+t "developer password helper and web form remain available" "yes" \
+  "$([ -x quecdeck/quecdeckdevpasswd ] && grep -q 'changeDeveloperPassword' quecdeck/www/security.html quecdeck/www/js/security.js && grep -q 'cp -f.*quecdeckdevpasswd.*usrdata/root/bin/quecdeckdevpasswd' update_quecdeck.sh && echo yes || echo no)"
 t "rollback restores password helper copies" "2" \
   "$(sed -n '/^_revert_swap() {/,/^}/p' update_quecdeck.sh | grep -c 'cp -f.*quecdeck.*passwd.*usrdata/root/bin')"
 t "uninstall clears root-home migration marker" "yes" \
@@ -50,33 +50,34 @@ t "Entware bootstrap does not install a root login stack" "yes" \
 _entware_base=$(sed -n '/^ensure_entware_installed() {/,/^}/p' quecdeck.sh)
 t "base installer does not prepare root authentication" "yes" \
   "$(! printf '%s\n' "$_entware_base" | grep -qE 'shadow-(login|passwd|useradd)|/opt/bin/passwd|/bin/login\.shadow' && echo yes || echo no)"
-_ssh_accounts=$(sed -n '/^prepare_ssh_accounts() {/,/^}/p' quecdeck.sh)
+_ssh_installer=quecdeck/script/install_sshd.sh
+_ssh_accounts=$(sed -n '/^prepare_ssh_accounts() {/,/^}/p' "$_ssh_installer")
 t "SSH prepares only a private Entware service account" "yes" \
   "$(printf '%s\n' "$_ssh_accounts" | grep -q 'cp /etc/passwd /opt/etc/passwd' && printf '%s\n' "$_ssh_accounts" | grep -q 'sshd:x:106:' && ! printf '%s\n' "$_ssh_accounts" | grep -qE 'shadow|/bin/login|/usr/bin/passwd|useradd' && echo yes || echo no)"
 t "SSH account preparation copies the firmware root line literally" "yes" \
-  "$(printf '%s\n' "$_ssh_accounts" | grep -q 'printf.*_firmware_root' && printf '%s\n' "$_ssh_accounts" | grep -q "grep -v '\^root:'" && ! printf '%s\n' "$_ssh_accounts" | grep -q 'sed -i.*firmware_root' && echo yes || echo no)"
+  "$(printf '%s\n' "$_ssh_accounts" | grep -q 'printf.*firmware_root' && printf '%s\n' "$_ssh_accounts" | grep -q "grep -v '\^root:'" && ! printf '%s\n' "$_ssh_accounts" | grep -q 'sed -i.*firmware_root' && echo yes || echo no)"
 t "QuecDeck uninstall does not rewrite Entware passwd links" "yes" \
   "$(! sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh | grep -q 'sed -i.*opt/etc/passwd' && echo yes || echo no)"
 t "SSH install uses the non-PAM server with key-only authentication" "yes" \
-  "$(grep -q 'openssh-server openssh-keygen' quecdeck.sh && grep -q '^AuthenticationMethods publickey$' quecdeck.sh && ! grep -q 'UsePAM' quecdeck.sh && echo yes || echo no)"
+  "$(grep -q 'openssh-server openssh-keygen' "$_ssh_installer" && grep -q '^AuthenticationMethods publickey$' "$_ssh_installer" && ! grep -q 'UsePAM' "$_ssh_installer" && echo yes || echo no)"
 _sshd_menu=$(sed -n '/^sshd_service() {/,/^}/p' quecdeck.sh)
-t "SSH installer stops when Entware setup fails" "yes" \
-  "$(printf '%s\n' "$_sshd_menu" | grep -q '^            ensure_entware_installed || return$' && echo yes || echo no)"
+t "SSH menu dispatches only to the installed root helper" "yes" \
+  "$(printf '%s\n' "$_sshd_menu" | grep -q 'script/install_sshd.sh' && ! printf '%s\n' "$_sshd_menu" | grep -q 'wget\|GITROOT\|opkg install' && echo yes || echo no)"
 t "SSH installation has no PAM migration path" "yes" \
-  "$(! printf '%s\n' "$_sshd_menu" | grep -qE 'opkg (download|install).*openssh-server-pam|opkg remove openssh-server-pam.*Failed to remove' && echo yes || echo no)"
-t "SSH release files are staged before package installation" "yes" \
-  "$([ "$(printf '%s\n' "$_sshd_menu" | grep -n 'wget.*sshd.service' | cut -d: -f1)" -lt "$(printf '%s\n' "$_sshd_menu" | grep -n 'opkg install --force-maintainer openssh-server' | cut -d: -f1)" ] && echo yes || echo no)"
+  "$(! grep -qE 'opkg (download|install).*openssh-server-pam|opkg remove openssh-server-pam.*Failed to remove' "$_ssh_installer" && echo yes || echo no)"
+t "SSH bundled assets verify before package installation" "yes" \
+  "$([ "$(grep -n 'verify_asset sshd.service' "$_ssh_installer" | cut -d: -f1)" -lt "$(grep -n 'opkg install --force-maintainer openssh-server' "$_ssh_installer" | cut -d: -f1)" ] && ! grep -q 'wget\|GITROOT' "$_ssh_installer" && echo yes || echo no)"
 t "SSH configuration scopes its restrictive umask" "yes" \
-  "$(grep -q '^configure_key_only_ssh() ($' quecdeck.sh && echo yes || echo no)"
-_ssh_config=$(sed -n '/^configure_key_only_ssh() (/,/^)/p' quecdeck.sh)
+  "$(grep -q '^configure_key_only_ssh() ($' "$_ssh_installer" && echo yes || echo no)"
+_ssh_config=$(sed -n '/^configure_key_only_ssh() (/,/^)/p' "$_ssh_installer")
 t "SSH validates the temporary configuration before replacement" "yes" \
-  "$( _validate=$(printf '%s\n' "$_ssh_config" | grep -n 'sshd -t -f.*_ssh_config_tmp' | cut -d: -f1); _replace=$(printf '%s\n' "$_ssh_config" | grep -n 'mv -f.*_ssh_config_tmp.*sshd_config' | cut -d: -f1); [ -n "$_validate" ] && [ -n "$_replace" ] && [ "$_validate" -lt "$_replace" ] && printf '%s\n' "$_ssh_config" | grep -q 'sshd -T -f.*_ssh_config_tmp' && echo yes || echo no)"
-_ssh_prepare_line=$(grep -n 'prepare_ssh_accounts ||' quecdeck.sh | cut -d: -f1)
-_ssh_install_line=$(grep -n 'opkg install --force-maintainer openssh-server openssh-keygen' quecdeck.sh | cut -d: -f1)
-_ssh_start_line=$(grep -n 'systemctl start sshd ||' quecdeck.sh | cut -d: -f1)
+  "$( _validate=$(printf '%s\n' "$_ssh_config" | grep -n 'sshd -t -f.*config_tmp' | cut -d: -f1); _replace=$(printf '%s\n' "$_ssh_config" | grep -n 'mv -f.*config_tmp.*sshd_config' | cut -d: -f1); [ -n "$_validate" ] && [ -n "$_replace" ] && [ "$_validate" -lt "$_replace" ] && printf '%s\n' "$_ssh_config" | grep -q 'sshd -T -f.*config_tmp' && echo yes || echo no)"
+_ssh_prepare_line=$(grep -n 'prepare_ssh_accounts ||' "$_ssh_installer" | cut -d: -f1)
+_ssh_install_line=$(grep -n 'opkg install --force-maintainer openssh-server openssh-keygen' "$_ssh_installer" | cut -d: -f1)
+_ssh_start_line=$(grep -n 'systemctl start sshd ||' "$_ssh_installer" | cut -d: -f1)
 t "SSH service account is ready before daemon installation and start" "yes" \
   "$([ -n "$_ssh_prepare_line" ] && [ "$_ssh_prepare_line" -lt "$_ssh_install_line" ] && [ "$_ssh_install_line" -lt "$_ssh_start_line" ] && echo yes || echo no)"
-unset _entware_base _ssh_accounts _sshd_menu _ssh_config _ssh_prepare_line _ssh_install_line _ssh_start_line
+unset _entware_base _ssh_installer _ssh_accounts _sshd_menu _ssh_config _ssh_prepare_line _ssh_install_line _ssh_start_line
 
 # Branch installs must pin one ref for the manifest, the installer, and the
 # archive. Leaving the tag empty falls back to the updater's own default, which
@@ -154,9 +155,9 @@ t "Alpine controllers rely on one automatic init call" "yes" \
 t "setup blocks when recovery-state loading fails" "yes" \
   "$(grep -q 'if (!response.ok)' quecdeck/www/js/setup.js && grep -q 'if (!this.setupReady)' quecdeck/www/js/setup.js && echo yes || echo no)"
 t "SSH validates the final generated config" "yes" \
-  "$([ "$(grep -n 'update_sshd_ip.sh' optional/sshd/sshd.service | cut -d: -f1)" -lt "$(grep -n 'ssh_keys.sh ready' optional/sshd/sshd.service | cut -d: -f1)" ] && echo yes || echo no)"
+  "$([ "$(grep -n 'update_sshd_ip.sh' quecdeck/optional/sshd/sshd.service | cut -d: -f1)" -lt "$(grep -n 'ssh_keys.sh ready' quecdeck/optional/sshd/sshd.service | cut -d: -f1)" ] && echo yes || echo no)"
 t "SSH installation creates the root-only enable marker" "yes" \
-  "$( _configure=$(sed -n '/^configure_key_only_ssh() (/,/^)/p' quecdeck.sh); printf '%s\n' "$_configure" | grep -q 'quecdeck_enabled' && printf '%s\n' "$_configure" | grep -q 'chmod 600' && echo yes || echo no)"
+  "$( _configure=$(sed -n '/^configure_key_only_ssh() (/,/^)/p' quecdeck/script/install_sshd.sh); printf '%s\n' "$_configure" | grep -q 'quecdeck_enabled' && printf '%s\n' "$_configure" | grep -q 'chmod 600' && echo yes || echo no)"
 t "strict CSP has no blocked literal style attributes" "yes" \
   "$(! grep -R -E '(^|[[:space:]])style=' quecdeck/www --include='*.html' --include='*.js' && ! grep -q "style-src.*unsafe-inline" quecdeck/lighttpd.conf && echo yes || echo no)"
 js_fail=0

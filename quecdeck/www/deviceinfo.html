@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=76025f9f" />
-    <link rel="stylesheet" href="css/styles.css?v=76025f9f" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=3eb8f25a" />
+    <link rel="stylesheet" href="css/styles.css?v=3eb8f25a" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=76025f9f"></script>
-    <script src="js/utils.js?v=76025f9f"></script>
-    <script src="js/alpinejs.min.js?v=76025f9f" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=3eb8f25a"></script>
+    <script src="js/utils.js?v=3eb8f25a"></script>
+    <script src="js/alpinejs.min.js?v=3eb8f25a" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="fetchDeviceInfo()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=76025f9f"></script>
+        <script src="js/nav.js?v=3eb8f25a"></script>
 
         <div class="row gy-3 mt-4 mb-0 align-items-stretch">
           <div class="col-md">
@@ -124,7 +124,7 @@
                   <span class="badge" :class="!system ? 'text-bg-secondary' : system.scheduled_restart.running ? 'text-bg-success' : 'text-bg-secondary'" x-text="!system ? '...' : system.scheduled_restart.running ? 'Active' : 'Inactive'"></span>
                 </li>
                 <li class="list-group-item d-flex justify-content-between align-items-center gap-3">
-                  <span class="text-muted fw-semibold text-nowrap">SSH Server</span>
+                  <a href="/ssh.html" class="text-muted text-decoration-none fw-semibold text-nowrap">SSH Server</a>
                   <span class="badge" :class="!system ? 'text-bg-secondary' : system.sshd === null ? 'text-bg-secondary' : system.sshd.running ? 'text-bg-success' : 'text-bg-secondary'" x-text="!system ? '...' : system.sshd === null ? 'Not Installed' : system.sshd.running ? 'Active' : 'Inactive'"></span>
                 </li>
               </ul>
@@ -149,6 +149,6 @@
 
       </div>
     </main>
-    <script src="js/deviceinfo.js?v=76025f9f"></script>
+    <script src="js/deviceinfo.js?v=3eb8f25a"></script>
   </body>
 </html>

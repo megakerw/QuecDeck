@@ -99,16 +99,8 @@ if ! read -r uptime_value _ < /proc/uptime ||
 fi
 [ "$settle_delay" -eq 0 ] || sleep "$settle_delay"
 
-# Read LAN IP from mobileap config, fall back to default
-LAN_IP=""
-if [ -f "/etc/data/mobileap_cfg.xml" ]; then
-    LAN_IP=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
-fi
-# Validate extracted IP: dotted-decimal format with each octet in 0-255.
-if ! printf '%s' "$LAN_IP" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || \
-   ! printf '%s' "$LAN_IP" | awk -F. '$1>255||$2>255||$3>255||$4>255{exit 1}'; then
-    LAN_IP="192.168.225.1"
-fi
+. /usrdata/quecdeck/script/lan-ip-lib.sh || exit 1
+resolve_lan_ip
 
 # bridge0 is the tested LAN ingress for both routed/NAT and IPPT modes. An
 # interface name can be loaded into iptables before it exists, which would make
