@@ -893,6 +893,20 @@ html {
   margin-bottom: 0 !important;
 }
 
+/* Panel action row. Pinned to the bottom by the panel flex column so buttons
+   line up across panels of equal height in a stretched row. */
+/* The key box holds a single wrapped token, so dragging it larger reveals
+   nothing. Set here rather than inline: the CSP has no style-src unsafe-inline,
+   so a literal style attribute would be dropped. */
+#public-key {
+  resize: none;
+}
+
+.panel-actions {
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
 .panel-title {
   font-size: 0.75rem;
   font-weight: 700;

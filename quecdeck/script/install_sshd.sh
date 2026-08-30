@@ -8,6 +8,8 @@ QUECDECK_DIR=/usrdata/quecdeck
 ASSET_DIR=$QUECDECK_DIR/optional/sshd
 MANIFEST=$QUECDECK_DIR/checksums.sha256
 
+. $QUECDECK_DIR/script/sshd-policy-lib.sh || exit 1
+
 [ "$#" -eq 0 ] || exit 1
 [ "$(id -u)" = 0 ] || exit 1
 
@@ -110,21 +112,11 @@ EOF
         rm -f "$config_tmp"
         return 1
     }
-    # Assert the same posture ssh_keys.sh enforces on every daemon start, so an
-    # install fails here with a clear message rather than at the first start.
-    # tests/host/suites/security.sh keeps the two lists identical.
-    printf '%s\n' "$effective" | grep -qx 'passwordauthentication no' &&
-    printf '%s\n' "$effective" | grep -qx 'kbdinteractiveauthentication no' &&
-    printf '%s\n' "$effective" | grep -qx 'permitrootlogin prohibit-password' &&
-    printf '%s\n' "$effective" | grep -qx 'pubkeyauthentication yes' &&
-    printf '%s\n' "$effective" | grep -qx 'authenticationmethods publickey' &&
-    printf '%s\n' "$effective" | grep -qx 'authorizedkeysfile /usrdata/root/.ssh/authorized_keys' &&
-    printf '%s\n' "$effective" | grep -qx 'allowtcpforwarding no' &&
-    printf '%s\n' "$effective" | grep -qx 'allowagentforwarding no' &&
-    printf '%s\n' "$effective" | grep -qx 'allowstreamlocalforwarding no' &&
-    printf '%s\n' "$effective" | grep -qx 'gatewayports no' &&
-    printf '%s\n' "$effective" | grep -qx 'permittunnel no' &&
-    printf '%s\n' "$effective" | grep -qx 'x11forwarding no' &&
+    # One shared definition of the posture, enforced again by ssh_keys.sh on
+    # every daemon start. Failing here gives a clear install-time message
+    # instead of a later refusal to start. AllowUsers is checked separately:
+    # it is an install-time choice, not part of the runtime policy.
+    sshd_policy_ok "$effective" &&
     printf '%s\n' "$effective" | grep -qx 'allowusers root' || {
         rm -f "$config_tmp"
         return 1
@@ -158,8 +150,8 @@ install_sshd() {
     done
     /opt/bin/ssh-keygen -A
     # Publish the bind fragment before validating: the configuration Includes it
-    # by literal path, so sshd -t fails while it is absent. Run from the verified
-    # asset, since the installed copy does not exist yet.
+    # by literal path, so sshd -t fails while it is absent. This is the same
+    # verified copy the unit runs, so there is nothing to install separately.
     /bin/sh "$ASSET_DIR/update_sshd_ip.sh" || {
         echo -e "\e[1;31mFailed to publish the SSH bind address.\e[0m"
         return 1
@@ -174,9 +166,6 @@ install_sshd() {
     cp -f "$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service &&
         chown root:root /lib/systemd/system/sshd.service &&
         chmod 644 /lib/systemd/system/sshd.service &&
-        cp -f "$ASSET_DIR/update_sshd_ip.sh" /opt/etc/ssh/update_sshd_ip.sh &&
-        chown root:root /opt/etc/ssh/update_sshd_ip.sh &&
-        chmod 700 /opt/etc/ssh/update_sshd_ip.sh &&
         ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service || return 1
     remount_ro || return 1
     trap - EXIT
@@ -202,6 +191,15 @@ uninstall_sshd() {
     opkg remove openssh-server openssh-server-pam openssh-keygen >/dev/null 2>&1
     cleanup_ssh_account
     rm -rf /opt/etc/ssh
+    # Authorized keys live in root's home, not /opt/etc/ssh, so they outlive the
+    # packages. Left behind they are unreachable from the web UI (every
+    # ssh_keys.sh arm requires sshd installed) and go live again the moment SSH
+    # is reinstalled, which needs no credential. Clear them here instead. The
+    # directory stays: it may predate QuecDeck.
+    if [ -s /usrdata/root/.ssh/authorized_keys ]; then
+        echo -e "\e[1;33mRemoving authorized SSH keys. Re-adding one needs the administrator and developer passwords.\e[0m"
+    fi
+    rm -f /usrdata/root/.ssh/authorized_keys /usrdata/root/.quecdeck-ssh-keys.lock
     trap 'remount_ro' EXIT
     remount_rw || return 1
     rm -f /lib/systemd/system/sshd.service \
@@ -221,7 +219,7 @@ else
 fi
 echo "OpenSSH Server: allows SSH login to the modem."
 echo -e "\e[1;32m1) Install/Update sshd\e[0m"
-echo -e "\e[1;31m2) Uninstall sshd\e[0m"
+echo -e "\e[1;31m2) Uninstall sshd (also removes authorized keys)\e[0m"
 echo -e "\e[1;33m3) Cancel\e[0m"
 read -r -p "Enter your choice (1-3): " choice
 case "$choice" in

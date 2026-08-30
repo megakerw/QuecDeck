@@ -36,11 +36,11 @@
         '<path d="M2.2 3.6h11.6v7.2H6.6L3.6 13.6v-2.8H2.2z"/>') },
     ] },
     { label: 'System', links: [
+      { href: '/deviceinfo.html', label: 'Device Information', icon: icon(
+        '<circle cx="8" cy="8" r="6"/><path d="M8 7.4v3.8"/><path d="M8 4.9v.7"/>') },
       { href: '/security.html', label: 'Security', icon: icon(
         '<path d="M8 1.7 13 3.8v3.7c0 3.1-2 5.5-5 6.8-3-1.3-5-3.7-5-6.8V3.8z"/>'
         + '<path d="M5.8 8 7.3 9.5l3-3"/>') },
-      { href: '/deviceinfo.html', label: 'Device Information', icon: icon(
-        '<circle cx="8" cy="8" r="6"/><path d="M8 7.4v3.8"/><path d="M8 4.9v.7"/>') },
       { href: '/update.html', label: 'Update', icon: icon(
         '<path d="M8 2.2v7.2"/><path d="M5.2 6.6 8 9.4l2.8-2.8"/>'
         + '<path d="M2.6 11.4v1.2a1.2 1.2 0 0 0 1.2 1.2h8.4a1.2 1.2 0 0 0 1.2-1.2v-1.2"/>') },

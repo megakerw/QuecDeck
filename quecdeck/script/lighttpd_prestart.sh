@@ -57,6 +57,13 @@ if grep -qE '^(server\.bind = "[0-9.]+"|\$SERVER\["socket"\] == "[0-9.]+:443")' 
     sed -i 's/^\$SERVER\["socket"\] == "[0-9.]*:443"/$SERVER["socket"] == var.lan_ip + ":443"/' "$LIGHTTPD_CONF" || exit 1
 fi
 
+# Entware's rc.unslung runs every S* script in /opt/etc/init.d/ at boot, and the
+# lighttpd package's postinst recreates one on any opkg upgrade. That second
+# server binds 0.0.0.0:80 from stock config and takes the port from this unit.
+# The installer reaps it too, this covers an upgrade done by hand afterwards.
+# Never fatal: a stray init script must not keep the web server down.
+rm -f /opt/etc/init.d/*lighttpd* 2>/dev/null || :
+
 # Regenerate TLS cert only if its SAN doesn't already match the current LAN IP.
 # Checking the cert SAN directly (rather than the conf binding) avoids spurious
 # regeneration after updates that reset lighttpd.conf to 0.0.0.0.

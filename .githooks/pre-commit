@@ -21,6 +21,7 @@ CHECKSUMMED_FILES=(
   quecdeck/script/install_sshd.sh
   quecdeck/script/lan-ip-lib.sh
   quecdeck/script/lock-lib.sh
+  quecdeck/script/sshd-policy-lib.sh
   quecdeck/script/write_htpasswd.sh
   quecdeck/script/change_password.sh
   quecdeck/script/ssh_keys.sh

@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=3eb8f25a" />
-    <link rel="stylesheet" href="css/styles.css?v=3eb8f25a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=93e14069" />
+    <link rel="stylesheet" href="css/styles.css?v=93e14069" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=3eb8f25a"></script>
-    <script src="js/utils.js?v=3eb8f25a"></script>
-    <script src="js/alpinejs.min.js?v=3eb8f25a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=93e14069"></script>
+    <script src="js/utils.js?v=93e14069"></script>
+    <script src="js/alpinejs.min.js?v=93e14069" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="networkSettings()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=3eb8f25a"></script>
+        <script src="js/nav.js?v=93e14069"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
           <div class="col-12 col-md-5">
@@ -39,7 +39,7 @@
                 <!-- Checkboxes will be populated here -->
               </form>
               <div class="text-muted small mt-2" x-text="'Active bands: ' + bands"></div>
-              <div class="mt-auto pt-3 d-flex align-items-center gap-2">
+              <div class="panel-actions d-flex align-items-center gap-2">
                 <button
                   type="button"
                   class="btn btn-primary"
@@ -134,7 +134,7 @@
                     <label class="btn btn-outline-primary" for="SIM2">Slot 2</label>
                   </div>
                 </div>
-              <div class="mt-auto pt-3">
+              <div class="panel-actions">
                 <button type="button" class="btn btn-primary" @click="saveApnSettings()" :disabled="$store.scanBanner.active">Save</button>
               </div>
             </div>
@@ -186,7 +186,7 @@
                     <option value="1">NR5G-SA Disabled</option>
                   </select>
                 </div>
-              <div class="mt-auto pt-3">
+              <div class="panel-actions">
                 <button type="button" class="btn btn-primary" @click="saveNetworkPreferences()" :disabled="$store.scanBanner.active">Save</button>
               </div>
             </div>
@@ -197,8 +197,8 @@
       </div>
     </main>
 
-    <script src="js/populate-bands.js?v=3eb8f25a"></script>
-    <script src="js/parse-settings.js?v=3eb8f25a"></script>
-    <script src="js/network.js?v=3eb8f25a"></script>
+    <script src="js/populate-bands.js?v=93e14069"></script>
+    <script src="js/parse-settings.js?v=93e14069"></script>
+    <script src="js/network.js?v=93e14069"></script>
   </body>
 </html>

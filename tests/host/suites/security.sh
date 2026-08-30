@@ -189,15 +189,30 @@ done
 t "installed SSH component helper is staged root-only" "yes" \
   "$(printf '%s\n' "$_root_helpers" | grep -q 'install_sshd.sh' && grep -q '^    _helper="\$QUECDECK_DIR/script/install_sshd.sh"$' quecdeck.sh && grep -q 'stat -c.*0 700' quecdeck.sh && echo yes || echo no)"
 t "password helper verifies current password before replacement" "yes" \
-  "$([ "$(grep -n 'check_password.sh admin admin' quecdeck/script/change_password.sh | cut -d: -f1)" -lt "$(grep -n 'mv -f.*HTPASSWD' quecdeck/script/change_password.sh | head -1 | cut -d: -f1)" ] && echo yes || echo no)"
+  "$([ "$(grep -n 'check_password.sh "\$SELF_KIND" "\$SELF_USER"' quecdeck/script/change_password.sh | cut -d: -f1)" -lt "$(grep -n 'mv -f.*HTPASSWD' quecdeck/script/change_password.sh | head -1 | cut -d: -f1)" ] && echo yes || echo no)"
 t "initial setup rejects matching administrator and developer passwords" "yes" \
   "$(grep -q '\[ "$admin_pass" = "$dev_pass" \]' quecdeck/www/cgi-bin/init_setup && grep -q 'this.devPass === this.adminPass' quecdeck/www/js/setup.js && echo yes || echo no)"
 t "root console password setters reject the other credential" "yes" \
   "$(grep -q 'check_password.sh dev devadmin' quecdeck/quecdeckpasswd && grep -q 'check_password.sh admin admin' quecdeck/quecdeckdevpasswd && echo yes || echo no)"
-t "developer password change requires both credentials without short-circuiting" "yes" \
-  "$( _change=$(cat quecdeck/script/change_password.sh); printf '%s\n' "$_change" | grep -q 'check_password.sh admin admin' && printf '%s\n' "$_change" | grep -q 'check_password.sh dev devadmin' && [ "$(printf '%s\n' "$_change" | grep -n 'developer_rc=' | cut -d: -f1)" -lt "$(printf '%s\n' "$_change" | grep -n '\[ "$password_rc" = 0 \].*developer_rc' | cut -d: -f1)" ] && grep -q 'change_developer_password' quecdeck/www/cgi-bin/manage_security quecdeck/www/js/security.js && echo yes || echo no)"
-t "administrator password change requires both credentials" "yes" \
-  "$( _admin=$(sed -n '/^    change_password)/,/^        ;;/p' quecdeck/www/cgi-bin/manage_security); printf '%s\n' "$_admin" | grep -q 'developer_password' && printf '%s\n' "$_admin" | grep -Fq "printf '%s\\n%s\\n%s\\n'" && grep -q '\[ "$NEW" != "$DEVELOPER" \] || exit 13' quecdeck/script/change_password.sh && echo yes || echo no)"
+# Each password change asks only for the credential it replaces. The two must
+# still never become equal, or knowing the administrator password would clear
+# the developer gate too, so the replacement is tested against the OTHER stored
+# hash instead of the caller supplying that password.
+_ms=quecdeck/www/cgi-bin/manage_security
+_pw_payloads=$(grep -cF 'printf '"'"'%s\n%s\n'"'"' "$current" "$new" |' "$_ms")
+_change_src=$(cat quecdeck/script/change_password.sh)
+t "a password change asks only for the credential it replaces" "yes" \
+  "$([ "$_pw_payloads" = 2 ] && printf '%s\n' "$_change_src" | grep -q 'check_password.sh "\$SELF_KIND" "\$SELF_USER"' && ! printf '%s\n' "$_change_src" | grep -q 'DEVELOPER' && echo yes || echo no)"
+t "the two credentials are kept distinct at the root boundary" "yes" \
+  "$( _c=$(cat quecdeck/script/change_password.sh); printf '%s\n' "$_c" | grep -q 'check_password.sh "\$OTHER_KIND" "\$OTHER_USER"' && printf '%s\n' "$_c" | grep -q '\[ "\$other_rc" != 0 \] || exit 13' && [ "$(printf '%s\n' "$_c" | grep -n 'OTHER_KIND" "\$OTHER_USER' | cut -d: -f1)" -lt "$(printf '%s\n' "$_c" | grep -n 'mv -f.*HTPASSWD' | head -1 | cut -d: -f1)" ] && echo yes || echo no)"
+_both_cred=0
+for _b in add_key remove_key; do
+    sed -n "/^    $_b)/,/^        ;;/p" "$_ms" | grep -q 'developer_password' && _both_cred=$((_both_cred + 1))
+done
+t "SSH key operations still require both credentials" "2" "$_both_cred"
+t "SSH key operations verify both at the root boundary" "yes" \
+  "$(grep -q 'verify_credentials' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
+unset _ms _pw_payloads _change_src _both_cred _b
 t "developer unlocks are bound to the credential generation" "yes" \
   "$(grep -q '^GENERATION_FILE=/opt/etc/\.htpasswd_dev\.generation$' quecdeck/www/cgi-bin/auth_dev && grep -q 'generation_before.*generation_after' quecdeck/www/cgi-bin/auth_dev && grep -q 'dev.generation == generation' quecdeck/auth.lua && echo yes || echo no)"
 t "every developer credential writer rotates the generation" "3" \
@@ -247,7 +262,7 @@ t "SSH helper requires administrator and developer credentials" "yes" \
 t "SSH key management requires a configured developer credential" "yes" \
   "$(grep -q '\[ -s /opt/etc/\.htpasswd_dev \] || exit 8' quecdeck/script/ssh_keys.sh && grep -q '8) json_result false "Set a developer access password' quecdeck/www/cgi-bin/manage_security && grep -q 'developer_configured' quecdeck/www/cgi-bin/get_security quecdeck/www/js/security.js && echo yes || echo no)"
 t "missing developer credential does not count as password failure" "yes" \
-  "$([ "$(grep -n '^if \[ "\$rc" = 2 \]; then$' quecdeck/www/cgi-bin/manage_security | cut -d: -f1)" -lt "$(grep -n '^if \[ "\$rc" != 0 \]; then$' quecdeck/www/cgi-bin/manage_security | cut -d: -f1)" ] && grep -q '^        8) json_result false' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
+  "$([ "$(grep -n '^if \[ "\$rc" = 2 \] || \[ "\$rc" = 13 \]; then$' quecdeck/www/cgi-bin/manage_security | cut -d: -f1)" -lt "$(grep -n '^if \[ "\$rc" != 0 \]; then$' quecdeck/www/cgi-bin/manage_security | cut -d: -f1)" ] && grep -q '^        8) json_result false' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
 t "SSH key status distinguishes incompatible root home permissions" "yes" \
   "$(grep -q 'safe_root_home || exit 9' quecdeck/script/ssh_keys.sh && grep -q 'root_home_ready' quecdeck/www/cgi-bin/get_security quecdeck/www/js/security.js && grep -q '^        9) json_result false' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
 t "SSH status JSON has a stable root-home field" "yes" \
@@ -278,8 +293,52 @@ t "adding a key starts SSH only while the server is enabled" "yes" \
   "$( _add=$(sed -n '/^    add)/,/^        ;;/p' quecdeck/script/ssh_keys.sh); printf '%s\n' "$_add" | grep -q 'enabled_marker_safe' && printf '%s\n' "$_add" | grep -q 'systemctl start sshd' && echo yes || echo no)"
 t "SSH settings stay inside the existing privileged helper" "yes" \
   "$(grep -q '^    settings)' quecdeck/script/ssh_keys.sh && grep -q 'ssh_keys.sh settings' quecdeck/www/cgi-bin/manage_security && ! grep -qE 'sudo .*systemctl.*sshd|sudo .*firewall' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
-t "SSH settings require both credentials at the root boundary" "yes" \
-  "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_keys.sh); printf '%s\n' "$_settings" | grep -q 'verify_credentials' && printf '%s\n' "$_settings" | grep -q '\[ -s /opt/etc/\.htpasswd_dev \] || exit 8' && echo yes || echo no)"
+# Enable/disable and port need the ADMINISTRATOR password: a forged www-data
+# session carries no credential, so this is what stops one switching an existing
+# key back on. Not the developer password, which gates granting root (add and
+# remove), and which this change does not do.
+# Keys live in root's home, not /opt/etc/ssh, so they outlive the packages an
+# uninstall removes. Left behind they are unreachable (every ssh_keys.sh arm
+# needs sshd installed) and go live again on reinstall, which takes no credential.
+# Matched against the rm arguments one at a time, not as a substring of the
+# line: a prefix match would accept a mistyped suffix as a hit.
+t "uninstall removes the authorized keys" "yes" \
+  "$( sed -n '/^uninstall_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh | grep '^ *rm -f ' | tr ' ' '\n' | grep -qx '/usrdata/root/.ssh/authorized_keys' && echo yes || echo no)"
+# It must clear the same path the daemon reads, or it clears nothing.
+t "uninstall clears the path sshd_config declares" "yes" \
+  "$( _p=$(grep -oE '^AuthorizedKeysFile [^ ]+' quecdeck/script/install_sshd.sh | awk '{print $2}'); [ -n "$_p" ] && sed -n '/^uninstall_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh | grep '^ *rm -f ' | tr ' ' '\n' | grep -qx "$_p" && echo yes || echo no)"
+unset _p
+# bf_clear fires on any success. With one shared counter, an administrator
+# password holder could alternate a failed add_key guess with a successful
+# ssh_settings save and retry the developer password without limit.
+t "credential failures are counted per class" "yes" \
+  "$(grep -q 'auth_class=admin' quecdeck/www/cgi-bin/manage_security && grep -q 'auth_class=dev' quecdeck/www/cgi-bin/manage_security && grep -q 'auth_class=keys' quecdeck/www/cgi-bin/manage_security && grep -q 'security-auth-failures/\$auth_class' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
+t "key operations do not share a counter with administrator-only actions" "yes" \
+  "$(_c=$(sed -n '/^case "\$action" in$/,/^esac$/p' quecdeck/www/cgi-bin/manage_security | head -8); printf '%s\n' "$_c" | grep -q 'change_password|ssh_settings) auth_class=admin' && printf '%s\n' "$_c" | grep -q 'add_key|remove_key)           auth_class=keys' && echo yes || echo no)"
+# An absent listenaddress means every interface, so the gate must require a
+# positive result rather than only rejecting explicit wildcards.
+t "the SSH bind gate requires a listener, not just a non-wildcard one" "yes" \
+  "$(_k=$(extract_fn quecdeck/script/ssh_keys.sh keys_ready); printf '%s\n' "$_k" | grep -q 'listen=\$(printf' && printf '%s\n' "$_k" | grep -qF '[ -n "$listen" ] || return 1' && echo yes || echo no)"
+# Policy lines are literals: the dots in the key path are regex wildcards without -F.
+t "SSH policy lines are compared literally" "yes" \
+  "$(grep -q 'grep -Fqx' quecdeck/script/sshd-policy-lib.sh && ! grep -qE 'grep -qx ' quecdeck/script/sshd-policy-lib.sh && echo yes || echo no)"
+t "the credential helper header matches what it reads" "yes" \
+  "$(! grep -q 'Both modes read the current administrator password' quecdeck/script/change_password.sh && grep -q 'Reads only the current value of the credential being changed' quecdeck/script/change_password.sh && echo yes || echo no)"
+unset _c _k
+t "SSH settings require the administrator password" "yes" \
+  "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_keys.sh); printf '%s\n' "$_settings" | grep -q 'verify_admin_credential' && printf '%s\n' "$_settings" | grep -q 'ADMIN_PASSWORD' && echo yes || echo no)"
+t "SSH settings do not ask for the developer password" "yes" \
+  "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_keys.sh); ! printf '%s\n' "$_settings" | grep -q 'verify_credentials' && ! sed -n '/^    ssh_settings)/,/;;/p' quecdeck/www/cgi-bin/manage_security | grep -q 'developer_password' && grep -q 'developerRequired: false' quecdeck/www/js/security.js && echo yes || echo no)"
+# Anchored on the privileged call, not on a case statement: the classification
+# block above the dispatch is also a "case $action in".
+t "every security action requires a current password" "yes" \
+  "$(! grep -q 'ssh_settings) ;;' quecdeck/www/cgi-bin/manage_security && [ "$(grep -n 'Current password is required' quecdeck/www/cgi-bin/manage_security | cut -d: -f1)" -lt "$(grep -n '/opt/bin/sudo' quecdeck/www/cgi-bin/manage_security | head -1 | cut -d: -f1)" ] && echo yes || echo no)"
+# The unused password field must leave the DOM, not just hide: that is what the
+# browser otherwise pairs with unrelated inputs and offers to save.
+t "the credential dialog removes the unused developer field" "yes" \
+  "$(grep -q 'x-if="\$store.credentialModal.developerRequired"' quecdeck/www/js/utils.js && echo yes || echo no)"
+t "the key gate still requires both credentials" "2" \
+  "$( _n=0; for _a in add remove; do sed -n "/^    $_a)/,/^        ;;/p" quecdeck/script/ssh_keys.sh | grep -q verify_credentials && _n=$((_n + 1)); done; echo "$_n")"
 t "SSH settings accept only a Boolean and the reviewed port range" "yes" \
   "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_keys.sh); _ports=$(extract_fn quecdeck/script/ssh_keys.sh valid_ssh_port); printf '%s\n' "$_settings" | grep -q 'case "\$SSH_ENABLED" in 0|1)' && printf '%s\n' "$_settings" | grep -q 'valid_ssh_port "\$SSH_PORT"' && printf '%s\n' "$_ports" | grep -q '\$1.*= 22' && printf '%s\n' "$_ports" | grep -q '\$1.*-ge 1024' && echo yes || echo no)"
 t "SSH config is validated before its atomic replacement" "yes" \
@@ -292,14 +351,32 @@ t "SSH enable marker is fixed, root-only, and shared with the unit" "yes" \
   "$(grep -q '^ENABLED_MARKER=/opt/etc/ssh/quecdeck_enabled$' quecdeck/script/ssh_keys.sh && grep -q 'chmod 600 "\$ENABLED_MARKER"' quecdeck/script/ssh_keys.sh && grep -q '^ConditionPathExists=/opt/etc/ssh/quecdeck_enabled$' quecdeck/optional/sshd/sshd.service && echo yes || echo no)"
 t "SSH settings API and UI expose enabled state and port" "yes" \
   "$(grep -q 'ssh_enabled' quecdeck/www/cgi-bin/get_security quecdeck/www/js/security.js && grep -q 'ssh_port' quecdeck/www/cgi-bin/get_security quecdeck/www/cgi-bin/manage_security quecdeck/www/js/security.js && grep -q 'form-check form-switch' quecdeck/www/ssh.html && echo yes || echo no)"
-t "pending SSH settings block key mutations in the UI" "yes" \
-  "$(grep -q 'get sshSettingsChanged' quecdeck/www/js/security.js && [ "$(grep -c 'Save the SSH settings before managing public keys' quecdeck/www/js/security.js)" = 2 ] && [ "$(grep -c 'sshSettingsChanged' quecdeck/www/ssh.html)" -ge 2 ] && echo yes || echo no)"
+# The server settings and the key store are separate panels with separate
+# credential inputs. ssh_keys.sh consults neither the port nor the enable marker
+# when adding a key, so an unsaved edit in one panel must not disable the other.
+# sshSettingsChanged now only gates its own Save button.
+t "SSH panels do not gate each other" "yes" \
+  "$(! grep -q 'Save the SSH settings before managing public keys' quecdeck/www/js/security.js && ! grep -q 'sshSettingsChanged' <(sed -n '/Authorized Keys/,$p' quecdeck/www/ssh.html) && grep -q 'sshSettingsChanged' quecdeck/www/js/security.js && echo yes || echo no)"
+# Credentials are collected by the dialog at the moment of the action, not from
+# fields parked on the card, so the page itself holds no password input at all.
+t "the SSH page parks no credentials" "yes" \
+  "$(! grep -q 'type="password"' quecdeck/www/ssh.html && ! grep -q 'settingsPassword\|keyPassword\|keyDeveloperPassword' quecdeck/www/ssh.html quecdeck/www/js/security.js && echo yes || echo no)"
+t "both key actions prompt for both credentials" "2" \
+  "$( _n=0; for _m in addKey confirmRemove; do sed -n "/^    $_m(/,/^    },/p" quecdeck/www/js/security.js | grep -q 'promptCredentials' && _n=$((_n + 1)); done; echo "$_n")"
+# The dialog owns the attempt: a wrong password must not close it and stack an
+# error modal, and a lockout must stop offering a retry that cannot succeed.
+t "credential dialog survives a failed attempt" "yes" \
+  "$( _s=$(sed -n "/Alpine.store('credentialModal'/,/^  });/p" quecdeck/www/js/utils.js); printf '%s\n' "$_s" | grep -q 'this.error = err.message' && printf '%s\n' "$_s" | grep -q 'this.locked = err.locked === true' && printf '%s\n' "$_s" | grep -q 'if (this.busy) return;' && echo yes || echo no)"
+t "credential dialog zeroes both fields when it closes" "yes" \
+  "$( _c=$(sed -n '/^    close() {/,/^    }/p' quecdeck/www/js/utils.js); printf '%s\n' "$_c" | grep -q "this.admin = ''" && printf '%s\n' "$_c" | grep -q "this.developer = ''" && echo yes || echo no)"
+t "SSH page presents server and keys as separate panels" "2" \
+  "$(grep -c 'class="panel-section"' quecdeck/www/ssh.html)"
 t "password-change reports success with an invalidation warning" "yes" \
   "$(grep -q 'session_invalidation_failed=1' quecdeck/www/cgi-bin/manage_security && grep -q '"ok":true,"warning":"session_invalidation"' quecdeck/www/cgi-bin/manage_security && grep -q 'session_warning=1' quecdeck/www/js/security.js quecdeck/www/js/login.js && echo yes || echo no)"
 t "hidden unsupported SSH entries do not consume the UI key limit" "yes" \
   "$(grep -q '\[ "\$KEY_USABLE_COUNT" -lt "\$MAX_KEYS" \]' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
 t "SSH readiness enforces effective key-only policy" "yes" \
-  "$(grep -q 'sshd -T' quecdeck/script/ssh_keys.sh && grep -q "authenticationmethods publickey" quecdeck/script/ssh_keys.sh && grep -q "passwordauthentication no" quecdeck/script/ssh_keys.sh && ! grep -q 'usepam' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
+  "$(grep -q 'sshd -T' quecdeck/script/ssh_keys.sh && grep -q "authenticationmethods publickey" quecdeck/script/sshd-policy-lib.sh && grep -q "passwordauthentication no" quecdeck/script/sshd-policy-lib.sh && ! grep -q 'usepam' quecdeck/script/ssh_keys.sh quecdeck/script/sshd-policy-lib.sh && echo yes || echo no)"
 t "SSH stops when the final key is removed" "yes" \
   "$(grep -q 'KEY_COUNT.*= 0' quecdeck/script/ssh_keys.sh && grep -q 'systemctl stop sshd' quecdeck/script/ssh_keys.sh && echo yes || echo no)"
 t "explicit SSH stops terminate sessions" "yes" \
@@ -310,6 +387,12 @@ _security_lock=$(grep -n 'bf_lock "\$FAILURE_DIR"' quecdeck/www/cgi-bin/manage_s
 _security_sudo=$(grep -n '/opt/bin/sudo' quecdeck/www/cgi-bin/manage_security | head -1 | cut -d: -f1)
 t "security mutations lock authentication before sudo" "yes" \
   "$([ -n "$_security_lock" ] && [ -n "$_security_sudo" ] && [ "$_security_lock" -lt "$_security_sudo" ] && echo yes || echo no)"
+# Exit 13 confirms the replacement equals the other stored credential, which is
+# a guess about that secret. Counting only exit 2 left it testable for free.
+t "a matching-credential rejection counts toward the lockout" "yes" \
+  "$(grep -q '\[ "\$rc" = 2 \] || \[ "\$rc" = 13 \]' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
+t "exit 13 is not also answered without counting" "yes" \
+  "$(! sed -n '/^if \[ "\$rc" != 0 \]; then/,/^fi$/p' quecdeck/www/cgi-bin/manage_security | grep -qE '^ *13\)' && echo yes || echo no)"
 unset _helper _root_helpers _sudo_rule _expected_sudo_rule _security_lock _security_sudo
 
 # Access events come from several independent CGI processes. Exercise the real
@@ -457,17 +540,23 @@ unset _lock_lib
 # The SSH posture is asserted in two places: at install and on every daemon
 # start. A three-site edit to the permitrootlogin spelling once passed the whole
 # suite, so pin the list to one definition and require the installer to cover it.
-_policy=$(sed -n '/^SSHD_POLICY="/,/"$/p' quecdeck/script/ssh_keys.sh | sed '1s/^SSHD_POLICY="//; $s/"$//')
+_policy=$(sed -n '/^SSHD_POLICY="/,/"$/p' quecdeck/script/sshd-policy-lib.sh | sed '1s/^SSHD_POLICY="//; $s/"$//')
 t "runtime SSH policy list is populated" "yes" \
   "$([ "$(printf '%s\n' "$_policy" | grep -c .)" -ge 10 ] && echo yes || echo no)"
 t "both runtime checkers share one policy list" "yes" \
   "$( _k=$(extract_fn quecdeck/script/ssh_keys.sh keys_ready); _v=$(extract_fn quecdeck/script/ssh_keys.sh validate_sshd_config); printf '%s\n' "$_k" | grep -q 'sshd_policy_ok' && printf '%s\n' "$_v" | grep -q 'sshd_policy_ok' && ! printf '%s\n' "$_k$_v" | grep -q "grep -qx 'passwordauthentication" && echo yes || echo no)"
-_policy_missing=0
-while IFS= read -r _line; do
-    [ -n "$_line" ] || continue
-    grep -qF "grep -qx '$_line'" quecdeck/script/install_sshd.sh || _policy_missing=1
-done <<< "$_policy"
-t "installer asserts every runtime SSH policy directive" "0" "$_policy_missing"
+# The installer and the runtime check now share one definition rather than
+# keeping two lists in step, so assert neither restates it locally.
+t "installer and runtime share one policy definition" "yes" \
+  "$(grep -q '^\. \$QUECDECK_DIR/script/sshd-policy-lib\.sh' quecdeck/script/install_sshd.sh && grep -q 'sshd_policy_ok "\$effective"' quecdeck/script/install_sshd.sh && ! grep -q "grep -qx 'passwordauthentication" quecdeck/script/install_sshd.sh && ! grep -q '^SSHD_POLICY=' quecdeck/script/ssh_keys.sh quecdeck/script/install_sshd.sh && echo yes || echo no)"
+# keys_ready needs only "is any key usable", and ssh-keygen skips lines it
+# cannot parse while still exiting 0 (device-verified). Going through load_store
+# would make one malformed imported line cost 23ms per key on every sshd start.
+t "SSH readiness avoids the per-key fingerprint fallback" "yes" \
+  "$( _k=$(extract_fn quecdeck/script/ssh_keys.sh keys_ready); printf '%s\n' "$_k" | grep -q 'has_usable_key' && ! printf '%s\n' "$_k" | grep -q 'load_store' && grep -q 'ssh-keygen -lf "\$KEYS"' quecdeck/script/sshd-policy-lib.sh quecdeck/script/ssh_keys.sh && echo yes || echo no)"
+# The publisher runs from the checksummed release tree, not an unverified copy.
+t "bind publisher runs from the verified release tree" "yes" \
+  "$(grep -qx 'ExecStartPre=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh' quecdeck/optional/sshd/sshd.service && ! grep -q 'cp -f "\$ASSET_DIR/update_sshd_ip.sh"' quecdeck/script/install_sshd.sh && echo yes || echo no)"
 for _d in 'AllowTcpForwarding no' 'AllowAgentForwarding no' 'AllowStreamLocalForwarding no' \
           'GatewayPorts no' 'PermitTunnel no' 'X11Forwarding no'; do
     t "shipped sshd_config sets $_d" "yes" \
@@ -491,7 +580,7 @@ t "bind publisher rejects a symlinked runtime target" "yes" \
 t "installer publishes the bind fragment before validating" "yes" \
   "$( _i=$(sed -n '/^install_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh); _pub=$(printf '%s\n' "$_i" | grep -n 'update_sshd_ip.sh' | head -1 | cut -d: -f1); _cfg=$(printf '%s\n' "$_i" | grep -n 'configure_key_only_ssh ||' | cut -d: -f1); [ -n "$_pub" ] && [ -n "$_cfg" ] && [ "$_pub" -lt "$_cfg" ] && echo yes || echo no)"
 t "unit publishes the bind fragment before every config read" "yes" \
-  "$( _u=quecdeck/optional/sshd/sshd.service; _pub=$(grep -n 'update_sshd_ip.sh' "$_u" | cut -d: -f1); _ready=$(grep -n 'ssh_keys.sh ready' "$_u" | cut -d: -f1); _t=$(grep -n 'sshd -t$' "$_u" | cut -d: -f1); [ "$_pub" -lt "$_ready" ] && [ "$_ready" -lt "$_t" ] && echo yes || echo no)"
+  "$( _u=quecdeck/optional/sshd/sshd.service; _pub=$(grep -n '^ExecStartPre=.*update_sshd_ip.sh' "$_u" | cut -d: -f1); _ready=$(grep -n 'ssh_keys.sh ready' "$_u" | cut -d: -f1); _t=$(grep -n 'sshd -t$' "$_u" | cut -d: -f1); [ "$_pub" -lt "$_ready" ] && [ "$_ready" -lt "$_t" ] && echo yes || echo no)"
 unset _i _pub _cfg _u _ready _t
 
 # lighttpd.conf is checksummed, so the old in-place sed moved the installed copy
@@ -515,4 +604,60 @@ t "only the shared library and cgi-lib parse the modem config" "yes" \
   "$([ "$(grep -rl 'APIPAddr' quecdeck/script/*.sh quecdeck/optional/sshd/*.sh | sort | tr '\n' ' ')" = "quecdeck/script/cgi-lib.sh quecdeck/script/lan-ip-lib.sh " ] && echo yes || echo no)"
 t "shared parser always yields an address" "yes" \
   "$( _r=$(extract_fn quecdeck/script/lan-ip-lib.sh resolve_lan_ip); printf '%s\n' "$_r" | grep -q 'LAN_IP=\$QUECDECK_DEFAULT_LAN_IP' && printf '%s\n' "$_r" | grep -q 'grep -qE' && echo yes || echo no)"
+
+# Run the real parser against crafted configs. 0.0.0.0 passes a naive range
+# check and binds every interface, so the rejections are asserted by outcome
+# rather than by pattern. The addresses that must SURVIVE matter just as much:
+# substituting the default for a live LAN address binds one the modem lacks.
+_ip_case() { # _ip_case <APIPAddr value>
+    local _dir _out
+    _dir=$(mktemp -d) || return 1
+    printf '<cfg><APIPAddr>%s</APIPAddr></cfg>\n' "$1" > "$_dir/mobileap_cfg.xml"
+    _out=$(
+        . quecdeck/script/lan-ip-lib.sh
+        QUECDECK_MOBILEAP_CFG="$_dir/mobileap_cfg.xml"
+        resolve_lan_ip
+        printf '%s' "$LAN_IP"
+    )
+    rm -rf "$_dir"
+    printf '%s' "$_out"
+}
+t "wildcard LAN address is refused" "192.168.225.1" "$(_ip_case 0.0.0.0)"
+t "loopback LAN address is refused" "192.168.225.1" "$(_ip_case 127.0.0.1)"
+t "multicast LAN address is refused" "192.168.225.1" "$(_ip_case 239.1.1.1)"
+t "reserved LAN address is refused" "192.168.225.1" "$(_ip_case 255.255.255.255)"
+t "out-of-range octet is refused" "192.168.225.1" "$(_ip_case 192.168.999.1)"
+t "the configured default survives" "192.168.225.1" "$(_ip_case 192.168.225.1)"
+t "an alternate private range survives" "10.20.30.1" "$(_ip_case 10.20.30.1)"
+t "the upper private range survives" "172.31.5.1" "$(_ip_case 172.31.5.1)"
 unset _p _r
+unset -f _ip_case
+
+# The key limit is stated in the helper, the CGI's message, the page and the
+# controller. Changing it once meant touching all four, so assert they agree.
+_max=$(sed -n 's/^MAX_KEYS=\([0-9]*\)$/\1/p' quecdeck/script/ssh_keys.sh)
+t "key limit is defined" "yes" "$([ -n "$_max" ] && echo yes || echo no)"
+t "every stated key limit matches the helper" "yes" \
+  "$(grep -q "The maximum of $_max SSH keys" quecdeck/www/cgi-bin/manage_security &&
+     grep -q "keys.length >= $_max" quecdeck/www/ssh.html &&
+     grep -q "this.keys.length >= $_max" quecdeck/www/js/security.js &&
+     grep -q "maximum of $_max SSH keys" quecdeck/www/js/security.js &&
+     grep -q "up to $_max root public keys" README.md &&
+     echo yes || echo no)"
+unset _max
+
+# A tmpfs Include fragment is what keeps sshd on the LAN. sshd accepts a missing
+# Include and then reports NO ListenAddress, which binds every interface, and
+# sshd -t accepts that too. Device-verified: a missing fragment yields
+# "listenaddress 0.0.0.0:<port>" and "[::]:<port>".
+t "sshd start gate rejects a wildcard bind" "yes" \
+  "$(extract_fn quecdeck/script/ssh_keys.sh keys_ready | grep -qiE 'listenaddress \(0\\.0\\.0\\.0' && echo yes || echo no)"
+# ExecReload does not run ExecStartPre, so a reload with the fragment gone would
+# re-exec sshd onto every interface. Republish before signalling.
+t "sshd reload republishes the bind fragment first" "yes" \
+  "$(_r=$(grep -n '^ExecReload=' quecdeck/optional/sshd/sshd.service | head -1); _k=$(grep -n '^ExecReload=/bin/kill' quecdeck/optional/sshd/sshd.service); printf '%s' "$_r" | grep -q 'update_sshd_ip.sh' && [ "${_r%%:*}" -lt "${_k%%:*}" ] && echo yes || echo no)"
+# If the two sides of this path ever disagree, sshd finds no Include, reports no
+# ListenAddress, and binds every interface. Nothing else would fail first.
+t "sshd Include path matches what the publisher writes" "yes" \
+  "$(_d=$(sed -n 's/^RUNTIME_DIR=//p' quecdeck/optional/sshd/update_sshd_ip.sh); _b=$(sed -n 's#^LISTEN_CONF="\$RUNTIME_DIR/\(.*\)"$#\1#p' quecdeck/optional/sshd/update_sshd_ip.sh); [ -n "$_d" ] && [ -n "$_b" ] && grep -qxF "Include $_d/$_b" quecdeck/script/install_sshd.sh && echo yes || echo no)"
+unset _d _b

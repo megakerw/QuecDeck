@@ -14,10 +14,26 @@ json_result() { # json_result <true|false> [error]
     fi
 }
 
-FAILURE_DIR=/run/quecdeck-web/security-auth-failures
 client_ip=$(cgi_client_ip)
 action=$(get_post_param action)
 current=$(get_post_param current_password)
+
+# Credentials of different privilege must not share one failure counter: a
+# success clears the counter, so a single shared one lets anyone holding the
+# administrator password wipe developer-password guesses made through add_key
+# and retry without limit. Key the accounting on the credential class each
+# action exercises so a success only ever clears its own class.
+#
+# The class, not the individual credential: verify_credentials checks both and
+# reports a generic failure on purpose, so a failed key operation cannot be
+# attributed to one side without turning it back into an oracle.
+case "$action" in
+    change_password|ssh_settings) auth_class=admin ;;
+    change_developer_password)    auth_class=dev ;;
+    add_key|remove_key)           auth_class=keys ;;
+    *)                            auth_class=other ;;
+esac
+FAILURE_DIR=/run/quecdeck-web/security-auth-failures/$auth_class
 
 if [ -z "$current" ] || [ "${#current}" -gt 256 ]; then
     json_result false "Current password is required"
@@ -35,7 +51,6 @@ fi
 
 case "$action" in
     change_password)
-        developer=$(get_post_param developer_password)
         new=$(get_post_param new_password)
         confirm=$(get_post_param confirm_password)
         if [ "${#new}" -lt 12 ] || [ "${#new}" -gt 256 ]; then
@@ -48,12 +63,11 @@ case "$action" in
             json_result false "New passwords do not match"
             exit 0
         fi
-        printf '%s\n%s\n%s\n' "$current" "$developer" "$new" |
+        printf '%s\n%s\n' "$current" "$new" |
             /opt/bin/sudo /usrdata/quecdeck/script/change_password.sh
         rc=${PIPESTATUS[1]}
         ;;
     change_developer_password)
-        developer=$(get_post_param developer_password)
         new=$(get_post_param new_password)
         confirm=$(get_post_param confirm_password)
         if [ "${#new}" -lt 12 ] || [ "${#new}" -gt 256 ] || [ "$new" != "$confirm" ]; then
@@ -61,7 +75,7 @@ case "$action" in
             json_result false "New developer passwords must match and be between 12 and 256 characters"
             exit 0
         fi
-        printf '%s\n%s\n%s\n' "$current" "$developer" "$new" |
+        printf '%s\n%s\n' "$current" "$new" |
             /opt/bin/sudo /usrdata/quecdeck/script/change_password.sh dev
         rc=${PIPESTATUS[1]}
         ;;
@@ -80,13 +94,11 @@ case "$action" in
         rc=${PIPESTATUS[1]}
         ;;
     ssh_settings)
-        developer=$(get_post_param developer_password)
         enabled=$(get_post_param ssh_enabled)
         port=$(get_post_param ssh_port)
-        # The enabled state and port bounds are enforced by the root helper,
-        # which rejects both before it takes a lock or checks a password.
-        printf '%s\n%s\n%s\n%s\n' "$current" "$developer" "$enabled" "$port" |
-            /opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh settings
+        # Both are validated by the helper before they reach a config file.
+        printf '%s\n' "$current" |
+            /opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh settings "$enabled" "$port"
         rc=${PIPESTATUS[1]}
         ;;
     *)
@@ -101,15 +113,22 @@ if [ "$rc" = 75 ]; then
     json_result false "Password verification is temporarily unavailable"
     exit 0
 fi
-if [ "$rc" = 2 ]; then
+# Exit 2 is a wrong credential. Exit 13 reports that the replacement matches the
+# other stored credential, which confirms a guess about that secret just as a
+# password check would, so it is counted the same way. Without this, a caller
+# holding one password could test candidates for the other one indefinitely.
+if [ "$rc" = 2 ] || [ "$rc" = 13 ]; then
     bf_fail "$FAILURE_DIR" "$client_ip"
     result=$BF_FAIL_RESULT
     bf_unlock
     if [ "$result" = locked ]; then
         json_result false "Too many failed attempts. Try again later"
+    elif [ "$rc" = 13 ]; then
+        json_result false "Administrator and developer passwords must be different"
     else
         case "$action" in
-            change_password|change_developer_password|add_key|remove_key|ssh_settings) json_result false "Administrator or developer password is incorrect" ;;
+            change_password|change_developer_password|add_key|remove_key) json_result false "Administrator or developer password is incorrect" ;;
+            ssh_settings) json_result false "Administrator password is incorrect" ;;
             *) json_result false "Current password is incorrect" ;;
         esac
     fi
@@ -128,7 +147,6 @@ if [ "$rc" != 0 ]; then
         10) json_result false "The firewall could not apply the SSH setting. SSH was left stopped" ;;
         11) json_result false "The SSH setting was saved, but the server could not be started" ;;
         12) json_result false "The SSH port was changed but the enabled state was not. Reload the page and try again" ;;
-        13) json_result false "Administrator and developer passwords must be different" ;;
         *) json_result false "The security change could not be completed" ;;
     esac
     exit 0

@@ -6,32 +6,28 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=3eb8f25a" />
-    <link rel="stylesheet" href="css/styles.css?v=3eb8f25a" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=93e14069" />
+    <link rel="stylesheet" href="css/styles.css?v=93e14069" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=3eb8f25a"></script>
-    <script src="js/utils.js?v=3eb8f25a"></script>
-    <script src="js/alpinejs.min.js?v=3eb8f25a" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=93e14069"></script>
+    <script src="js/utils.js?v=93e14069"></script>
+    <script src="js/alpinejs.min.js?v=93e14069" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="securitySettings()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=3eb8f25a"></script>
+        <script src="js/nav.js?v=93e14069"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
           <div class="col-lg-6">
           <div class="panel-section h-100">
             <div class="panel-title">Administrator Password</div>
-            <p class="text-muted small">Both current passwords are required. Changing the administrator password signs out all active web sessions.</p>
+            <p class="text-muted small">Changing the administrator password signs out all active web sessions.</p>
             <div class="row gy-3">
               <div class="col-12">
                 <label class="form-label" for="current-password">Current password</label>
                 <input id="current-password" type="password" class="form-control" maxlength="256" autocomplete="current-password" x-model="currentPassword">
-              </div>
-              <div class="col-12">
-                <label class="form-label" for="admin-developer-password">Current developer password</label>
-                <input id="admin-developer-password" type="password" class="form-control" maxlength="256" autocomplete="current-password" x-model="adminDeveloperPassword">
               </div>
               <div class="col-12">
                 <label class="form-label" for="new-password">New password</label>
@@ -42,8 +38,8 @@
                 <input id="confirm-password" type="password" class="form-control" minlength="12" maxlength="256" autocomplete="new-password" x-model="confirmPassword">
               </div>
             </div>
-            <div class="mt-3 d-flex justify-content-end">
-              <button type="button" class="btn btn-primary" @click="changePassword()" :disabled="busy">Change password</button>
+            <div class="panel-actions">
+              <button type="button" class="btn btn-primary" @click="changePassword()" :disabled="busy" x-text="busyAction === 'password' ? 'Changing...' : 'Change password'"></button>
             </div>
           </div>
           </div>
@@ -51,12 +47,8 @@
           <div class="col-lg-6">
           <div class="panel-section h-100">
             <div class="panel-title">Developer Password</div>
-            <p class="text-muted small">Both current passwords are required to change developer access.</p>
+            <p class="text-muted small">Changing the developer password revokes any active developer unlock.</p>
             <div class="row gy-3">
-              <div class="col-12">
-                <label class="form-label" for="developer-admin-password">Current administrator password</label>
-                <input id="developer-admin-password" type="password" class="form-control" maxlength="256" autocomplete="current-password" x-model="developerAdminPassword">
-              </div>
               <div class="col-12">
                 <label class="form-label" for="current-developer-password">Current developer password</label>
                 <input id="current-developer-password" type="password" class="form-control" maxlength="256" autocomplete="current-password" x-model="currentDeveloperPassword">
@@ -70,15 +62,16 @@
                 <input id="confirm-developer-password" type="password" class="form-control" minlength="12" maxlength="256" autocomplete="new-password" x-model="confirmDeveloperPassword">
               </div>
             </div>
-            <div class="mt-3 d-flex justify-content-end">
-              <button type="button" class="btn btn-primary" @click="changeDeveloperPassword()" :disabled="busy">Change developer password</button>
+            <div class="panel-actions">
+              <button type="button" class="btn btn-primary" @click="changeDeveloperPassword()" :disabled="busy" x-text="busyAction === 'developer' ? 'Changing...' : 'Change developer password'"></button>
+              <span class="ms-3 text-muted small" x-show="saveMessage" x-cloak x-text="saveMessage"></span>
             </div>
           </div>
           </div>
         </div>
       </div>
     </main>
-    <script src="js/capslock.js?v=3eb8f25a"></script>
-    <script src="js/security.js?v=3eb8f25a"></script>
+    <script src="js/capslock.js?v=93e14069"></script>
+    <script src="js/security.js?v=93e14069"></script>
   </body>
 </html>

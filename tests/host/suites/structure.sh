@@ -14,7 +14,7 @@ t "navigation exposes both monitoring pages" "yes" \
 t "Security and SSH pages are wired to their controller and navigation" "yes" \
   "$(grep -q 'x-data="securitySettings()"' quecdeck/www/security.html && grep -q 'x-data="securitySettings(true)"' quecdeck/www/ssh.html && grep -q 'js/security.js' quecdeck/www/security.html quecdeck/www/ssh.html && grep -q "href: '/security.html', label: 'Security'" quecdeck/www/js/nav.js && grep -q "href: '/ssh.html', label: 'SSH'" quecdeck/www/js/nav.js && grep -q 'href="/ssh.html"' quecdeck/www/deviceinfo.html && echo yes || echo no)"
 t "SSH page supports public-key upload and multiple key rows" "yes" \
-  "$(grep -q 'type="file".*accept=".pub,text/plain"' quecdeck/www/ssh.html && grep -q 'x-for="key in keys"' quecdeck/www/ssh.html && grep -q 'keys.length >= 5' quecdeck/www/ssh.html && echo yes || echo no)"
+  "$(grep -q 'id="public-key-file"' quecdeck/www/ssh.html && grep -q 'accept=".pub,text/plain"' quecdeck/www/ssh.html && grep -q 'x-for="(key, index) in keys"' quecdeck/www/ssh.html && grep -q 'keys.length >= 5' quecdeck/www/ssh.html && echo yes || echo no)"
 t "Password change returns to a clear login state" "yes" \
   "$(grep -q 'password_changed=1' quecdeck/www/js/security.js && grep -q 'passwordChanged' quecdeck/www/js/login.js quecdeck/www/login.html && echo yes || echo no)"
 
@@ -155,9 +155,34 @@ t "Alpine controllers rely on one automatic init call" "yes" \
 t "setup blocks when recovery-state loading fails" "yes" \
   "$(grep -q 'if (!response.ok)' quecdeck/www/js/setup.js && grep -q 'if (!this.setupReady)' quecdeck/www/js/setup.js && echo yes || echo no)"
 t "SSH validates the final generated config" "yes" \
-  "$([ "$(grep -n 'update_sshd_ip.sh' quecdeck/optional/sshd/sshd.service | cut -d: -f1)" -lt "$(grep -n 'ssh_keys.sh ready' quecdeck/optional/sshd/sshd.service | cut -d: -f1)" ] && echo yes || echo no)"
+  "$([ "$(grep -n 'update_sshd_ip.sh' quecdeck/optional/sshd/sshd.service | head -1 | cut -d: -f1)" -lt "$(grep -n 'ssh_keys.sh ready' quecdeck/optional/sshd/sshd.service | cut -d: -f1)" ] && echo yes || echo no)"
 t "SSH installation creates the root-only enable marker" "yes" \
   "$( _configure=$(sed -n '/^configure_key_only_ssh() (/,/^)/p' quecdeck/script/install_sshd.sh); printf '%s\n' "$_configure" | grep -q 'quecdeck_enabled' && printf '%s\n' "$_configure" | grep -q 'chmod 600' && echo yes || echo no)"
+
+# Entware's rc.unslung runs every S* script in /opt/etc/init.d/ at boot, and each
+# opkg postinst RECREATES its own. Left in place, a second daemon starts from
+# stock config: lighttpd on 0.0.0.0:80 stealing the port from our LAN-bound
+# unit, or an sshd with password auth, no bind fragment and none of the unit's
+# gates. Removing before the install is a no-op, so assert the order too. The
+# failure only shows up after a reboot, which is how it reached the field once.
+t "lighttpd init script is removed after its opkg install" "yes" \
+  "$( _b=$(sed -n '/^swap_in_release() {/,/^}/p' update_quecdeck.sh); _o=$(printf '%s\n' "$_b" | grep -n 'opkg install .*_lighttpd_pkgs' | head -1 | cut -d: -f1); _r=$(printf '%s\n' "$_b" | grep -n 'init\.d/\*lighttpd\*' | head -1 | cut -d: -f1); [ -n "$_o" ] && [ -n "$_r" ] && [ "$_o" -lt "$_r" ] && echo yes || echo no)"
+t "sshd init script is removed after its opkg install" "yes" \
+  "$( _b=$(sed -n '/^install_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh); _o=$(printf '%s\n' "$_b" | grep -n 'opkg install' | head -1 | cut -d: -f1); _r=$(printf '%s\n' "$_b" | grep -n 'init\.d/\*sshd\*' | head -1 | cut -d: -f1); [ -n "$_o" ] && [ -n "$_r" ] && [ "$_o" -lt "$_r" ] && echo yes || echo no)"
+# One install site each is what makes one removal site sufficient. A second
+# opkg call elsewhere would reintroduce the init script with nothing to reap it.
+# Defence in depth for an opkg upgrade done by hand after install: the boot-time
+# publishers reap the script too. Must never abort the start, so the removal is
+# explicitly non-fatal in scripts where every other failure exits non-zero.
+t "lighttpd publisher reaps the Entware init script" "yes" \
+  "$(grep -q 'rm -f /opt/etc/init\.d/\*lighttpd\*' quecdeck/script/lighttpd_prestart.sh && grep -q 'rm -f /opt/etc/init\.d/\*lighttpd\*.*||[[:space:]]*:' quecdeck/script/lighttpd_prestart.sh && echo yes || echo no)"
+t "sshd publisher reaps the Entware init script" "yes" \
+  "$(grep -q 'rm -f /opt/etc/init\.d/\*sshd\*' quecdeck/optional/sshd/update_sshd_ip.sh && grep -q 'rm -f /opt/etc/init\.d/\*sshd\*.*||[[:space:]]*:' quecdeck/optional/sshd/update_sshd_ip.sh && echo yes || echo no)"
+t "lighttpd has exactly one opkg install site" "1" \
+  "$(grep -rn 'opkg install' --include=*.sh . | grep -v '^\./tests/' | grep -v ':[[:space:]]*#' | grep -c lighttpd | tr -d ' ')"
+t "sshd has exactly one opkg install site" "1" \
+  "$(grep -rn 'opkg install' --include=*.sh . | grep -v '^\./tests/' | grep -v ':[[:space:]]*#' | grep -c openssh | tr -d ' ')"
+unset _b _o _r
 t "strict CSP has no blocked literal style attributes" "yes" \
   "$(! grep -R -E '(^|[[:space:]])style=' quecdeck/www --include='*.html' --include='*.js' && ! grep -q "style-src.*unsafe-inline" quecdeck/lighttpd.conf && echo yes || echo no)"
 js_fail=0
@@ -171,3 +196,75 @@ for f in quecdeck/www/js/*.js; do
         echo "FAIL: jscheck $out"
     fi
 done
+
+# Service status badges go through one helper. Four pages had drifted to four
+# spellings of two states ("Not Installed"/"Not installed", "..."/"Loading")
+# before it existed, so assert no page rebuilds the ternary inline.
+t "service badges share one helper" "yes" \
+  "$(grep -q '^function serviceBadge' quecdeck/www/js/utils.js && ! grep -q "text-bg-success' : 'text-bg-secondary'" quecdeck/www/*.html && ! grep -q "'Not Installed'" quecdeck/www/*.html quecdeck/www/js/*.js && echo yes || echo no)"
+t "deviceinfo routes every service row through the helper" "6" \
+  "$(grep -c "serviceState('" quecdeck/www/deviceinfo.html)"
+t "panel action rows use one class" "yes" \
+  "$(grep -q '^\.panel-actions' quecdeck/www/css/styles.css && ! grep -q 'mt-auto pt-3' quecdeck/www/*.html && echo yes || echo no)"
+
+# The platform facts that only a device can establish. Host tests cannot run
+# BusyBox flock or this OpenSSH, and both surprised us: flock has no -w, and
+# ssh-keygen skips malformed lines rather than aborting. Keep the device test
+# that pins them, and keep it read-only so it is safe to run on a live modem.
+t "device invariants test exists and is read-only" "yes" \
+  "$( _i=tests/device/device-test-install-invariants.sh; [ -f "$_i" ] && grep -q 'flock_wait' "$_i" && grep -q 'ssh-keygen -lf' "$_i" && grep -q '0\.0\.0\.0' "$_i" && grep -q 'root:root 700' "$_i" && ! grep -qE '^[^#]*(systemctl (start|stop|restart)|rm -rf /usrdata|opkg )' "$_i" && echo yes || echo no)"
+t "device invariants cover every sudo-reachable root helper" "yes" \
+  "$( _rule=$(grep '_sudoers_rule=' update_quecdeck.sh); _miss=0; for _s in write_htpasswd.sh change_password.sh ssh_keys.sh check_password.sh run_update.sh; do printf '%s' "$_rule" | grep -q "$_s" || _miss=1; grep -q "$_s" tests/device/device-test-install-invariants.sh || _miss=1; done; [ "$_miss" = 0 ] && echo yes || echo no)"
+unset _i _rule _miss _s
+
+# Add key is inert until there is something to add. readKeyFile writes the file
+# contents into the same publicKey model, so one check covers paste and upload.
+t "add key is gated on a usable key" "yes" \
+  "$(grep -q 'keys.length >= 5 || !keyReady"' quecdeck/www/ssh.html && grep -q '@input="validateKey()"' quecdeck/www/ssh.html && grep -q 'this.publicKey = text.trim()' quecdeck/www/js/security.js && echo yes || echo no)"
+# The client check exists to spare a wasted credential entry, not to be the
+# authority. valid_key_syntax in ssh_keys.sh still re-checks everything, so the
+# two rule sets must not drift apart.
+t "client key validation mirrors the helper's rules" "yes" \
+  "$( _v=$(sed -n '/^    validateKey() {/,/^    },/p' quecdeck/www/js/security.js); _h=$(extract_fn quecdeck/script/ssh_keys.sh valid_key_syntax); _ok=yes
+      for _t in ssh-ed25519 ssh-rsa ecdsa-sha2-nistp256 ecdsa-sha2-nistp384 ecdsa-sha2-nistp521; do
+        printf '%s\n' "$_v" | grep -q "$_t" || _ok=no
+        printf '%s\n' "$_h" | grep -q "$_t" || _ok=no
+      done
+      printf '%s\n' "$_v" | grep -q '8192' || _ok=no
+      printf '%s\n' "$_v" | grep -q 'A-Za-z0-9+/=' || _ok=no
+      printf '%s\n' "$_v" | grep -q '80' || _ok=no
+      echo "$_ok")"
+t "duplicate keys are caught before the credential prompt" "yes" \
+  "$(grep -q 'This key is already authorized' quecdeck/www/js/security.js && grep -q 'crypto.subtle.digest' quecdeck/www/js/security.js && grep -q '6) json_result false \"This SSH key has already been added\"' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
+
+# The credential overlay is injected into every page. Password inputs that are
+# only hidden still sit in the DOM, where Firefox's password manager starts
+# treating neighbouring text inputs (APN, refresh interval) as username fields.
+t "credential inputs exist only while the dialog is open" "yes" \
+  "$(grep -q '<template x-if="\$store.credentialModal.show">' quecdeck/www/js/utils.js && [ "$(grep -c 'type="password"' quecdeck/www/js/utils.js)" = 2 ] && echo yes || echo no)"
+
+# Firefox pairs an unscoped password field with the nearest text input anywhere
+# in the document, and reads the removal of a filled one as a submission. Both
+# together offered the SSH port value as a saved login. The form scopes the
+# username search to a form containing none, and the fields are blanked in the
+# DOM before they are destroyed.
+t "credential dialog cannot be mistaken for a login form" "yes" \
+  "$( _u=quecdeck/www/js/utils.js; grep -q '<form autocomplete="off" @submit.prevent=' "$_u" && grep -q '</form>' "$_u" && _c=$(sed -n "/Alpine.store('credentialModal'/,/^  });/p" "$_u" | sed -n '/    close() {/,/^    }/p'); printf '%s\n' "$_c" | grep -q "el.value = ''" && [ "$(printf '%s\n' "$_c" | grep -n "el.value = ''" | cut -d: -f1)" -lt "$(printf '%s\n' "$_c" | grep -n 'this.show = false' | cut -d: -f1)" ] && echo yes || echo no)"
+
+# The file picker fills the textarea and then clears itself, so a key lives in
+# exactly one place. Without the reset, editing or emptying the textarea leaves a
+# filename showing that no longer matches what would be submitted.
+t "the key file picker resets after loading" "yes" \
+  "$( _r=$(sed -n '/^    readKeyFile(event) {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_r" | grep -q 'finally' && printf '%s\n' "$_r" | grep -q "input.value = ''" && printf '%s\n' "$_r" | grep -q 'this.validateKey()' && echo yes || echo no)"
+
+# A page can call a controller method that no longer exists and fail only at
+# click time, in the browser, silently. saveSshSettings was deleted by an edit
+# and shipped that way. Assert every plain click handler still resolves.
+_handler_missing=0
+for _page in quecdeck/www/ssh.html quecdeck/www/security.html; do
+    for _fn in $(grep -o '@click="[a-zA-Z_][a-zA-Z0-9_]*(' "$_page" | sed 's/@click="//; s/($//' | sort -u); do
+        grep -q "^    $_fn(" quecdeck/www/js/security.js || _handler_missing=1
+    done
+done
+t "every SSH and Security click handler is defined" "0" "$_handler_missing"
+unset _handler_missing _page _fn

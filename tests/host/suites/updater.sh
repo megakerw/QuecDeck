@@ -39,11 +39,11 @@ rm -rf "$_generation_fixture"
 unset -f _install_generation_supported
 unset _generation_fixture
 
-eval "$(extract_fn update_quecdeck.sh _normalize_bind)"
-# Both the live-IP-patched and repo (0.0.0.0) conf must normalize identically,
-# or a mere IP patch forces an unnecessary lighttpd restart during updates.
-t "normalize_bind LAN ip"    'server.bind = "0.0.0.0"'              "$(printf 'server.bind = "192.168.225.1"\n' | _normalize_bind)"
-t "normalize_bind 443 sock"  '$SERVER["socket"] == "0.0.0.0:443" {' "$(printf '$SERVER["socket"] == "192.168.8.1:443" {\n' | _normalize_bind)"
+# The bind address moved to a tmpfs fragment, so the installed conf no longer
+# drifts from the staged one and needs no normalizing before the diff. A sed
+# here would now be able to mask a real change instead of an IP patch.
+t "lighttpd config compare is direct" "yes" \
+  "$(grep -q 'diff -q "\$STAGE_DIR/lighttpd.conf" "\$QUECDECK_DIR/lighttpd.conf"' update_quecdeck.sh && ! grep -q '_normalize_bind' update_quecdeck.sh && echo yes || echo no)"
 
 # Persistent state is copied before the live tree moves. Exercise every
 # mandatory boundary with real fixture data and injected command failures.
@@ -240,4 +240,3 @@ t "uninstall requires writable remount first" "yes" \
   "$(sed -n '/^uninstall_quecdeck_components() {/,/# Remove any transient update unit/p' quecdeck.sh | grep -q '^    if ! remount_rw; then$' && echo yes || echo no)"
 t "uninstall refuses to race active update units" "2" \
   "$(sed -n '/^uninstall_quecdeck_components() {/,/echo.*Uninstalling QuecDeck/p' quecdeck.sh | grep -o 'install_quecdeck\(_fetch\)\?' | sort -u | wc -l | tr -d ' ')"
-t "normalize_bind untouched" 'server.port = 80'                     "$(printf 'server.port = 80\n' | _normalize_bind)"

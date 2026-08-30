@@ -69,6 +69,28 @@ user's first request after an idle period pays.
 | `grep` over a 462-line file, in `$( )` | **7400 us** | subshell + exec + heredoc |
 | Bash `read` loop | **~82 us per line** | see the threshold below |
 
+### SSH key fingerprinting
+
+Measured 2026-08-29 on the device, 20 rounds each, centisecond clock from
+`/proc/uptime` (BusyBox `date` has no `%N`).
+
+| Operation | Cost | Notes |
+| --- | --- | --- |
+| `ssh-keygen -lf` on ONE key | **15 ms** | dominated by process startup |
+| `ssh-keygen -lf` on FIVE keys | **15 ms** | flat in key count |
+| per-key fallback, 5 keys | **115 ms** | ~23 ms/key: mktemp + write + keygen + rm |
+| `ssh_keys.sh ready`, 5-key store | **45 ms** | batch path, plus `sshd -T` and the stat checks |
+
+`ssh-keygen -lf` **skips a line it cannot parse and still exits 0** (3 lines in,
+one corrupt, 2 fingerprints out, empty stderr). So its output alone answers "is
+any key usable", which is all `keys_ready` needs. `load_store` keeps the
+count-mismatch fallback only because `list` and `remove` need fingerprints
+aligned to source lines.
+
+The batch call costing the same for 1 key as for 5 is why there is no cache: a
+`stat`-keyed validation would cost ~4 ms to save ~11 ms, on a tmpfs file that is
+empty after every reboot.
+
 ### The threshold that decides these calls
 
 **A fork costs about the same as 40 lines of Bash line-processing.**

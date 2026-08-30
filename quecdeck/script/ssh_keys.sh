@@ -5,6 +5,7 @@
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
 . /usrdata/quecdeck/script/lock-lib.sh || exit 1
+. /usrdata/quecdeck/script/sshd-policy-lib.sh || exit 1
 
 ROOT_HOME=/usrdata/root
 SSH_DIR=$ROOT_HOME/.ssh
@@ -116,10 +117,12 @@ load_store() {
         KEY_COUNT=$((KEY_COUNT + 1))
     done < "$KEYS"
 
-    # ssh-keygen handles the complete store in one process. Its rows align
-    # with source lines only when every non-blank line parses, so use this fast
-    # path only when the counts match exactly. A malformed imported line falls
-    # back to per-line parsing and cannot hide the valid entries around it.
+    # ssh-keygen handles the complete store in one process (15ms, and flat in
+    # key count: it is all process startup). It skips a line it cannot parse and
+    # still exits 0, so its rows align with source lines only when every
+    # non-blank line parses. Use the fast path only when the counts match. A
+    # malformed imported line falls back to per-line parsing, which costs about
+    # 23ms per key, and cannot hide the valid entries around it.
     batch_output=$(ssh-keygen -lf "$KEYS" -E sha256 2>/dev/null)
     batch_fingerprints=()
     while IFS=' ' read -r bits fp rest; do
@@ -139,42 +142,35 @@ load_store() {
     done
 }
 
-# The authentication and forwarding posture every running daemon must report.
-# One list, checked against both a candidate file and the live configuration,
-# so the two callers cannot drift apart. Tuning knobs such as LoginGraceTime
-# are deliberately absent: only the directives that bound what a key grants
-# belong here, since a mismatch here refuses to start the daemon.
-SSHD_POLICY="passwordauthentication no
-kbdinteractiveauthentication no
-permitrootlogin prohibit-password
-pubkeyauthentication yes
-authenticationmethods publickey
-authorizedkeysfile /usrdata/root/.ssh/authorized_keys
-allowtcpforwarding no
-allowagentforwarding no
-allowstreamlocalforwarding no
-gatewayports no
-permittunnel no
-x11forwarding no"
-
-sshd_policy_ok() { # sshd_policy_ok <sshd -T output>
-    local line
-    while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        printf '%s\n' "$1" | grep -qx "$line" || return 1
-    done <<< "$SSHD_POLICY"
+# Is any key in the store usable? ssh-keygen skips lines it cannot parse and
+# still exits 0, so a non-empty listing answers this on its own. Only callers
+# that need fingerprints aligned to source lines pay for load_store: this keeps
+# every sshd start at one 15ms spawn instead of the 23ms-per-key fallback, which
+# an imported malformed line would otherwise trigger on every restart attempt.
+has_usable_key() {
+    [ -f "$KEYS" ] || return 1
+    ssh-keygen -lf "$KEYS" -E sha256 2>/dev/null | grep -q .
 }
 
 keys_ready() {
-    local effective
+    local effective listen
     safe_root_home || return 1
     [ -d "$SSH_DIR" ] && [ ! -L "$SSH_DIR" ] || return 1
     [ "$(stat -c '%u %a' "$SSH_DIR" 2>/dev/null)" = "0 700" ] || return 1
     [ -f "$KEYS" ] && [ ! -L "$KEYS" ] || return 1
     [ "$(stat -c '%u %a' "$KEYS" 2>/dev/null)" = "0 600" ] || return 1
-    load_store || return 1
-    [ "$KEY_USABLE_COUNT" -gt 0 ] || return 1
+    has_usable_key || return 1
     effective=$(/opt/sbin/sshd -T 2>/dev/null) || return 1
+    # The bind address comes from a tmpfs Include fragment. sshd tolerates a
+    # missing Include and then reports NO ListenAddress at all, which binds
+    # every interface including WAN, and sshd -t accepts that too. So require a
+    # positive result: at least one address, and no wildcard among them. An
+    # empty list has to fail as loudly as an explicit 0.0.0.0, or this gate
+    # would pass the very state it exists to catch.
+    listen=$(printf '%s\n' "$effective" | grep -i '^listenaddress ')
+    [ -n "$listen" ] || return 1
+    printf '%s\n' "$listen" |
+        grep -qiE '^listenaddress (0\.0\.0\.0|\[::\]|\[::0\]|0:0:0:0:0:0:0:0)' && return 1
     sshd_policy_ok "$effective"
 }
 
@@ -283,6 +279,14 @@ list_keys() {
     done
 }
 
+verify_admin_credential() { # verify_admin_credential <admin password>
+    local rc
+    printf '%s\n' "$1" | /usrdata/quecdeck/script/check_password.sh admin admin
+    rc=${PIPESTATUS[1]}
+    [ "$rc" != 75 ] || return 75
+    [ "$rc" = 0 ]
+}
+
 verify_credentials() {
     local admin_rc dev_rc
     # Always check both credentials so timing and the generic error do not
@@ -308,32 +312,40 @@ case "${1:-}" in
         fi
         printf '%s\t%s\n' "$enabled" "$port"
         ;;
+    # Gated on the ADMINISTRATOR password only, unlike add and remove which
+    # need both. Enabling SSH or moving its port grants no access by itself:
+    # without an authorized key both keys_ready and the unit's
+    # ConditionPathExists refuse the start, and installing a key needs both
+    # passwords. Requiring a password here is what stops a forged www-data
+    # session from switching an existing key back on, since a forged session
+    # carries no credential.
+    #
+    # The enabled state and port stay in argv because neither is a secret. The
+    # password arrives on stdin. Both values are validated before they reach a
+    # configuration file.
     settings)
-        [ "$#" -eq 1 ] || exit 1
+        [ "$#" -eq 3 ] || exit 1
         safe_root_home || exit 9
-        [ -s /opt/etc/.htpasswd_dev ] || exit 8
+        SSH_ENABLED=$2
+        SSH_PORT=$3
+        case "$SSH_ENABLED" in 0|1) ;; *) exit 1 ;; esac
+        valid_ssh_port "$SSH_PORT" || exit 1
         PAYLOAD=$(
-            head -c 1033
+            head -c 1025
             printf .
         )
         PAYLOAD=${PAYLOAD%.}
-        [ "${#PAYLOAD}" -le 1032 ] || exit 1
+        [ "${#PAYLOAD}" -le 1024 ] || exit 1
         PAYLOAD=${PAYLOAD%$'\n'}
         {
             IFS= read -r ADMIN_PASSWORD || exit 1
-            IFS= read -r DEV_PASSWORD || exit 1
-            IFS= read -r SSH_ENABLED || exit 1
-            IFS= read -r SSH_PORT || exit 1
             IFS= read -r EXTRA && exit 1
         } <<< "$PAYLOAD"
         [ -n "$ADMIN_PASSWORD" ] && [ "${#ADMIN_PASSWORD}" -le 256 ] || exit 2
-        [ -n "$DEV_PASSWORD" ] && [ "${#DEV_PASSWORD}" -le 256 ] || exit 2
-        case "$SSH_ENABLED" in 0|1) ;; *) exit 1 ;; esac
-        valid_ssh_port "$SSH_PORT" || exit 1
         exec 9>>"$LOCK" || exit 1
         chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
         flock_wait 9 5 || exit 75
-        verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
+        verify_admin_credential "$ADMIN_PASSWORD"
         credential_rc=$?
         [ "$credential_rc" != 75 ] || exit 75
         [ "$credential_rc" = 0 ] || exit 2

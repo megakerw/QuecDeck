@@ -1,8 +1,8 @@
 #!/bin/bash
 # Root-only sudo helper for changing administrator or developer credentials.
-# Both modes read the current administrator password, current developer
-# password, and the replacement password. No file path, username, or hash is
-# accepted from the web tier.
+# Reads only the current value of the credential being changed and its
+# replacement. The other credential is never asked for, so it is never handled
+# by this process. No file path, username, or hash is accepted from the web tier.
 
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
@@ -23,13 +23,24 @@ PAYLOAD=${PAYLOAD%.}
 PAYLOAD=${PAYLOAD%$'\n'}
 {
     IFS= read -r CURRENT || exit 1
-    IFS= read -r DEVELOPER || exit 1
     IFS= read -r NEW || exit 1
     IFS= read -r EXTRA && exit 1
 } <<< "$PAYLOAD"
 [ -n "$CURRENT" ] && [ "${#CURRENT}" -le 256 ] || exit 1
-[ -n "$DEVELOPER" ] && [ "${#DEVELOPER}" -le 256 ] || exit 1
 [ "${#NEW}" -ge 12 ] && [ "${#NEW}" -le 256 ] || exit 1
+
+# Only the credential being replaced is required. The other one is never asked
+# for, so it is also never handled by this process.
+if [ "$MODE" = dev ]; then
+    HTPASSWD=/opt/etc/.htpasswd_dev
+    USERNAME=devadmin
+    SELF_KIND=dev;    SELF_USER=devadmin
+    OTHER_KIND=admin; OTHER_USER=admin
+else
+    USERNAME=admin
+    SELF_KIND=admin;  SELF_USER=admin
+    OTHER_KIND=dev;   OTHER_USER=devadmin
+fi
 [ -f "$HTPASSWD" ] && [ ! -L "$HTPASSWD" ] || exit 1
 
 exec 9>>"$LOCK" || exit 1
@@ -37,23 +48,21 @@ chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
 flock_wait 9 5 || exit 75
 
 printf '%s\n' "$CURRENT" |
-    /usrdata/quecdeck/script/check_password.sh admin admin
+    /usrdata/quecdeck/script/check_password.sh "$SELF_KIND" "$SELF_USER"
 password_rc=${PIPESTATUS[1]}
+[ "$password_rc" != 75 ] || exit 75
+[ "$password_rc" = 0 ] || exit 2
 
-printf '%s\n' "$DEVELOPER" |
-    /usrdata/quecdeck/script/check_password.sh dev devadmin
-developer_rc=${PIPESTATUS[1]}
-[ "$password_rc" != 75 ] && [ "$developer_rc" != 75 ] || exit 75
-[ "$password_rc" = 0 ] && [ "$developer_rc" = 0 ] || exit 2
-
-if [ "$MODE" = dev ]; then
-    [ "$NEW" != "$CURRENT" ] || exit 13
-    HTPASSWD=/opt/etc/.htpasswd_dev
-    USERNAME=devadmin
-else
-    [ "$NEW" != "$DEVELOPER" ] || exit 13
-    USERNAME=admin
-fi
+# The two credentials must stay distinct: if they were equal, knowing the
+# administrator password would also clear the developer gate. Test the
+# replacement against the OTHER stored hash instead of asking the caller to
+# supply that password, which keeps the guard without widening what this
+# operation needs to know.
+printf '%s\n' "$NEW" |
+    /usrdata/quecdeck/script/check_password.sh "$OTHER_KIND" "$OTHER_USER"
+other_rc=${PIPESTATUS[1]}
+[ "$other_rc" != 75 ] || exit 75
+[ "$other_rc" != 0 ] || exit 13
 
 HASH=$(printf '%s' "$NEW" | openssl passwd -6 -stdin 2>/dev/null)
 [ -n "$HASH" ] || exit 1

@@ -281,6 +281,6 @@ t "failed scheduled dispatch moves beyond the matching minute" "yes" \
 t "scheduled restart skips a matching startup minute" "yes" \
   "$(grep -q '^startup_check=1$' "$SCHEDULED" && grep -q 'matching startup minute skipped' "$SCHEDULED" && grep -q '^    startup_check=0$' "$SCHEDULED" && echo yes || echo no)"
 t "system status verifies the scheduled worker is running" "yes" \
-  "$(grep '^SERVICE_UNITS=' quecdeck/www/cgi-bin/get_system_status | grep -q 'scheduled_restart' && grep -q 'state_scheduled_restart.*active' quecdeck/www/cgi-bin/get_system_status && grep -q 'scheduled_restart.running' quecdeck/www/deviceinfo.html && echo yes || echo no)"
+  "$(grep '^SERVICE_UNITS=' quecdeck/www/cgi-bin/get_system_status | grep -q 'scheduled_restart' && grep -q 'state_scheduled_restart.*active' quecdeck/www/cgi-bin/get_system_status && grep -q "serviceState('scheduled_restart')" quecdeck/www/deviceinfo.html && grep -q 'svc.running === true' quecdeck/www/js/deviceinfo.js && echo yes || echo no)"
 
 unset WATCHCAT SCHEDULED COORD WATCHCAT_MAKER SCHEDULED_MAKER

@@ -16,6 +16,13 @@ QUECDECK_DEFAULT_LAN_IP=192.168.225.1
 # documented default when the value is absent or malformed. Always succeeds:
 # every caller needs an address to bind or protect, and the validation keeps
 # malformed XML content from reaching a sed or an iptables rule.
+#
+# First octet 0 is rejected because 0.0.0.0 passes every range check and binds
+# a wildcard, which would put the web server and sshd on the WAN interface.
+# Loopback and multicast or reserved space are rejected as bind addresses no
+# access point serves from. The check stays this narrow on purpose: any address
+# the modem can actually hold must survive it, because substituting the default
+# for a live LAN address binds an address the box does not have.
 resolve_lan_ip() { # resolve_lan_ip -> sets LAN_IP
     LAN_IP=""
     if [ -f "$QUECDECK_MOBILEAP_CFG" ]; then
@@ -23,7 +30,9 @@ resolve_lan_ip() { # resolve_lan_ip -> sets LAN_IP
             sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
     fi
     if ! printf '%s' "$LAN_IP" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' ||
-       ! printf '%s' "$LAN_IP" | awk -F. '$1>255||$2>255||$3>255||$4>255{exit 1}'; then
+       ! printf '%s' "$LAN_IP" |
+           awk -F. '$1>255||$2>255||$3>255||$4>255{exit 1}
+                    $1==0||$1==127||$1>=224{exit 1}'; then
         LAN_IP=$QUECDECK_DEFAULT_LAN_IP
     fi
 }

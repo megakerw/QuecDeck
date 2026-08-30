@@ -13,7 +13,8 @@
 # write the files directly as root. This guard prevents a www-data compromise
 # from resetting credentials through the one-time setup entry point.
 
-# sudo's command path varies by build. Setup needs Entware's flock and mktemp.
+# sudo's command path varies by build, so pin one that has mktemp and flock.
+# flock here is BusyBox's applet, which has no -w: see script/lock-lib.sh.
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 077
 if [ ! -e /opt/etc ]; then

@@ -78,13 +78,13 @@ Scan for nearby cells and display network, provider, band, frequency, PCI, and R
 
 ### Security
 - Change the web administrator password after confirming the current password. QuecDeck signs out active web sessions and warns if complete invalidation cannot be confirmed
-- Change the developer access password after confirming both the administrator and the current developer password. Any active developer unlock is revoked, so the new password is required before destructive features can be used again
+- Change the developer access password after confirming the current developer password. Any active developer unlock is revoked
 
 ### SSH
 Available when OpenSSH is installed from the installer menu.
 - Enable or disable the server and choose its LAN-only port. The firewall opens that port only while SSH is enabled
 - Manage up to 5 root public keys. QuecDeck accepts Ed25519, ECDSA, and RSA keys without key options. Private keys are rejected
-- Every change requires both the administrator and the developer password. The service does not start without a key or while disabled
+- Adding or removing a key requires both the administrator and the developer password. The service does not start without a key or while disabled
 
 ### Monitoring
 - **Watchcat:** ping-based watchdog that reboots the modem if connectivity is lost, with ping statistics, consecutive failure tracking, and a persistent reboot-activity log. Each round rotates which configured target is checked first and stops at the first response. A reboot requires at least three rounds where every target fails. If a reboot doesn't restore connectivity, Watchcat waits progressively longer before trying again instead of rebooting in a tight loop
@@ -129,7 +129,7 @@ QuecDeck started as a fork of [Simple Admin](https://github.com/iamromulan/quect
 
 ### Web Server
 [Lighttpd](https://www.lighttpd.net/) serves the frontend and CGI backend on port 443 (HTTPS), with port 80 redirecting to HTTPS.
-- A pre-start script (`lighttpd_prestart.sh`) reads the current LAN IP, rewrites `lighttpd.conf` to bind to that IP, and regenerates a self-signed TLS certificate to match if the IP has changed.
+- A pre-start script (`lighttpd_prestart.sh`) reads the current LAN IP, publishes it to a tmpfs fragment that `lighttpd.conf` includes, and regenerates a self-signed TLS certificate to match if the IP has changed. The configuration file itself is never rewritten, so it keeps matching the release manifest.
 - Authentication uses a custom session-based login with SHA-512 hashed passwords and a two-tier credential system (admin and developer).
 - Sessions are managed via secure cookies, with a 15-minute lockout after 5 failed login attempts. Both passwords require a minimum of 12 characters.
 
@@ -164,7 +164,7 @@ QuecDeck runs on a device that operates as root, so keeping the attack surface s
 - Failed login attempts are delayed by 1 second and trigger a 15-minute lockout after 5 failures. Password verification waits at most 5 seconds for another check to finish. All login events are written to the access log
 - Session tokens are 64-character random strings stored in `0600` files inside a `0700` directory. Cookies are flagged `HttpOnly`, `Secure`, and `SameSite=Strict`. Session file writes are atomic (temp file plus rename), and the developer-unlock flag is kept in a separate per-session file to avoid write races
 - Passwords must be between 12 and 256 characters and are validated before any credential check is performed
-- Administrator and developer password changes require both current passwords. SSH key changes also require both passwords. Root helpers use fixed operations and paths, reject symlinks, and replace credential files atomically
+- Changing a password requires only that credential, and is rejected if the replacement matches the other stored credential. Adding or removing an SSH key requires both. Root helpers use fixed operations and paths, reject symlinks, and replace credential files atomically
 - Each developer unlock records the current developer-credential generation, a random token rewritten by root whenever the developer password changes. The auth layer compares the two on every developer-gated request, so changing that password revokes existing unlocks instead of leaving them valid until they expire
 - Path traversal is rejected in depth: lighttpd is pinned to reject encoded slashes (`%2f`) and dot-segments rather than silently decode them, and the auth layer independently rejects both literal `..` and percent-encoded (`%2e`) sequences before any access-exemption check
 
@@ -207,7 +207,8 @@ QuecDeck is intended for an owner-operated modem on a trusted local network. Its
 - **Login throttling protects the HTTP login path.** Password hashes remain root-only, but a process already executing as `www-data` can invoke the narrowly allowed password-check helper directly and bypass the CGI's per-IP lockout. The root helper serializes checks per credential, delays failures by 1 second, and abandons a contended check after 5 seconds. This is bounded pacing rather than a lockout, so use strong, unique admin and developer passwords rather than relying on throttling alone.
 - **Root-side password pacing trades availability for brute-force resistance.** Failed checks share a per-credential lock across all clients because the root helper cannot trust client identity supplied by the web tier. Sustained failed verification can therefore make legitimate login or security requests return temporarily unavailable. The 5-second lock timeout bounds each request and this availability cost is accepted deliberately.
 - **Clean installation boundary.** Releases from before the current installation generation are not updated in place. Rerun the installer to uninstall QuecDeck and Entware, reboot, then install the current release. This prevents legacy login, SSH, web console, and package configuration from being carried into the new installation.
-- **A compromised web process can forge application sessions.** Session state belongs to `www-data`, so code already running as that account can mint an administrator session or hijack a live one. An administrator session may view public-key metadata. Password changes and root SSH key changes require both administrator and developer passwords at a root-owned helper. Root-side checks are serialized and paced, which limits a web-tier compromise from becoming persistent root access without additional credentials.
+- **A compromised web process can forge application sessions.** Session state belongs to `www-data`, so code already running as that account can mint an administrator session or hijack a live one. An administrator session may view public-key metadata. Root SSH key changes require both administrator and developer passwords at a root-owned helper. Root-side checks are serialized and paced, which limits a web-tier compromise from becoming persistent root access without additional credentials.
+- **Enabling SSH, changing its port, and managing keys all require a password.** Enable and port take the administrator password. Adding or removing a key takes both, because a key grants root. A forged session carries no credential, so it cannot switch an existing key back on.
 - **The sudo allowlist is a fixed security budget.** Root helpers use fixed operations and paths and revalidate security-sensitive credentials themselves. New sudo entries require an explicit review of what fully compromised `www-data` could do with them.
 - **Release checksums detect corruption and inconsistent files, not publisher compromise.** The release and its checksum manifest are obtained from the same GitHub repository. Verification does not protect against compromise of the publishing account or replacement of both artifacts by an authorized publisher.
 - **HTTPS uses a self-signed device certificate.** Encryption is provided after the certificate is accepted, but users should verify and trust the expected certificate rather than dismissing an unexpected certificate change, especially on an untrusted LAN.
@@ -228,7 +229,7 @@ Updates can be triggered from the Update page in the web UI or by re-running `qu
 Watchcat and Scheduled Restart settings are preserved between releases that use the current monitoring implementation. If a compatible update fails after the switch begins, rollback restores monitoring boot enablement and attempts to restart both workers. A future release that changes the monitoring state contract starts those features unconfigured instead of loading incompatible state.
 
 ### Optional Components
-- **SSH:** OpenSSH server with public-key-only root login. The installed QuecDeck release carries the SSH installer and unit files, so SSH installation always uses assets from that same release. A pre-start script (`update_sshd_ip.sh`) updates `sshd_config`'s `ListenAddress` to the current LAN IP before the daemon starts, restricting it to LAN only. Install SSH from the installer menu, then manage its enabled state, port, and public keys on the SSH page. SSH changes require both administrator and developer passwords. The service does not start without a key or while disabled. QuecDeck does not replace firmware login or password commands.
+- **SSH:** OpenSSH server with public-key-only root login. The installed QuecDeck release carries the SSH installer and unit files, so SSH installation always uses assets from that same release. A pre-start script (`update_sshd_ip.sh`) publishes the current LAN IP to a tmpfs fragment that `sshd_config` includes, restricting the daemon to the LAN. Install SSH from the installer menu, then manage its enabled state, port, and public keys on the SSH page. Changing the enabled state or port requires the administrator password. Adding or removing a key requires both administrator and developer passwords. The service does not start without a key or while disabled. QuecDeck does not replace firmware login or password commands.
 
 ## Development
 

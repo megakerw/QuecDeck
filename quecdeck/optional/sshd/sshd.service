@@ -15,10 +15,15 @@ PIDFile=/opt/var/run/sshd.pid
 # firewall.service's ExecStartPost for the must-go-DOWN pattern. Keep in
 # sync with the comment there if either pattern changes.
 ExecStartPre=/bin/systemctl is-active firewall
-ExecStartPre=/bin/sh /opt/etc/ssh/update_sshd_ip.sh
+ExecStartPre=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh
 ExecStartPre=/usrdata/quecdeck/script/ssh_keys.sh ready
 ExecStartPre=/opt/sbin/sshd -t
 ExecStart=/opt/sbin/sshd -D
+# SIGHUP makes sshd re-exec and re-read its configuration, but a reload does not
+# run ExecStartPre. sshd accepts a missing Include and then has no ListenAddress
+# at all, which means every interface, so republish the fragment first and let a
+# failure here abort the reload rather than widen the bind.
+ExecReload=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=control-group
 TimeoutStopSec=10

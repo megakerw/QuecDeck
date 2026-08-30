@@ -40,3 +40,12 @@ fi
 if grep -q '^ListenAddress' "$SSHD_CONF" 2>/dev/null; then
     sed -i '/^ListenAddress/d' "$SSHD_CONF" || exit 1
 fi
+
+# Entware's rc.unslung runs every S* script in /opt/etc/init.d/ at boot, and the
+# openssh package's postinst recreates one on any opkg upgrade. That second
+# daemon reads this same hardened config, so the risk is not weak crypto: it is
+# that it starts outside this unit and therefore past every gate on it, with no
+# enable marker, no firewall check, and no bind fragment. The installer reaps it
+# too, this covers an upgrade done by hand afterwards.
+# Never fatal: a stray init script must not block a legitimate start.
+rm -f /opt/etc/init.d/*sshd* 2>/dev/null || :

@@ -205,14 +205,6 @@ _tag_to_version() {
     printf '%s' "${1#v}"
 }
 
-# Normalize lighttpd.conf's bind IP and :443 socket line to 0.0.0.0 on stdin.
-# lighttpd_prestart.sh patches these to the live LAN IP, so the staged (repo,
-# 0.0.0.0) and live confs must be normalized before diffing, or a mere IP patch
-# would look like a config change and force an unnecessary lighttpd restart.
-_normalize_bind() {
-    sed 's/server\.bind = "[0-9.]*"/server.bind = "0.0.0.0"/;s/== "[0-9.]*:443"/== "0.0.0.0:443"/'
-}
-
 # True (rc 0) if X.Y.Z version $1 is strictly lower than $2. Field-by-field
 # numeric comparison (1.0.9 < 1.0.10). Callers validate the format first.
 _version_lt() {
@@ -432,7 +424,7 @@ stage_release() {
     # sources or executes those.
     for _s in lighttpd_prestart.sh install_sshd.sh write_htpasswd.sh change_password.sh \
               ssh_keys.sh check_password.sh run_update.sh firewall.sh \
-              lock-lib.sh lan-ip-lib.sh; do
+              lock-lib.sh lan-ip-lib.sh sshd-policy-lib.sh; do
         chown root:root "$STAGE_DIR/script/$_s"
         chmod 700 "$STAGE_DIR/script/$_s"
     done
@@ -648,11 +640,10 @@ swap_in_release() {
     if [ "$_lighttpd_needs_install" = "1" ] || [ "$_had_previous" = "0" ]; then
         _need_lighttpd_restart=1
     else
-        # lighttpd_prestart.sh patches server.bind and the socket line in the
-        # live lighttpd.conf to the LAN IP, while the staged file (from the
-        # repo) always has 0.0.0.0. Normalize both to 0.0.0.0 before diffing
-        # so a mere IP patch doesn't force an unnecessary restart.
-        diff -q <(_normalize_bind < "$STAGE_DIR/lighttpd.conf") <(_normalize_bind < "$QUECDECK_DIR/lighttpd.conf") >/dev/null 2>&1 || _need_lighttpd_restart=1
+        # A direct comparison: the bind address lives in a tmpfs fragment, so
+        # the installed lighttpd.conf stays byte-identical to the staged one
+        # unless the release actually changed it.
+        diff -q "$STAGE_DIR/lighttpd.conf" "$QUECDECK_DIR/lighttpd.conf" >/dev/null 2>&1 || _need_lighttpd_restart=1
         diff -q "$STAGE_DIR/systemd/lighttpd.service" "/lib/systemd/system/lighttpd.service" >/dev/null 2>&1             || _need_lighttpd_restart=1
     fi
 
