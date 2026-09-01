@@ -22,9 +22,15 @@ settings_rc=$?
 [ -s /opt/etc/.htpasswd_dev ] && developer_configured=true || developer_configured=false
 if [ "$rc" = 3 ]; then
     cgi_output_json
-    printf '{"ssh_installed":false,"ssh_enabled":false,"ssh_active":false,"ssh_port":22,"ssh_settings_ready":true,"root_home_ready":false,"developer_configured":%s,"keys":[]}\n' "$developer_configured"
+    printf '{"ssh_installed":false,"ssh_enabled":false,"ssh_active":false,"ssh_version":null,"ssh_port":22,"ssh_settings_ready":true,"root_home_ready":false,"developer_configured":%s,"keys":[]}\n' "$developer_configured"
     exit 0
 fi
+# This page loads once rather than polling. Querying the binary costs about
+# 6 ms on the modem and reports the version that will actually run.
+sshd_version=$(/opt/sbin/sshd -V 2>&1)
+sshd_version=${sshd_version%%,*}
+[[ "$sshd_version" =~ ^[A-Za-z0-9._+~-]+$ ]] || sshd_version=""
+[ -n "$sshd_version" ] && sshd_version_json="\"$sshd_version\"" || sshd_version_json="null"
 # An unreadable SSH port or enable marker degrades the SSH section only. The
 # password form on this page must stay usable when SSH state is unreadable.
 if [ "$settings_rc" = 0 ]; then
@@ -39,7 +45,7 @@ fi
 if [ "$rc" = 9 ]; then
     systemctl is-active --quiet sshd 2>/dev/null && active=true || active=false
     cgi_output_json
-    printf '{"ssh_installed":true,"ssh_enabled":%s,"ssh_active":%s,"ssh_port":%s,"ssh_settings_ready":%s,"root_home_ready":false,"developer_configured":%s,"keys":[]}\n' "$enabled" "$active" "$port" "$settings_ready" "$developer_configured"
+    printf '{"ssh_installed":true,"ssh_enabled":%s,"ssh_active":%s,"ssh_version":%s,"ssh_port":%s,"ssh_settings_ready":%s,"root_home_ready":false,"developer_configured":%s,"keys":[]}\n' "$enabled" "$active" "$sshd_version_json" "$port" "$settings_ready" "$developer_configured"
     exit 0
 fi
 if [ "$rc" != 0 ]; then
@@ -51,7 +57,7 @@ fi
 
 systemctl is-active --quiet sshd 2>/dev/null && active=true || active=false
 cgi_output_json
-printf '{"ssh_installed":true,"ssh_enabled":%s,"ssh_active":%s,"ssh_port":%s,"ssh_settings_ready":%s,"root_home_ready":true,"developer_configured":%s,"keys":[' "$enabled" "$active" "$port" "$settings_ready" "$developer_configured"
+printf '{"ssh_installed":true,"ssh_enabled":%s,"ssh_active":%s,"ssh_version":%s,"ssh_port":%s,"ssh_settings_ready":%s,"root_home_ready":true,"developer_configured":%s,"keys":[' "$enabled" "$active" "$sshd_version_json" "$port" "$settings_ready" "$developer_configured"
 first=1
 while IFS=$'\t' read -r fingerprint type comment; do
     [ -n "$fingerprint" ] || continue

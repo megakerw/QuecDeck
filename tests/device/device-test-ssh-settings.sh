@@ -12,9 +12,10 @@ bad() { echo "  FAIL: $1"; fail=$((fail + 1)); }
 
 [ "$(id -u)" = 0 ] || { echo "FATAL: run as root"; exit 1; }
 [ -f /lib/systemd/system/sshd.service ] || { echo "FATAL: SSH is not installed"; exit 1; }
-[ "$(readlink /lib/systemd/system/sshd.service 2>/dev/null)" = /usrdata/quecdeck/optional/sshd/sshd.service ] &&
+[ -f /lib/systemd/system/sshd.service ] && [ ! -L /lib/systemd/system/sshd.service ] &&
+    cmp -s /lib/systemd/system/sshd.service /usrdata/quecdeck/optional/sshd/sshd.service &&
     ok "installed SSH unit follows the QuecDeck release asset" ||
-    bad "installed SSH unit is not linked to the QuecDeck release asset"
+    bad "installed SSH unit is not a regular copy of the QuecDeck release asset"
 
 SSH_PORT=$(sed -n 's/^Port \([0-9][0-9]*\)$/\1/p' "$CONFIG")
 case "$SSH_PORT" in ''|*[!0-9]*) echo "FATAL: configured SSH port is invalid"; exit 1 ;; esac

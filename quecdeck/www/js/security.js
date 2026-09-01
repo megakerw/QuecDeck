@@ -13,6 +13,7 @@ function securityController(sshPage = false) {
     sshEnabled: false,
     savedSshEnabled: false,
     sshActive: false,
+    sshVersion: '',
     sshPort: 22,
     savedSshPort: 22,
     sshSettingsReady: true,
@@ -75,6 +76,7 @@ function securityController(sshPage = false) {
           this.sshEnabled = data.ssh_enabled === true;
           this.savedSshEnabled = this.sshEnabled;
           this.sshActive = data.ssh_active === true;
+          this.sshVersion = typeof data.ssh_version === 'string' ? data.ssh_version : '';
           this.sshPort = Number.isInteger(data.ssh_port) ? data.ssh_port : 22;
           this.savedSshPort = this.sshPort;
           this.sshSettingsReady = data.ssh_settings_ready !== false;

@@ -113,8 +113,10 @@ Requires a separate developer password to unlock. Provides access to:
 - **AT Terminal:** send AT commands directly to the modem, with support for multiple commands separated by a semicolon
 - **Cell Locking:** lock the primary cell for LTE or NR5G-SA by EARFCN and PCI (not persistent across reboots)
 
-### Shell Management
-Both passwords can also be changed from the Security page. Run `/usrdata/root/bin/quecdeckpasswd` or `/usrdata/root/bin/quecdeckdevpasswd` through ADB or root SSH when the web interface is unavailable, or to recover a forgotten password. Fetch `quecdeck.sh` again for installation, removal, and optional SSH management.
+### Password Recovery and Installer Access
+Both passwords can be changed from the Security page. If the web interface is unavailable or a password is forgotten, run `/usrdata/root/bin/quecdeckpasswd` or `/usrdata/root/bin/quecdeckdevpasswd` through ADB or root SSH.
+
+Download and run `quecdeck.sh` again to install or remove QuecDeck or manage the optional SSH service.
 
 ## Implementation
 

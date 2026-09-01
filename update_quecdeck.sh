@@ -612,6 +612,29 @@ _restart_monitoring_workers() {
     return 0
 }
 
+refresh_managed_sshd_unit() { # refresh_managed_sshd_unit <release dir>
+    local release_dir="$1" asset
+    grep -Fqx 'Include /run/quecdeck/sshd-listen.conf' /opt/etc/ssh/sshd_config 2>/dev/null || return 0
+    asset="$release_dir/optional/sshd/sshd.service"
+    [ -x /opt/sbin/sshd ] && [ -f "$asset" ] && [ ! -L "$asset" ] || return 1
+    cp -f "$asset" /lib/systemd/system/sshd.service &&
+        chown root:root /lib/systemd/system/sshd.service &&
+        chmod 644 /lib/systemd/system/sshd.service &&
+        ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service
+}
+
+start_managed_sshd_if_needed() { # start_managed_sshd_if_needed <release dir>
+    local release_dir="$1" helper="$1/script/ssh_access.sh"
+    systemctl is-active sshd >/dev/null 2>&1 && return 0
+    [ -e /opt/etc/ssh/quecdeck_enabled ] || return 0
+    [ -x "$helper" ] || return 0
+    "$helper" ready >/dev/null 2>&1 || return 0
+    systemctl reset-failed sshd >/dev/null 2>&1
+    systemctl start sshd || \
+        echo -e "\e[1;33mWARNING: SSH is enabled and ready, but it did not start.\e[0m"
+    return 0
+}
+
 swap_in_release() {
     _had_previous=0
     [ -d "$QUECDECK_DIR/www" ] && _had_previous=1
@@ -809,6 +832,10 @@ swap_in_release() {
             return 1
         fi
     done
+    refresh_managed_sshd_unit "$QUECDECK_DIR" || {
+        echo -e "\e[1;31mFATAL: Could not refresh the managed SSH unit.\e[0m"
+        return 1
+    }
 
     # Whether lighttpd packages need installing was already determined (and
     # the opkg index already refreshed if so) back in stage_release, while
@@ -842,6 +869,7 @@ swap_in_release() {
     # _need_firewall_restart was computed pre-swap. If this restart fails,
     # lighttpd stays down (Requires=) and the health probe below rolls back.
     [ "$_need_firewall_restart" = "1" ] && { systemctl restart firewall || echo "WARNING: Firewall failed to restart."; }
+    start_managed_sshd_if_needed "$QUECDECK_DIR"
     systemctl restart atcmd-daemon
     # Verify the AT daemon actually serves with one complete round trip. A
     # fresh install can need longer than two seconds, and a failed first start
@@ -992,6 +1020,10 @@ _revert_swap() {
         echo "Failed to restore the previous systemd units."
         return 1
     }
+    refresh_managed_sshd_unit "$QUECDECK_DIR" || {
+        echo "Failed to restore the previous managed SSH unit."
+        return 1
+    }
     # Put back the sudoers rule the swap may have rewritten (same temp+rename
     # write as the forward path).
     if [ -n "${_sudoers_prev:-}" ] && [ "$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)" != "$_sudoers_prev" ]; then
@@ -1041,6 +1073,7 @@ _revert_swap() {
         echo "Rollback restored files, but the firewall failed to restart."
         return 1
     }
+    start_managed_sshd_if_needed "$QUECDECK_DIR"
     systemctl start lighttpd 2>/dev/null || {
         echo "Rollback restored files, but lighttpd failed to start."
         return 1

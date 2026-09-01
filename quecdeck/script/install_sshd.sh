@@ -74,6 +74,13 @@ remove_entware_sshd_init_scripts() {
     return "$failed"
 }
 
+install_sshd_unit() {
+    cp -f "$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service &&
+        chown root:root /lib/systemd/system/sshd.service &&
+        chmod 644 /lib/systemd/system/sshd.service &&
+        ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service
+}
+
 configure_key_only_ssh() (
     ssh_port=$1
     ssh_enabled=$2
@@ -214,8 +221,7 @@ install_sshd() {
 
     trap 'remount_ro' EXIT
     remount_rw || return 1
-    ln -sf "$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service &&
-        ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service || return 1
+    install_sshd_unit || return 1
     remount_ro || return 1
     trap - EXIT
     systemctl daemon-reload

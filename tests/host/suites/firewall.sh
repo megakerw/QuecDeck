@@ -51,12 +51,13 @@ t "firewall refuses policy on an unreadable SSH state" "yes" \
 t "firewall fails closed when managed SSH loses its helper" "yes" \
   "$(grep -q '^elif managed_ssh_artifacts_exist; then$' quecdeck/script/firewall.sh && grep -q 'SSH is managed but its access helper is missing' quecdeck/script/firewall.sh && echo yes || echo no)"
 eval "$(extract_fn quecdeck/script/firewall.sh managed_ssh_artifacts_exist)"
-t "firewall recognizes the managed SSH service link" "yes" \
-  "$(readlink() { echo /usrdata/quecdeck/optional/sshd/sshd.service; }; managed_ssh_artifacts_exist && echo yes || echo no)"
+t "firewall recognizes the managed SSH service copy" "yes" \
+  "$(grep() { [ "${!#}" = /lib/systemd/system/sshd.service ] && return 0; command grep "$@"; }; managed_ssh_artifacts_exist && echo yes || echo no)"
+unset -f grep
 t "firewall treats an uninstalled SSH as no exposure" "yes" \
   "$(grep -q '^        3) ;;$' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "SSH unit follows the checksummed release asset" "yes" \
-  "$(grep -q 'ln -sf "\$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service' quecdeck/script/install_sshd.sh && grep -q '\$QUECDECK_DIR/optional/sshd/\$_u' update_quecdeck.sh && echo yes || echo no)"
+  "$(grep -q 'cp -f "\$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service' quecdeck/script/install_sshd.sh && [ "$(grep -c 'refresh_managed_sshd_unit "\$QUECDECK_DIR"' update_quecdeck.sh)" -eq 2 ] && echo yes || echo no)"
 eval "$(extract_fn quecdeck/script/sshd-policy-lib.sh valid_ssh_port)"
 eval "$(extract_fn quecdeck/script/ssh_access.sh configured_port)"
 _ssh_port_fixture=$(mktemp)

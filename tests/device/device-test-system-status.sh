@@ -200,6 +200,12 @@ else
     case "$body" in
         *'"upnp":'*) ok "merged fields present" ;;
     esac
+    if [ ! -f /lib/systemd/system/sshd.service ]; then
+        case "$body" in
+            *'"sshd":null'*) ok "sshd stays null when it is not installed" ;;
+            *) bad "sshd is not null when it is not installed" ;;
+        esac
+    fi
     # lan_ip must be the XML's value, or null -- never a fabricated default.
     _json_ip=$(printf '%s' "$body" | sed -n 's/.*"lan_ip":\("[^"]*"\|null\).*/\1/p')
     echo "        lan_ip in response: $_json_ip"

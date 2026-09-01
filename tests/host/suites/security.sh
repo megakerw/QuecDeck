@@ -445,6 +445,8 @@ t "SSH enable marker is fixed, root-only, and shared with the unit" "yes" \
   "$(grep -q '^ENABLED_MARKER=/opt/etc/ssh/quecdeck_enabled$' quecdeck/script/ssh_access.sh && grep -q 'chmod 600 "\$ENABLED_MARKER"' quecdeck/script/ssh_access.sh && grep -q '^ConditionPathExists=/opt/etc/ssh/quecdeck_enabled$' quecdeck/optional/sshd/sshd.service && echo yes || echo no)"
 t "SSH settings API and UI expose enabled state and port" "yes" \
   "$(grep -q 'ssh_enabled' quecdeck/www/cgi-bin/get_security quecdeck/www/js/security.js && grep -q 'ssh_port' quecdeck/www/cgi-bin/get_security quecdeck/www/cgi-bin/manage_security quecdeck/www/js/security.js && grep -q 'form-check form-switch' quecdeck/www/ssh.html && echo yes || echo no)"
+t "SSH page reports the installed server version" "yes" \
+  "$(grep -q '/opt/sbin/sshd -V' quecdeck/www/cgi-bin/get_security && grep -q 'ssh_version' quecdeck/www/cgi-bin/get_security quecdeck/www/js/security.js && grep -q 'sshVersion' quecdeck/www/ssh.html && echo yes || echo no)"
 # The server settings and the key store are separate panels with separate
 # credential inputs. ssh_access.sh consults neither the port nor the enable marker
 # when adding a key, so an unsaved edit in one panel must not disable the other.
@@ -654,6 +656,10 @@ t "SSH readiness avoids the per-key fingerprint fallback" "yes" \
 # The publisher runs from the checksummed release tree, not an unverified copy.
 t "bind publisher runs from the verified release tree" "yes" \
   "$(grep -qx 'ExecStartPre=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh' quecdeck/optional/sshd/sshd.service && ! grep -q 'cp -f "\$ASSET_DIR/update_sshd_ip.sh"' quecdeck/script/install_sshd.sh && echo yes || echo no)"
+t "SSH unit is a boot-safe regular copy" "yes" \
+  "$( _u=$(extract_fn quecdeck/script/install_sshd.sh install_sshd_unit); printf '%s\n' "$_u" | grep -q 'cp -f "\$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service' && printf '%s\n' "$_u" | grep -q 'chmod 644' && ! printf '%s\n' "$_u" | grep -q 'ln -sf "\$ASSET_DIR/sshd.service"' && echo yes || echo no)"
+t "updater refreshes and rolls back the managed SSH unit" "yes" \
+  "$( _u=$(extract_fn update_quecdeck.sh refresh_managed_sshd_unit); printf '%s\n' "$_u" | grep -q 'Include /run/quecdeck/sshd-listen.conf' && printf '%s\n' "$_u" | grep -q 'optional/sshd/sshd.service' && printf '%s\n' "$_u" | grep -q 'chmod 644' && [ "$(grep -c 'refresh_managed_sshd_unit "\$QUECDECK_DIR"' update_quecdeck.sh)" -eq 2 ] && echo yes || echo no)"
 for _d in 'AllowTcpForwarding no' 'AllowAgentForwarding no' 'AllowStreamLocalForwarding no' \
           'GatewayPorts no' 'PermitTunnel no' 'X11Forwarding no'; do
     t "shipped sshd_config sets $_d" "yes" \

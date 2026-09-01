@@ -117,6 +117,8 @@ t "rollback requires firewall recovery" "yes" \
 
 # Exercise the real rollback function with command failures injected at each
 # mandatory recovery boundary. Optional service failures must remain warnings.
+eval "$(extract_fn update_quecdeck.sh refresh_managed_sshd_unit)"
+eval "$(extract_fn update_quecdeck.sh start_managed_sshd_if_needed)"
 eval "$(extract_fn update_quecdeck.sh _revert_swap)"
 _rollback_fixture=$(mktemp -d)
 mkdir -p "$_rollback_fixture/old"
@@ -184,6 +186,46 @@ t "rollback tolerates optional-service failure" "0:1" "$(_rollback_case optional
 t "compatible rollback completes with monitoring deferred" "0:1" \
   "$(_rollback_case none 1)"
 rm -rf "$_rollback_fixture"
+unset -f refresh_managed_sshd_unit
+unset -f start_managed_sshd_if_needed
+
+# An update repairs an enabled SSH service that is inactive, but never cycles
+# an already active daemon or starts one that is disabled or not ready.
+_ssh_reconcile_case() { # _ssh_reconcile_case <active> <enabled> <ready>
+    (
+        _active=$1
+        _enabled=$2
+        _ready=$3
+        _fixture=$(mktemp -d)
+        mkdir -p "$_fixture/release/script" "$_fixture/opt/etc/ssh"
+        cat > "$_fixture/release/script/ssh_access.sh" <<'EOF'
+#!/bin/sh
+[ "${SSH_READY:-0}" = 1 ]
+EOF
+        chmod +x "$_fixture/release/script/ssh_access.sh"
+        [ "$_enabled" = 1 ] && : > "$_fixture/opt/etc/ssh/quecdeck_enabled"
+        systemctl() {
+            case "$*" in
+                "is-active sshd") [ "$_active" = 1 ] ;;
+                *) printf '%s\n' "$*" >> "$_fixture/calls" ;;
+            esac
+        }
+        # Redirect the fixed marker lookup without weakening the production
+        # helper by evaluating a fixture-local copy.
+        _fn=$(extract_fn update_quecdeck.sh start_managed_sshd_if_needed | \
+            sed "s|/opt/etc/ssh/quecdeck_enabled|$_fixture/opt/etc/ssh/quecdeck_enabled|")
+        eval "$_fn"
+        SSH_READY="$_ready" start_managed_sshd_if_needed "$_fixture/release"
+        [ ! -f "$_fixture/calls" ] || tr '\n' ',' < "$_fixture/calls"
+        rm -rf "$_fixture"
+    )
+}
+t "updater leaves active SSH untouched" "" "$(_ssh_reconcile_case 1 1 1)"
+t "updater leaves disabled SSH stopped" "" "$(_ssh_reconcile_case 0 0 1)"
+t "updater leaves unready SSH stopped" "" "$(_ssh_reconcile_case 0 1 0)"
+t "updater starts inactive enabled ready SSH" "reset-failed sshd,start sshd," \
+  "$(_ssh_reconcile_case 0 1 1)"
+unset -f _ssh_reconcile_case
 t "web updater requires initial status write" "yes" \
   "$(grep -q '^if ! write_status running; then$' quecdeck/script/run_update.sh && echo yes || echo no)"
 t "web updater requires log preparation" "yes" \

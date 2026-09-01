@@ -50,7 +50,7 @@ SSH_ACCESS_HELPER=/usrdata/quecdeck/script/ssh_access.sh
 
 managed_ssh_artifacts_exist() {
     [ -e /opt/etc/ssh/quecdeck_enabled ] || [ -L /opt/etc/ssh/quecdeck_enabled ] ||
-        [ "$(readlink /lib/systemd/system/sshd.service 2>/dev/null)" = /usrdata/quecdeck/optional/sshd/sshd.service ] ||
+        grep -Fqx 'ExecStartPre=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh' /lib/systemd/system/sshd.service 2>/dev/null ||
         grep -Fqx 'Include /run/quecdeck/sshd-listen.conf' /opt/etc/ssh/sshd_config 2>/dev/null
 }
 

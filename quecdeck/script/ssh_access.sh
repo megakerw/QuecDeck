@@ -290,7 +290,7 @@ print_saved_state() {
 
 managed_state_exists() {
     [ -e "$ENABLED_MARKER" ] || [ -L "$ENABLED_MARKER" ] ||
-        [ "$(readlink /lib/systemd/system/sshd.service 2>/dev/null)" = /usrdata/quecdeck/optional/sshd/sshd.service ] ||
+        grep -Fqx 'ExecStartPre=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh' /lib/systemd/system/sshd.service 2>/dev/null ||
         grep -Fqx 'Include /run/quecdeck/sshd-listen.conf' "$SSHD_CONFIG" 2>/dev/null
 }
 
