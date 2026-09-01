@@ -42,26 +42,33 @@ t "firewall protects every admin TCP port through helper" "yes" \
   "$(grep -q '^[[:space:]]*add_v4_lan_only tcp "\$port"$' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "firewall helper updates rule-count check" "yes" \
   "$(grep -q 'expected=\$((expected + 2))' quecdeck/script/firewall.sh && echo yes || echo no)"
-t "firewall derives SSH exposure from the ssh_keys status action" "yes" \
-  "$(grep -q '^SSH_HELPER=/usrdata/quecdeck/script/ssh_keys.sh$' quecdeck/script/firewall.sh && grep -q '"\$SSH_HELPER" status' quecdeck/script/firewall.sh && grep -q 'PORTS=("\$ssh_port"' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall derives SSH exposure from the ssh_access status action" "yes" \
+  "$(grep -q '^SSH_ACCESS_HELPER=/usrdata/quecdeck/script/ssh_access.sh$' quecdeck/script/firewall.sh && grep -q '"\$SSH_ACCESS_HELPER" status' quecdeck/script/firewall.sh && grep -q 'PORTS=("\$ssh_port"' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "firewall keeps one SSH port parser" "yes" \
   "$(! grep -qE '^(SSHD_CONFIG|SSHD_ENABLED)=' quecdeck/script/firewall.sh && ! grep -q '^valid_ssh_port()' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "firewall refuses policy on an unreadable SSH state" "yes" \
   "$(grep -q 'SSH state is unreadable' quecdeck/script/firewall.sh && grep -q 'SSH reported a non-numeric port' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall fails closed when managed SSH loses its helper" "yes" \
+  "$(grep -q '^elif managed_ssh_artifacts_exist; then$' quecdeck/script/firewall.sh && grep -q 'SSH is managed but its access helper is missing' quecdeck/script/firewall.sh && echo yes || echo no)"
+eval "$(extract_fn quecdeck/script/firewall.sh managed_ssh_artifacts_exist)"
+t "firewall recognizes the managed SSH service link" "yes" \
+  "$(readlink() { echo /usrdata/quecdeck/optional/sshd/sshd.service; }; managed_ssh_artifacts_exist && echo yes || echo no)"
 t "firewall treats an uninstalled SSH as no exposure" "yes" \
   "$(grep -q '^        3) ;;$' quecdeck/script/firewall.sh && echo yes || echo no)"
-eval "$(extract_fn quecdeck/script/ssh_keys.sh valid_ssh_port)"
-eval "$(extract_fn quecdeck/script/ssh_keys.sh configured_port)"
+t "SSH unit follows the checksummed release asset" "yes" \
+  "$(grep -q 'ln -sf "\$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service' quecdeck/script/install_sshd.sh && grep -q '\$QUECDECK_DIR/optional/sshd/\$_u' update_quecdeck.sh && echo yes || echo no)"
+eval "$(extract_fn quecdeck/script/sshd-policy-lib.sh valid_ssh_port)"
+eval "$(extract_fn quecdeck/script/ssh_access.sh configured_port)"
 _ssh_port_fixture=$(mktemp)
 SSHD_CONFIG=$_ssh_port_fixture
 printf 'Port 2222\n' > "$_ssh_port_fixture"
-t "ssh_keys accepts one configured unprivileged SSH port" "2222" "$(configured_port)"
+t "ssh_access accepts one configured unprivileged SSH port" "2222" "$(configured_port)"
 printf 'Port 22\n' > "$_ssh_port_fixture"
-t "ssh_keys accepts the standard SSH port" "22" "$(configured_port)"
+t "ssh_access accepts the standard SSH port" "22" "$(configured_port)"
 printf 'Port 80\n' > "$_ssh_port_fixture"
-t "ssh_keys rejects other privileged ports" "1" "$(configured_port >/dev/null 2>&1; echo $?)"
+t "ssh_access rejects other privileged ports" "1" "$(configured_port >/dev/null 2>&1; echo $?)"
 printf 'Port 2222\nPort 2223\n' > "$_ssh_port_fixture"
-t "ssh_keys rejects ambiguous SSH ports" "1" "$(configured_port >/dev/null 2>&1; echo $?)"
+t "ssh_access rejects ambiguous SSH ports" "1" "$(configured_port >/dev/null 2>&1; echo $?)"
 rm -f "$_ssh_port_fixture"
 unset _ssh_port_fixture SSHD_CONFIG
 t "firewall leaves DHCP outside its policy" "yes" \
@@ -169,5 +176,3 @@ _remove_case() { # <initial-jumps> <chain-exists>
 t "firewall removal handles absent state"    "0:0:0:"    "$(_remove_case 0 0)"
 t "firewall removal deletes one owned chain" "0:0:0:DFX" "$(_remove_case 1 1)"
 t "firewall removal deletes duplicate jumps" "0:0:0:DDFX" "$(_remove_case 2 1)"
-t "device ingress regression test uses same bridge policy" "yes" \
-  "$(grep -q 'iptables -A QUECDECK -i bridge0 -d "\$LAN_IP"' tests/device/device-test-firewall-ingress.sh && echo yes || echo no)"

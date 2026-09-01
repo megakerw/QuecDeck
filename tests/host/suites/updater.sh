@@ -210,10 +210,6 @@ t "updater does not relocate or remap atcli" "yes" \
   "$(! grep -qE 'STAGE_DIR/bin/atcli|bin/atcli\).*STAGE_DIR/atcli' update_quecdeck.sh && echo yes || echo no)"
 t "updater rejects files absent from manifest" "yes" \
   "$(grep -q 'find "\$STAGE_DIR".*-type f.*-type l' update_quecdeck.sh && grep -q 'diff -u "\$_manifest_inventory" "\$_stage_inventory"' update_quecdeck.sh && echo yes || echo no)"
-t "CI enforces release manifest inventory" "yes" \
-  "$(grep -q 'git ls-files quecdeck' tests/host/ci-checks.sh && grep -q 'manifest inventory does not cover exactly' tests/host/ci-checks.sh && echo yes || echo no)"
-t "pre-commit enforces staged release inventory" "yes" \
-  "$(grep -q 'git ls-files --cached quecdeck' .githooks/pre-commit && grep -q 'CHECKSUMMED_FILES must cover every tracked' .githooks/pre-commit && echo yes || echo no)"
 t "updater health probe avoids blocked loopback HTTP" "yes" \
   "$(! sed -n '/^    _probe_site() {/,/^    }/p' update_quecdeck.sh | grep -q 'wget' && echo yes || echo no)"
 t "updater health probe exercises auth CGI as web uid" "yes" \

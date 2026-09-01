@@ -423,7 +423,7 @@ stage_release() {
     # unprivileged runs or reads them. The rest of script/ stays 755: www-data
     # sources or executes those.
     for _s in lighttpd_prestart.sh install_sshd.sh write_htpasswd.sh change_password.sh \
-              ssh_keys.sh check_password.sh run_update.sh firewall.sh \
+              ssh_access.sh check_password.sh run_update.sh firewall.sh \
               lock-lib.sh lan-ip-lib.sh sshd-policy-lib.sh; do
         chown root:root "$STAGE_DIR/script/$_s"
         chmod 700 "$STAGE_DIR/script/$_s"
@@ -730,10 +730,6 @@ swap_in_release() {
         printf '%s\n' "$_old_systemd_units" | grep -qxF "$_u" || _newly_introduced_units="$_newly_introduced_units $_u"
     done
 
-    # Remove retired menu entry points. Management stays in the fetched
-    # installer and the standalone password helpers.
-    [ "$(readlink /bin/menu 2>/dev/null)" != /usrdata/root/bin/menu ] || rm -f /bin/menu
-    rm -f /usrdata/root/bin/menu
     if ! rm -f /usrdata/root/bin/atcli ||
        ! ln -sf "$QUECDECK_DIR/atcli" /usrdata/root/bin/atcli ||
        ! cp -f "$QUECDECK_DIR/console/.profile" /usrdata/root/.profile ||
@@ -773,7 +769,7 @@ swap_in_release() {
     # limit window park the unit in failed, where plain restart keeps refusing
     # until the failed state is cleared. It only clears that state, so it cannot
     # start, stop or reconfigure anything the rule does not already permit.
-    _sudoers_rule="www-data ALL = (root) NOPASSWD: /bin/systemctl restart watchcat, /bin/systemctl reset-failed watchcat, /bin/systemctl restart scheduled_restart, /bin/systemctl reset-failed scheduled_restart, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/change_password.sh, /usrdata/quecdeck/script/ssh_keys.sh, /usrdata/quecdeck/script/check_password.sh, /usrdata/quecdeck/script/run_update.sh"
+    _sudoers_rule="www-data ALL = (root) NOPASSWD: /bin/systemctl restart watchcat, /bin/systemctl reset-failed watchcat, /bin/systemctl restart scheduled_restart, /bin/systemctl reset-failed scheduled_restart, /usrdata/quecdeck/script/write_htpasswd.sh, /usrdata/quecdeck/script/change_password.sh, /usrdata/quecdeck/script/ssh_access.sh, /usrdata/quecdeck/script/check_password.sh, /usrdata/quecdeck/script/run_update.sh"
     _sudoers_mode=$(stat -c '%a' /opt/etc/sudoers.d/www-data 2>/dev/null)
     if [ "$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)" != "$_sudoers_rule" ] || [ "$_sudoers_mode" != "440" ]; then
         # On a from-scratch install, the sudo package (which would normally
@@ -793,12 +789,6 @@ swap_in_release() {
     rm -f /lib/systemd/system/lighttpd.service /lib/systemd/system/multi-user.target.wants/lighttpd.service
     rm -f /lib/systemd/system/atcmd-daemon.service /lib/systemd/system/multi-user.target.wants/atcmd-daemon.service
     rm -f /lib/systemd/system/connection-logger.service /lib/systemd/system/multi-user.target.wants/connection-logger.service
-    # Remove the retired web console on devices that still carry its unit and
-    # command link. The clean-install gate normally makes this a no-op, but the
-    # cleanup keeps a partial or manually recovered installation coherent.
-    systemctl stop ttyd >/dev/null 2>&1
-    rm -f /lib/systemd/system/ttyd.service /lib/systemd/system/multi-user.target.wants/ttyd.service
-    [ "$(readlink /bin/ttyd 2>/dev/null)" != /opt/bin/ttyd ] || rm -f /bin/ttyd
     rm -f /lib/systemd/system/multi-user.target.wants/watchcat.service
     rm -f /lib/systemd/system/multi-user.target.wants/scheduled_restart.service
     if ! cp -rf "$QUECDECK_DIR/systemd/"* /lib/systemd/system/; then
@@ -954,6 +944,7 @@ swap_in_release() {
         grep -qE '^Exec(Start|StartPre|StartPost|Reload|Stop|StopPost)=.*/usrdata/quecdeck(/|[[:space:]]|$)' "$_f" 2>/dev/null || continue
         _u=$(basename "$_f")
         [ -f "$QUECDECK_DIR/systemd/$_u" ] && continue
+        [ -f "$QUECDECK_DIR/optional/sshd/$_u" ] && continue
         echo "Removing unit dropped by this release: $_u"
         systemctl stop "${_u%.service}" >/dev/null 2>&1
         rm -f "$_f" "/lib/systemd/system/multi-user.target.wants/$_u"

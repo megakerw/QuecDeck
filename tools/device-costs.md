@@ -79,7 +79,7 @@ Measured 2026-08-29 on the device, 20 rounds each, centisecond clock from
 | `ssh-keygen -lf` on ONE key | **15 ms** | dominated by process startup |
 | `ssh-keygen -lf` on FIVE keys | **15 ms** | flat in key count |
 | per-key fallback, 5 keys | **115 ms** | ~23 ms/key: mktemp + write + keygen + rm |
-| `ssh_keys.sh ready`, 5-key store | **45 ms** | batch path, plus `sshd -T` and the stat checks |
+| `ssh_access.sh ready`, 5-key store | **45 ms** | batch path, plus `sshd -T` and the stat checks |
 
 `ssh-keygen -lf` **skips a line it cannot parse and still exits 0** (3 lines in,
 one corrupt, 2 fingerprints out, empty stderr). So its output alone answers "is

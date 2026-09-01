@@ -46,17 +46,24 @@ fi
 
 # TCP ports to allow on LAN IP and block everywhere else
 PORTS=("80" "443")
-SSH_HELPER=/usrdata/quecdeck/script/ssh_keys.sh
+SSH_ACCESS_HELPER=/usrdata/quecdeck/script/ssh_access.sh
 
-# ssh_keys.sh owns sshd_config and the root-owned enable marker, and its status
+managed_ssh_artifacts_exist() {
+    [ -e /opt/etc/ssh/quecdeck_enabled ] || [ -L /opt/etc/ssh/quecdeck_enabled ] ||
+        [ "$(readlink /lib/systemd/system/sshd.service 2>/dev/null)" = /usrdata/quecdeck/optional/sshd/sshd.service ] ||
+        grep -Fqx 'Include /run/quecdeck/sshd-listen.conf' /opt/etc/ssh/sshd_config 2>/dev/null
+}
+
+# ssh_access.sh owns sshd_config and the root-owned enable marker, and its status
 # action reports both already validated. Asking it keeps the rule here from
 # drifting from the port sshd actually binds. Both scripts are root-only, and
-# status never calls back into this one. A missing helper means SSH is not
-# managed here. Any other failure refuses to change the existing policy.
+# status never calls back into this one. A missing helper is safe only when no
+# managed SSH state remains. Otherwise rebuilding without the SSH port would
+# remove QuecDeck's LAN-only protection from a daemon that may still be running.
 ssh_enabled=0
 ssh_port=""
-if [ -x "$SSH_HELPER" ]; then
-    ssh_status=$("$SSH_HELPER" status 2>/dev/null)
+if [ -x "$SSH_ACCESS_HELPER" ]; then
+    ssh_status=$("$SSH_ACCESS_HELPER" status 2>/dev/null)
     ssh_status_rc=$?
     case "$ssh_status_rc" in
         0) IFS=$'\t' read -r ssh_enabled ssh_port <<< "$ssh_status" ;;
@@ -66,9 +73,12 @@ if [ -x "$SSH_HELPER" ]; then
             exit 1
             ;;
     esac
+elif managed_ssh_artifacts_exist; then
+    echo "firewall: SSH is managed but its access helper is missing. Refusing to apply the policy." >&2
+    exit 1
 fi
 if [ "$ssh_enabled" = 1 ]; then
-    # The policy bounds live in ssh_keys.sh. Assert only the shape before the
+    # The policy bounds live in ssh_access.sh. Assert only the shape before the
     # value reaches iptables.
     case "$ssh_port" in ''|*[!0-9]*)
         echo "firewall: SSH reported a non-numeric port. Refusing to apply the policy." >&2

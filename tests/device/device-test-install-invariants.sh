@@ -129,7 +129,7 @@ if [ -f /opt/etc/ssh/sshd_config ]; then
 fi
 
 echo "== 4. privilege boundaries =="
-for s in install_sshd.sh ssh_keys.sh change_password.sh check_password.sh \
+for s in install_sshd.sh ssh_access.sh change_password.sh check_password.sh \
          write_htpasswd.sh lock-lib.sh lan-ip-lib.sh sshd-policy-lib.sh \
          firewall.sh lighttpd_prestart.sh run_update.sh; do
     [ -e "$QD/script/$s" ] || { note "script/$s not installed"; continue; }

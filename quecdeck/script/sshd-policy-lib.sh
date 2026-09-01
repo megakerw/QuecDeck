@@ -2,9 +2,7 @@
 # The authentication and forwarding posture every QuecDeck sshd must report.
 #
 # One definition, checked by the installer against a candidate file and by
-# ssh_keys.sh against the live daemon on every start. Keeping it in two places
-# is how the permitrootlogin spelling once changed at three sites and passed the
-# whole test suite.
+# ssh_access.sh against the live daemon on every start.
 #
 # Spellings are the CANONICAL forms sshd -T prints, which are not always the
 # forms sshd_config accepts. Device-verified on OpenSSH here: prohibit-password
@@ -26,6 +24,12 @@ allowstreamlocalforwarding no
 gatewayports no
 permittunnel no
 x11forwarding no"
+
+valid_ssh_port() { # valid_ssh_port <port>
+    case "$1" in ''|*[!0-9]*) return 1 ;; esac
+    [ "${#1}" -le 5 ] || return 1
+    [ "$1" = 22 ] || { [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]; }
+}
 
 # Usage: sshd_policy_ok "$(sshd -T ...)"
 sshd_policy_ok() { # sshd_policy_ok <sshd -T output>

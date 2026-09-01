@@ -15,9 +15,9 @@ json_escape() { # json_escape <text>
 [ "$REQUEST_METHOD" = "GET" ] || cgi_require_post
 cgi_check_cors
 
-keys=$(/opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh list 2>/dev/null)
+keys=$(/opt/bin/sudo /usrdata/quecdeck/script/ssh_access.sh list 2>/dev/null)
 rc=$?
-settings=$(/opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh status 2>/dev/null)
+settings=$(/opt/bin/sudo /usrdata/quecdeck/script/ssh_access.sh status 2>/dev/null)
 settings_rc=$?
 [ -s /opt/etc/.htpasswd_dev ] && developer_configured=true || developer_configured=false
 if [ "$rc" = 3 ]; then

@@ -104,8 +104,7 @@ parse_key_line() { # parse_key_line <authorized_keys line>
 }
 
 load_store() {
-    local line fp batch_output bits rest
-    local -a batch_fingerprints
+    local line fp
     KEY_COUNT=0
     KEY_USABLE_COUNT=0
     KEY_LINES=()
@@ -115,38 +114,15 @@ load_store() {
         [ -n "$line" ] || continue
         KEY_LINES+=("$line")
         KEY_COUNT=$((KEY_COUNT + 1))
-    done < "$KEYS"
-
-    # ssh-keygen handles the complete store in one process (15ms, and flat in
-    # key count: it is all process startup). It skips a line it cannot parse and
-    # still exits 0, so its rows align with source lines only when every
-    # non-blank line parses. Use the fast path only when the counts match. A
-    # malformed imported line falls back to per-line parsing, which costs about
-    # 23ms per key, and cannot hide the valid entries around it.
-    batch_output=$(ssh-keygen -lf "$KEYS" -E sha256 2>/dev/null)
-    batch_fingerprints=()
-    while IFS=' ' read -r bits fp rest; do
-        [ -n "$fp" ] && batch_fingerprints+=("$fp")
-    done <<< "$batch_output"
-    if [ "${#batch_fingerprints[@]}" -eq "$KEY_COUNT" ]; then
-        KEY_FINGERPRINTS=("${batch_fingerprints[@]}")
-        KEY_USABLE_COUNT=$KEY_COUNT
-        return 0
-    fi
-
-    KEY_FINGERPRINTS=()
-    for line in "${KEY_LINES[@]}"; do
         fp=$(fingerprint_line "$line") || fp=""
         KEY_FINGERPRINTS+=("$fp")
         [ -z "$fp" ] || KEY_USABLE_COUNT=$((KEY_USABLE_COUNT + 1))
-    done
+    done < "$KEYS"
 }
 
 # Is any key in the store usable? ssh-keygen skips lines it cannot parse and
-# still exits 0, so a non-empty listing answers this on its own. Only callers
-# that need fingerprints aligned to source lines pay for load_store: this keeps
-# every sshd start at one 15ms spawn instead of the 23ms-per-key fallback, which
-# an imported malformed line would otherwise trigger on every restart attempt.
+# still exits 0, so a non-empty listing answers this without collecting every
+# fingerprint used by the management page.
 has_usable_key() {
     [ -f "$KEYS" ] || return 1
     ssh-keygen -lf "$KEYS" -E sha256 2>/dev/null | grep -q .
@@ -183,12 +159,6 @@ configured_port() {
     printf '%s' "$port"
 }
 
-valid_ssh_port() { # valid_ssh_port <port>
-    case "$1" in ''|*[!0-9]*) return 1 ;; esac
-    [ "${#1}" -le 5 ] || return 1
-    [ "$1" = 22 ] || { [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]; }
-}
-
 enabled_marker_safe() {
     [ -f "$ENABLED_MARKER" ] && [ ! -L "$ENABLED_MARKER" ] &&
         [ "$(stat -c '%u %a' "$ENABLED_MARKER" 2>/dev/null)" = "0 600" ] &&
@@ -203,23 +173,30 @@ validate_sshd_config() { # validate_sshd_config <path> <port>
     printf '%s\n' "$effective" | grep -qx "port $2" || return 1
 }
 
-# Rebuild the firewall policy for the current port, then match the daemon to
-# the enabled state. Always refresh the firewall first so the port is permitted
-# before sshd binds it. A firewall failure leaves sshd stopped.
-activate_settings() { # activate_settings <0|1>
+# Match sshd to the saved enabled state without changing the firewall.
+sync_daemon() { # sync_daemon <0|1>
+    if [ "$1" = 0 ]; then
+        systemctl stop sshd >/dev/null 2>&1 || true
+        return 0
+    fi
+    if ! keys_ready; then
+        systemctl stop sshd >/dev/null 2>&1 || true
+        return 0
+    fi
+    systemctl is-active --quiet sshd 2>/dev/null && return 0
+    systemctl reset-failed sshd >/dev/null 2>&1
+    systemctl start sshd >/dev/null 2>&1 || return 11
+}
+
+# Rebuild the firewall after a settings change, then match sshd to the saved
+# state. A firewall failure leaves sshd stopped.
+apply_network_policy() { # apply_network_policy <0|1>
     if ! systemctl is-active --quiet firewall 2>/dev/null ||
        ! /bin/bash /usrdata/quecdeck/script/firewall.sh >/dev/null 2>&1; then
         systemctl stop sshd >/dev/null 2>&1 || true
         return 10
     fi
-    if [ "$1" = 0 ]; then
-        systemctl stop sshd >/dev/null 2>&1 || true
-        return 0
-    fi
-    keys_ready || return 0
-    systemctl is-active --quiet sshd 2>/dev/null && return 0
-    systemctl reset-failed sshd >/dev/null 2>&1
-    systemctl start sshd >/dev/null 2>&1 || return 11
+    sync_daemon "$1"
 }
 
 apply_settings() { # apply_settings <0|1> <port>
@@ -231,10 +208,12 @@ apply_settings() { # apply_settings <0|1> <port>
         enabled_marker_safe || return 1
         current_enabled=1
     fi
-    # Re-saving the same values must not rewrite the config or bounce a live
-    # daemon. Reapplying the policy still repairs a drifted firewall.
+    # Avoid rewriting persistent state when the values are unchanged, but still
+    # reapply the firewall before synchronizing the daemon. Settings saves are
+    # rare, and one consistent recovery path is preferable to persisted proof
+    # of a previous application.
     if [ "$enabled" = "$current_enabled" ] && [ "$port" = "$current_port" ]; then
-        activate_settings "$enabled"
+        apply_network_policy "$enabled"
         return
     fi
 
@@ -263,7 +242,7 @@ apply_settings() { # apply_settings <0|1> <port>
         rm -f "$ENABLED_MARKER" || return 12
     fi
 
-    activate_settings "$enabled"
+    apply_network_policy "$enabled"
 }
 
 list_keys() {
@@ -299,18 +278,36 @@ verify_credentials() {
     [ "$admin_rc" = 0 ] && [ "$dev_rc" = 0 ]
 }
 
+print_saved_state() {
+    local port enabled=0
+    port=$(configured_port) || return 1
+    if [ -e "$ENABLED_MARKER" ] || [ -L "$ENABLED_MARKER" ]; then
+        enabled_marker_safe || return 1
+        enabled=1
+    fi
+    printf '%s\t%s\n' "$enabled" "$port"
+}
+
+managed_state_exists() {
+    [ -e "$ENABLED_MARKER" ] || [ -L "$ENABLED_MARKER" ] ||
+        [ "$(readlink /lib/systemd/system/sshd.service 2>/dev/null)" = /usrdata/quecdeck/optional/sshd/sshd.service ] ||
+        grep -Fqx 'Include /run/quecdeck/sshd-listen.conf' "$SSHD_CONFIG" 2>/dev/null
+}
+
+# The installer can need to recover QuecDeck-managed settings after a partial
+# installation that wrote the configuration but not the service link.
+if [ "${1:-}" = saved-state ]; then
+    [ "$#" -eq 1 ] || exit 1
+    managed_state_exists || exit 3
+    print_saved_state
+    exit $?
+fi
+
 ssh_installed || exit 3
 case "${1:-}" in
     status)
         [ "$#" -eq 1 ] || exit 1
-        port=$(configured_port) || exit 1
-        if [ -e "$ENABLED_MARKER" ]; then
-            enabled_marker_safe || exit 1
-            enabled=1
-        else
-            enabled=0
-        fi
-        printf '%s\t%s\n' "$enabled" "$port"
+        print_saved_state
         ;;
     # Gated on the ADMINISTRATOR password only, unlike add and remove which
     # need both. Enabling SSH or moving its port grants no access by itself:
@@ -420,12 +417,19 @@ case "${1:-}" in
            printf '%s\n' "$KEY_LINE"
            } > "$TMP" &&
            chown root:root "$TMP" && chmod 600 "$TMP" && mv -f "$TMP" "$KEYS"; then
-            # The unit itself refuses to bind unless the firewall is active.
-            # Starting it here also lets Restart=on-failure recover when the
-            # firewall becomes available.
-            if enabled_marker_safe; then
-                systemctl reset-failed sshd >/dev/null 2>&1
-                systemctl start sshd >/dev/null 2>&1 || true
+            # Reapply the policy before the first usable key can start SSH.
+            # Failure leaves the newly added key stored but the daemon stopped.
+            if [ -e "$ENABLED_MARKER" ] || [ -L "$ENABLED_MARKER" ]; then
+                if ! enabled_marker_safe; then
+                    systemctl stop sshd >/dev/null 2>&1 || true
+                    exit 14
+                fi
+                apply_network_policy 1 >/dev/null 2>&1
+                policy_rc=$?
+                if [ "$policy_rc" != 0 ]; then
+                    systemctl stop sshd >/dev/null 2>&1 || true
+                    exit 14
+                fi
             fi
             exit 0
         fi

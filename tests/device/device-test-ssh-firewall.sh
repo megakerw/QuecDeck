@@ -9,9 +9,9 @@
 # Run me THREE times, doing the menu action between runs (no arguments needed):
 #
 #   sh device-test-ssh-firewall.sh     # 1) BEFORE install -> saves a baseline
-#   ... Install SSH:   sh quecdeck.sh -> 3 -> install ...
+#   ... Install SSH:   sh quecdeck.sh -> 4 -> install ...
 #   sh device-test-ssh-firewall.sh     # 2) AFTER install  -> checks the add + recovery
-#   ... Uninstall SSH: sh quecdeck.sh -> 3 -> uninstall ...
+#   ... Uninstall SSH: sh quecdeck.sh -> 4 -> uninstall ...
 #   sh device-test-ssh-firewall.sh     # 3) AFTER uninstall -> checks the removal + recovery
 #
 # Run as root on a device where QuecDeck (lighttpd + firewall) is up. It only
@@ -60,7 +60,7 @@ if [ ! -f "$DIR/baseline" ]; then
     [ "$(getval "$DIR/baseline" PORT22)" != "0" ] && \
         echo "  NOTE: a port-22 rule is already present -- is SSH already installed? Uninstall it first for a clean baseline."
     echo ""
-    echo "Next: INSTALL SSH via the menu (sh quecdeck.sh -> 3 -> install), then run this again."
+    echo "Next: INSTALL SSH via the menu (sh quecdeck.sh -> 4 -> install), then run this again."
     exit 0
 fi
 
@@ -91,7 +91,7 @@ if [ ! -f "$DIR/after_install" ]; then
 
     echo ""
     echo " Stage 2 result: $pass passed, $fail failed"
-    echo "Next: UNINSTALL SSH via the menu (sh quecdeck.sh -> 3 -> uninstall), then run this again."
+    echo "Next: UNINSTALL SSH via the menu (sh quecdeck.sh -> 4 -> uninstall), then run this again."
     exit 0
 fi
 

@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=93e14069" />
-    <link rel="stylesheet" href="css/styles.css?v=93e14069" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=ee07dce6" />
+    <link rel="stylesheet" href="css/styles.css?v=ee07dce6" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=93e14069"></script>
-    <script src="js/utils.js?v=93e14069"></script>
-    <script src="js/alpinejs.min.js?v=93e14069" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=ee07dce6"></script>
+    <script src="js/utils.js?v=ee07dce6"></script>
+    <script src="js/alpinejs.min.js?v=ee07dce6" defer></script>
   </head>
   <body>
     <main>
-      <div class="container my-4" x-data="securitySettings(true)">
+      <div class="container my-4" x-data="securityController(true)">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=93e14069"></script>
+        <script src="js/nav.js?v=ee07dce6"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-start">
 
@@ -166,10 +166,7 @@
                       :disabled="!developerConfigured || keys.length >= 5"
                     />
                   </div>
-                  <!-- Below both inputs: a chosen file is read into the textarea,
-                       so one verdict covers whichever route was used. -->
                   <div class="text-danger small mt-2" x-show="keyError" x-cloak x-text="keyError"></div>
-                  <div class="font-monospace small text-muted mt-2 text-break" x-show="!keyError && pastedFingerprint" x-cloak x-text="pastedFingerprint"></div>
                 </div>
 
                 <div class="panel-actions">
@@ -186,9 +183,47 @@
           </template>
 
         </div>
+
+        <!-- Kept on this page rather than in the global modal layer. x-if
+             prevents password inputs from existing until an SSH action needs
+             them, which avoids browser password-manager matches with the port. -->
+        <div class="modal-overlay" x-show="credentialOpen" x-cloak>
+          <template x-if="credentialOpen">
+            <div class="loading-modal text-start">
+              <h5 class="mb-1 fw-semibold" x-text="credentialTitle"></h5>
+              <p class="mb-3 text-muted small" x-text="credentialMessage"></p>
+              <p x-show="credentialDetail" class="mb-3 font-monospace small rounded px-2 py-1 surface-muted text-break" x-text="credentialDetail"></p>
+              <div x-show="credentialError" x-cloak class="alert alert-danger py-2 px-3 small mb-3" x-text="credentialError"></div>
+              <form autocomplete="off" @submit.prevent="submitCredentials()">
+                <div :class="credentialDeveloperRequired ? 'mb-2' : 'mb-4'">
+                  <label class="form-label fw-semibold" for="cred-admin">Administrator Password</label>
+                  <input id="cred-admin" type="password" class="form-control" maxlength="256"
+                         autocomplete="current-password" x-model="credentialAdmin"
+                         :disabled="credentialBusy || credentialLocked">
+                </div>
+                <template x-if="credentialDeveloperRequired">
+                  <div class="mb-4">
+                    <label class="form-label fw-semibold" for="cred-dev">Developer Password</label>
+                    <input id="cred-dev" type="password" class="form-control" maxlength="256"
+                           autocomplete="current-password" x-model="credentialDeveloper"
+                           :disabled="credentialBusy || credentialLocked">
+                  </div>
+                </template>
+                <div class="d-flex justify-content-end gap-2">
+                  <button type="button" class="btn btn-secondary btn-sm"
+                          :disabled="credentialBusy" @click="closeCredentials()"
+                          x-text="credentialLocked ? 'Close' : 'Cancel'"></button>
+                  <button type="submit" class="btn btn-primary btn-sm"
+                          :disabled="credentialBusy || credentialLocked"
+                          x-text="credentialBusy ? 'Verifying...' : credentialAction"></button>
+                </div>
+              </form>
+            </div>
+          </template>
+        </div>
       </div>
     </main>
-    <script src="js/capslock.js?v=93e14069"></script>
-    <script src="js/security.js?v=93e14069"></script>
+    <script src="js/capslock.js?v=ee07dce6"></script>
+    <script src="js/security.js?v=ee07dce6"></script>
   </body>
 </html>

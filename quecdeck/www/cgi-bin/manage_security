@@ -83,14 +83,14 @@ case "$action" in
         public_key=$(get_post_param public_key)
         developer=$(get_post_param developer_password)
         printf '%s\n%s\n%s\n' "$current" "$developer" "$public_key" |
-            /opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh add
+            /opt/bin/sudo /usrdata/quecdeck/script/ssh_access.sh add
         rc=${PIPESTATUS[1]}
         ;;
     remove_key)
         fingerprint=$(get_post_param fingerprint)
         developer=$(get_post_param developer_password)
         printf '%s\n%s\n' "$current" "$developer" |
-            /opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh remove "$fingerprint"
+            /opt/bin/sudo /usrdata/quecdeck/script/ssh_access.sh remove "$fingerprint"
         rc=${PIPESTATUS[1]}
         ;;
     ssh_settings)
@@ -98,7 +98,7 @@ case "$action" in
         port=$(get_post_param ssh_port)
         # Both are validated by the helper before they reach a config file.
         printf '%s\n' "$current" |
-            /opt/bin/sudo /usrdata/quecdeck/script/ssh_keys.sh settings "$enabled" "$port"
+            /opt/bin/sudo /usrdata/quecdeck/script/ssh_access.sh settings "$enabled" "$port"
         rc=${PIPESTATUS[1]}
         ;;
     *)
@@ -134,6 +134,10 @@ if [ "$rc" = 2 ] || [ "$rc" = 13 ]; then
     fi
     exit 0
 fi
+action_warning=""
+case "$rc" in
+    14) action_warning=ssh_key_activation; rc=0 ;;
+esac
 if [ "$rc" != 0 ]; then
     bf_unlock
     case "$rc" in
@@ -192,4 +196,8 @@ if [ "$action" = change_password ]; then
     fi
 fi
 
-json_result true
+if [ -n "$action_warning" ]; then
+    printf '{"ok":true,"warning":"%s"}\n' "$action_warning"
+else
+    json_result true
+fi

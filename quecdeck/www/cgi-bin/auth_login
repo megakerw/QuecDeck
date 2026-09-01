@@ -38,10 +38,10 @@ fi
 
 # Reject immediately if locked out
 if ! cgi_flock_available; then
-    json_error "locked"; exit 0
+    json_error "unavailable"; exit 0
 fi
 if ! bf_lock "$FAILURE_DIR" "$client_ip"; then
-    json_error "locked"; exit 0
+    json_error "unavailable"; exit 0
 fi
 if bf_locked "$FAILURE_DIR" "$client_ip"; then
     log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"

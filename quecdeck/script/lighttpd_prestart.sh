@@ -1,7 +1,6 @@
 #!/bin/sh
 
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
-LIGHTTPD_CONF="/usrdata/quecdeck/lighttpd.conf"
 QUECDECK_DIR="/usrdata/quecdeck"
 RUNTIME_DIR=/run/quecdeck
 LISTEN_CONF="$RUNTIME_DIR/lighttpd-listen.conf"
@@ -48,13 +47,6 @@ if ! printf 'var.lan_ip = "%s"\n' "$LAN_IP" > "$_tmp" ||
    ! mv -f "$_tmp" "$LISTEN_CONF"; then
     rm -f "$_tmp"
     exit 1
-fi
-
-# One-time migration off the old in-place edit. Rewritten only when a literal
-# address is still present, so the steady state costs no write to flash.
-if grep -qE '^(server\.bind = "[0-9.]+"|\$SERVER\["socket"\] == "[0-9.]+:443")' "$LIGHTTPD_CONF" 2>/dev/null; then
-    sed -i 's/^server\.bind = "[0-9.]*"/server.bind = var.lan_ip/' "$LIGHTTPD_CONF" || exit 1
-    sed -i 's/^\$SERVER\["socket"\] == "[0-9.]*:443"/$SERVER["socket"] == var.lan_ip + ":443"/' "$LIGHTTPD_CONF" || exit 1
 fi
 
 # Entware's rc.unslung runs every S* script in /opt/etc/init.d/ at boot, and the

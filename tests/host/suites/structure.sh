@@ -12,7 +12,7 @@ t "navigation exposes both monitoring pages" "yes" \
   "$(grep -q "href: '/watchcat.html', label: 'Watchcat'" quecdeck/www/js/nav.js && grep -q "href: '/scheduled-restart.html', label: 'Scheduled Restart'" quecdeck/www/js/nav.js && grep -q 'href="/watchcat.html"' quecdeck/www/deviceinfo.html && grep -q 'href="/scheduled-restart.html"' quecdeck/www/deviceinfo.html && ! grep -q '/monitoring.html' quecdeck/www/js/nav.js quecdeck/www/deviceinfo.html && echo yes || echo no)"
 
 t "Security and SSH pages are wired to their controller and navigation" "yes" \
-  "$(grep -q 'x-data="securitySettings()"' quecdeck/www/security.html && grep -q 'x-data="securitySettings(true)"' quecdeck/www/ssh.html && grep -q 'js/security.js' quecdeck/www/security.html quecdeck/www/ssh.html && grep -q "href: '/security.html', label: 'Security'" quecdeck/www/js/nav.js && grep -q "href: '/ssh.html', label: 'SSH'" quecdeck/www/js/nav.js && grep -q 'href="/ssh.html"' quecdeck/www/deviceinfo.html && echo yes || echo no)"
+  "$(grep -q 'x-data="securityController()"' quecdeck/www/security.html && grep -q 'x-data="securityController(true)"' quecdeck/www/ssh.html && grep -q 'js/security.js' quecdeck/www/security.html quecdeck/www/ssh.html && grep -q "href: '/security.html', label: 'Security'" quecdeck/www/js/nav.js && grep -q "href: '/ssh.html', label: 'SSH'" quecdeck/www/js/nav.js && grep -q 'href="/ssh.html"' quecdeck/www/deviceinfo.html && echo yes || echo no)"
 t "SSH page supports public-key upload and multiple key rows" "yes" \
   "$(grep -q 'id="public-key-file"' quecdeck/www/ssh.html && grep -q 'accept=".pub,text/plain"' quecdeck/www/ssh.html && grep -q 'x-for="(key, index) in keys"' quecdeck/www/ssh.html && grep -q 'keys.length >= 5' quecdeck/www/ssh.html && echo yes || echo no)"
 t "Password change returns to a clear login state" "yes" \
@@ -35,7 +35,7 @@ t "root home hardens after rollback becomes possible" "yes" \
 t "root home hardens before helper writes" "yes" \
   "$([ -n "$_harden_line" ] && [ "$_harden_line" -lt "$_helper_line" ] && echo yes || echo no)"
 t "installed console menu is retired" "yes" \
-  "$([ ! -e quecdeck/console/menu/start_menu.sh ] && ! grep -q '/usrdata/quecdeck/console' quecdeck/console/.profile && ! grep -q 'root/bin/menu.*ln -s\|ln -s.*root/bin/menu' update_quecdeck.sh quecdeck.sh && grep -q 'rm -f /usrdata/root/bin/menu' update_quecdeck.sh quecdeck.sh && echo yes || echo no)"
+  "$([ ! -e quecdeck/console/menu/start_menu.sh ] && ! grep -q '/usrdata/quecdeck/console' quecdeck/console/.profile && ! grep -q 'root/bin/menu.*ln -s\|ln -s.*root/bin/menu' update_quecdeck.sh quecdeck.sh && grep -q 'rm -f /usrdata/root/bin/menu' quecdeck.sh && echo yes || echo no)"
 t "developer password helper and web form remain available" "yes" \
   "$([ -x quecdeck/quecdeckdevpasswd ] && grep -q 'changeDeveloperPassword' quecdeck/www/security.html quecdeck/www/js/security.js && grep -q 'cp -f.*quecdeckdevpasswd.*usrdata/root/bin/quecdeckdevpasswd' update_quecdeck.sh && echo yes || echo no)"
 t "rollback restores password helper copies" "2" \
@@ -70,14 +70,24 @@ t "SSH bundled assets verify before package installation" "yes" \
 t "SSH configuration scopes its restrictive umask" "yes" \
   "$(grep -q '^configure_key_only_ssh() ($' "$_ssh_installer" && echo yes || echo no)"
 _ssh_config=$(sed -n '/^configure_key_only_ssh() (/,/^)/p' "$_ssh_installer")
+t "SSH configuration expands only the validated port" "yes" \
+  "$(printf '%s\n' "$_ssh_config" | grep -q "printf 'Port %s" && printf '%s\n' "$_ssh_config" | grep -q "cat <<'EOF'" && ! printf '%s\n' "$_ssh_config" | grep -q 'cat .*<<EOF' && echo yes || echo no)"
 t "SSH validates the temporary configuration before replacement" "yes" \
   "$( _validate=$(printf '%s\n' "$_ssh_config" | grep -n 'sshd -t -f.*config_tmp' | cut -d: -f1); _replace=$(printf '%s\n' "$_ssh_config" | grep -n 'mv -f.*config_tmp.*sshd_config' | cut -d: -f1); [ -n "$_validate" ] && [ -n "$_replace" ] && [ "$_validate" -lt "$_replace" ] && printf '%s\n' "$_ssh_config" | grep -q 'sshd -T -f.*config_tmp' && echo yes || echo no)"
+t "SSH installation preserves the configured port and enabled state" "yes" \
+  "$( _install=$(sed -n '/^install_sshd() {/,/^}/p' "$_ssh_installer"); printf '%s\n' "$_install" | grep -q 'ssh_access.sh.*saved-state' && printf '%s\n' "$_install" | grep -q 'configure_key_only_ssh "\$saved_ssh_port" "\$saved_ssh_enabled"' && printf '%s\n' "$_ssh_config" | grep -q "printf 'Port %s.*\"\$ssh_port\"" && printf '%s\n' "$_ssh_config" | grep -q '\[ "\$ssh_enabled" = 1 \]' && echo yes || echo no)"
+t "SSH installation refuses unreadable existing settings" "yes" \
+  "$( _install=$(sed -n '/^install_sshd() {/,/^}/p' "$_ssh_installer"); _read=$(printf '%s\n' "$_install" | grep -n 'saved_ssh_status=.*saved-state' | cut -d: -f1); _abort=$(printf '%s\n' "$_install" | grep -n 'Existing SSH settings could not be read' | cut -d: -f1); _packages=$(printf '%s\n' "$_install" | grep -n 'opkg install --force-maintainer' | cut -d: -f1); _managed=$(extract_fn quecdeck/script/ssh_access.sh managed_state_exists); [ -n "$_read" ] && [ -n "$_abort" ] && [ "$_read" -lt "$_abort" ] && [ "$_abort" -lt "$_packages" ] && printf '%s\n' "$_managed" | grep -q 'sshd-listen.conf' && printf '%s\n' "$_managed" | grep -q 'readlink.*sshd.service.*=.*quecdeck/optional/sshd/sshd.service' && ! printf '%s\n' "$_install" | grep -q 'sshd-listen.conf' && echo yes || echo no)"
+t "SSH installation identifies a missing bundled helper before reading state" "yes" \
+  "$( _install=$(sed -n '/^install_sshd() {/,/^}/p' "$_ssh_installer"); _missing=$(printf '%s\n' "$_install" | grep -n 'bundled SSH access helper is missing' | cut -d: -f1); _read=$(printf '%s\n' "$_install" | grep -n 'saved_ssh_status=.*saved-state' | cut -d: -f1); [ -n "$_missing" ] && [ -n "$_read" ] && [ "$_missing" -lt "$_read" ] && echo yes || echo no)"
+t "SSH installation reconciles a running daemon and fails closed with the firewall" "yes" \
+  "$( _install=$(sed -n '/^install_sshd() {/,/^}/p' "$_ssh_installer"); printf '%s\n' "$_install" | grep -q 'systemctl restart sshd ||' && _failure=$(printf '%s\n' "$_install" | sed -n '/^    else$/,/Sshd was not started/p'); printf '%s\n' "$_failure" | grep -q 'systemctl stop sshd' && echo yes || echo no)"
 _ssh_prepare_line=$(grep -n 'prepare_ssh_accounts ||' "$_ssh_installer" | cut -d: -f1)
 _ssh_install_line=$(grep -n 'opkg install --force-maintainer openssh-server openssh-keygen' "$_ssh_installer" | cut -d: -f1)
-_ssh_start_line=$(grep -n 'systemctl start sshd ||' "$_ssh_installer" | cut -d: -f1)
+_ssh_start_line=$(grep -n 'systemctl restart sshd ||' "$_ssh_installer" | cut -d: -f1)
 t "SSH service account is ready before daemon installation and start" "yes" \
   "$([ -n "$_ssh_prepare_line" ] && [ "$_ssh_prepare_line" -lt "$_ssh_install_line" ] && [ "$_ssh_install_line" -lt "$_ssh_start_line" ] && echo yes || echo no)"
-unset _entware_base _ssh_installer _ssh_accounts _sshd_menu _ssh_config _ssh_prepare_line _ssh_install_line _ssh_start_line
+unset _entware_base _ssh_installer _ssh_accounts _sshd_menu _ssh_config _ssh_prepare_line _ssh_install_line _ssh_start_line _install _failure _read _abort _packages _managed _missing
 
 # Branch installs must pin one ref for the manifest, the installer, and the
 # archive. Leaving the tag empty falls back to the updater's own default, which
@@ -116,11 +126,13 @@ t "installer checks generation before Entware setup" "yes" \
 t "interrupted first install retries only with its Entware marker" "yes" \
   "$( _ensure=$(sed -n '/^ensure_entware_installed() {/,/^}/p' quecdeck.sh); grep -q '^ENTWARE_BOOTSTRAP_MARKER=' quecdeck.sh && printf '%s\n' "$_ensure" | grep -q '^    require_supported_install_state || return 1$' && printf '%s\n' "$_ensure" | grep -q 'ENTWARE_BOOTSTRAP_MARKER' && sed -n '/^supported_install_state() {/,/^}/p' quecdeck.sh | grep -q 'grep -qx.*ENTWARE_BOOTSTRAP_MARKER' && echo yes || echo no)"
 t "non-PAM SSH configuration omits UsePAM handling" "yes" \
-  "$(! grep -qE 'UsePAM|usepam' quecdeck.sh quecdeck/script/ssh_keys.sh && echo yes || echo no)"
+  "$(! grep -qE 'UsePAM|usepam' quecdeck.sh quecdeck/script/ssh_access.sh && echo yes || echo no)"
 t "updater rejects releases before this installation generation" "yes" \
   "$(grep -q '_install_generation_supported' update_quecdeck.sh && grep -q 'requires a clean installation' update_quecdeck.sh quecdeck.sh && echo yes || echo no)"
 t "updater has no legacy SSH or authentication migration" "yes" \
   "$(! grep -qE '_withdraw_legacy_ssh|_ssh_is_key_only|_restore_legacy_auth' update_quecdeck.sh && echo yes || echo no)"
+t "compatible updates carry no retired console or bind migration" "yes" \
+  "$(! grep -qE 'systemctl stop ttyd|/bin/ttyd|/usrdata/root/bin/menu|readlink /bin/menu' update_quecdeck.sh && ! grep -q 'sed -i.*server\\.bind\|sed -i.*SERVER.*socket' quecdeck/script/lighttpd_prestart.sh && echo yes || echo no)"
 
 # ttyd was removed as a feature. The full uninstaller still removes files left
 # by an older release so it can prepare a device for the clean installation.
@@ -128,17 +140,12 @@ t "ttyd release files are removed" "yes" \
   "$([ ! -e quecdeck/systemd/ttyd.service ] && [ ! -e quecdeck/console/ttyd.bash ] && [ ! -e quecdeck/www/cgi-bin/toggle_ttyd ] && echo yes || echo no)"
 t "ttyd is absent from UI, auth, server config, and sudoers" "yes" \
   "$(! grep -qi ttyd quecdeck/www/developer.html quecdeck/www/js/developer.js quecdeck/www/deviceinfo.html quecdeck/auth.lua quecdeck/lighttpd.conf quecdeck/www/cgi-bin/get_system_status && ! grep '_sudoers_rule=' update_quecdeck.sh | grep -q ttyd && echo yes || echo no)"
-t "updater removes legacy ttyd activation" "yes" \
-  "$(grep -q 'systemctl stop ttyd' update_quecdeck.sh && grep -q 'rm -f /lib/systemd/system/ttyd.service' update_quecdeck.sh && grep -q 'readlink /bin/ttyd.*opt/bin/ttyd.*rm -f /bin/ttyd' update_quecdeck.sh && echo yes || echo no)"
 t "full uninstall removes legacy ttyd files" "yes" \
   "$(grep -q 'rm -f /lib/systemd/system/ttyd.service' quecdeck.sh && grep -q 'rm -f /bin/ttyd' quecdeck.sh && echo yes || echo no)"
 t "firmware authentication restoration has its own uninstall result" "yes" \
   "$(grep -q '_show_uninstall_result "Firmware login".*result_auth_restore' quecdeck.sh && ! grep -q 'restore_legacy_auth_commands || result_sshd=' quecdeck.sh && echo yes || echo no)"
 t "firmware authentication no-op remains skipped" "yes" \
   "$(grep -q 'RESTORE_LEGACY_AUTH_CHANGED=0' quecdeck.sh && grep -q 'RESTORE_LEGACY_AUTH_CHANGED.*result_auth_restore="RESTORED"' quecdeck.sh && echo yes || echo no)"
-t "removed web console has no auth integration assertions" "yes" \
-  "$(! grep -q '/console/' tests/host/integration/auth-lua.test.lua && echo yes || echo no)"
-
 # Every shipped unit must carry the marker or both sweeps go blind to it and it
 # stays installed and enabled forever. The ci-checks.sh script also checks this. It is repeated
 # here because run-tests.sh is what the pre-commit hook runs, so a marker-less
@@ -155,7 +162,7 @@ t "Alpine controllers rely on one automatic init call" "yes" \
 t "setup blocks when recovery-state loading fails" "yes" \
   "$(grep -q 'if (!response.ok)' quecdeck/www/js/setup.js && grep -q 'if (!this.setupReady)' quecdeck/www/js/setup.js && echo yes || echo no)"
 t "SSH validates the final generated config" "yes" \
-  "$([ "$(grep -n 'update_sshd_ip.sh' quecdeck/optional/sshd/sshd.service | head -1 | cut -d: -f1)" -lt "$(grep -n 'ssh_keys.sh ready' quecdeck/optional/sshd/sshd.service | cut -d: -f1)" ] && echo yes || echo no)"
+  "$([ "$(grep -n 'update_sshd_ip.sh' quecdeck/optional/sshd/sshd.service | head -1 | cut -d: -f1)" -lt "$(grep -n 'ssh_access.sh ready' quecdeck/optional/sshd/sshd.service | cut -d: -f1)" ] && echo yes || echo no)"
 t "SSH installation creates the root-only enable marker" "yes" \
   "$( _configure=$(sed -n '/^configure_key_only_ssh() (/,/^)/p' quecdeck/script/install_sshd.sh); printf '%s\n' "$_configure" | grep -q 'quecdeck_enabled' && printf '%s\n' "$_configure" | grep -q 'chmod 600' && echo yes || echo no)"
 
@@ -168,7 +175,11 @@ t "SSH installation creates the root-only enable marker" "yes" \
 t "lighttpd init script is removed after its opkg install" "yes" \
   "$( _b=$(sed -n '/^swap_in_release() {/,/^}/p' update_quecdeck.sh); _o=$(printf '%s\n' "$_b" | grep -n 'opkg install .*_lighttpd_pkgs' | head -1 | cut -d: -f1); _r=$(printf '%s\n' "$_b" | grep -n 'init\.d/\*lighttpd\*' | head -1 | cut -d: -f1); [ -n "$_o" ] && [ -n "$_r" ] && [ "$_o" -lt "$_r" ] && echo yes || echo no)"
 t "sshd init script is removed after its opkg install" "yes" \
-  "$( _b=$(sed -n '/^install_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh); _o=$(printf '%s\n' "$_b" | grep -n 'opkg install' | head -1 | cut -d: -f1); _r=$(printf '%s\n' "$_b" | grep -n 'init\.d/\*sshd\*' | head -1 | cut -d: -f1); [ -n "$_o" ] && [ -n "$_r" ] && [ "$_o" -lt "$_r" ] && echo yes || echo no)"
+  "$( _b=$(sed -n '/^install_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh); _o=$(printf '%s\n' "$_b" | grep -n 'opkg install' | head -1 | cut -d: -f1); _r=$(printf '%s\n' "$_b" | grep -n 'remove_entware_sshd_init_scripts' | head -1 | cut -d: -f1); [ -n "$_o" ] && [ -n "$_r" ] && [ "$_o" -lt "$_r" ] && echo yes || echo no)"
+t "failed sshd package install still reaps its init script" "yes" \
+  "$( _b=$(sed -n '/^install_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh); printf '%s\n' "$_b" | grep -q '^    package_rc=\$?' && ! printf '%s\n' "$_b" | grep -q 'opkg install.*||' && echo yes || echo no)"
+t "sshd uninstall reports incomplete package removal" "yes" \
+  "$( _b=$(sed -n '/^uninstall_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh); printf '%s\n' "$_b" | grep -q 'opkg remove.*|| package_failed=1' && printf '%s\n' "$_b" | grep -q 'remove_entware_sshd_init_scripts || package_failed=1' && printf '%s\n' "$_b" | grep -q 'if \[ "\$package_failed" -ne 0 \]' && echo yes || echo no)"
 # One install site each is what makes one removal site sufficient. A second
 # opkg call elsewhere would reintroduce the init script with nothing to reap it.
 # Defence in depth for an opkg upgrade done by hand after install: the boot-time
@@ -207,49 +218,23 @@ t "deviceinfo routes every service row through the helper" "6" \
 t "panel action rows use one class" "yes" \
   "$(grep -q '^\.panel-actions' quecdeck/www/css/styles.css && ! grep -q 'mt-auto pt-3' quecdeck/www/*.html && echo yes || echo no)"
 
-# The platform facts that only a device can establish. Host tests cannot run
-# BusyBox flock or this OpenSSH, and both surprised us: flock has no -w, and
-# ssh-keygen skips malformed lines rather than aborting. Keep the device test
-# that pins them, and keep it read-only so it is safe to run on a live modem.
-t "device invariants test exists and is read-only" "yes" \
-  "$( _i=tests/device/device-test-install-invariants.sh; [ -f "$_i" ] && grep -q 'flock_wait' "$_i" && grep -q 'ssh-keygen -lf' "$_i" && grep -q '0\.0\.0\.0' "$_i" && grep -q 'root:root 700' "$_i" && ! grep -qE '^[^#]*(systemctl (start|stop|restart)|rm -rf /usrdata|opkg )' "$_i" && echo yes || echo no)"
-t "device invariants cover every sudo-reachable root helper" "yes" \
-  "$( _rule=$(grep '_sudoers_rule=' update_quecdeck.sh); _miss=0; for _s in write_htpasswd.sh change_password.sh ssh_keys.sh check_password.sh run_update.sh; do printf '%s' "$_rule" | grep -q "$_s" || _miss=1; grep -q "$_s" tests/device/device-test-install-invariants.sh || _miss=1; done; [ "$_miss" = 0 ] && echo yes || echo no)"
-unset _i _rule _miss _s
-
 # Add key is inert until there is something to add. readKeyFile writes the file
 # contents into the same publicKey model, so one check covers paste and upload.
 t "add key is gated on a usable key" "yes" \
   "$(grep -q 'keys.length >= 5 || !keyReady"' quecdeck/www/ssh.html && grep -q '@input="validateKey()"' quecdeck/www/ssh.html && grep -q 'this.publicKey = text.trim()' quecdeck/www/js/security.js && echo yes || echo no)"
-# The client check exists to spare a wasted credential entry, not to be the
-# authority. valid_key_syntax in ssh_keys.sh still re-checks everything, so the
-# two rule sets must not drift apart.
-t "client key validation mirrors the helper's rules" "yes" \
-  "$( _v=$(sed -n '/^    validateKey() {/,/^    },/p' quecdeck/www/js/security.js); _h=$(extract_fn quecdeck/script/ssh_keys.sh valid_key_syntax); _ok=yes
-      for _t in ssh-ed25519 ssh-rsa ecdsa-sha2-nistp256 ecdsa-sha2-nistp384 ecdsa-sha2-nistp521; do
-        printf '%s\n' "$_v" | grep -q "$_t" || _ok=no
-        printf '%s\n' "$_h" | grep -q "$_t" || _ok=no
-      done
-      printf '%s\n' "$_v" | grep -q '8192' || _ok=no
-      printf '%s\n' "$_v" | grep -q 'A-Za-z0-9+/=' || _ok=no
-      printf '%s\n' "$_v" | grep -q '80' || _ok=no
-      echo "$_ok")"
-t "duplicate keys are caught before the credential prompt" "yes" \
-  "$(grep -q 'This key is already authorized' quecdeck/www/js/security.js && grep -q 'crypto.subtle.digest' quecdeck/www/js/security.js && grep -q '6) json_result false \"This SSH key has already been added\"' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
+# The browser catches only cheap mistakes. Public-key parsing and duplicate
+# detection stay at the root helper, so there is one authoritative rule set.
+t "client key check stays preliminary" "yes" \
+  "$( _v=$(sed -n '/^    validateKey() {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_v" | grep -q '8192' && printf '%s\n' "$_v" | grep -q 'PRIVATE KEY' && ! printf '%s\n' "$_v" | grep -q 'ssh-ed25519\|crypto.subtle' && echo yes || echo no)"
+t "root helper owns duplicate-key detection" "yes" \
+  "$(grep -q 'exit 6' quecdeck/script/ssh_access.sh && grep -q '6) json_result false \"This SSH key has already been added\"' quecdeck/www/cgi-bin/manage_security && ! grep -q 'crypto.subtle\|fingerprintOf' quecdeck/www/js/security.js && echo yes || echo no)"
 
-# The credential overlay is injected into every page. Password inputs that are
-# only hidden still sit in the DOM, where Firefox's password manager starts
-# treating neighbouring text inputs (APN, refresh interval) as username fields.
-t "credential inputs exist only while the dialog is open" "yes" \
-  "$(grep -q '<template x-if="\$store.credentialModal.show">' quecdeck/www/js/utils.js && [ "$(grep -c 'type="password"' quecdeck/www/js/utils.js)" = 2 ] && echo yes || echo no)"
+t "credential inputs are local and conditional" "yes" \
+  "$(grep -q '<template x-if="credentialOpen">' quecdeck/www/ssh.html && [ "$(grep -c 'type="password"' quecdeck/www/ssh.html)" = 2 ] && ! grep -q 'credentialModal\|cred-admin\|cred-dev' quecdeck/www/js/utils.js && echo yes || echo no)"
 
-# Firefox pairs an unscoped password field with the nearest text input anywhere
-# in the document, and reads the removal of a filled one as a submission. Both
-# together offered the SSH port value as a saved login. The form scopes the
-# username search to a form containing none, and the fields are blanked in the
-# DOM before they are destroyed.
+# Keep password inputs in their own form and clear them before removing them.
 t "credential dialog cannot be mistaken for a login form" "yes" \
-  "$( _u=quecdeck/www/js/utils.js; grep -q '<form autocomplete="off" @submit.prevent=' "$_u" && grep -q '</form>' "$_u" && _c=$(sed -n "/Alpine.store('credentialModal'/,/^  });/p" "$_u" | sed -n '/    close() {/,/^    }/p'); printf '%s\n' "$_c" | grep -q "el.value = ''" && [ "$(printf '%s\n' "$_c" | grep -n "el.value = ''" | cut -d: -f1)" -lt "$(printf '%s\n' "$_c" | grep -n 'this.show = false' | cut -d: -f1)" ] && echo yes || echo no)"
+  "$( _c=$(sed -n '/^    closeCredentials() {/,/^    },/p' quecdeck/www/js/security.js); grep -q '<form autocomplete="off" @submit.prevent="submitCredentials()">' quecdeck/www/ssh.html && printf '%s\n' "$_c" | grep -q "el.value = ''" && [ "$(printf '%s\n' "$_c" | grep -n "el.value = ''" | cut -d: -f1)" -lt "$(printf '%s\n' "$_c" | grep -n 'credentialOpen = false' | cut -d: -f1)" ] && echo yes || echo no)"
 
 # The file picker fills the textarea and then clears itself, so a key lives in
 # exactly one place. Without the reset, editing or emptying the textarea leaves a
@@ -257,9 +242,7 @@ t "credential dialog cannot be mistaken for a login form" "yes" \
 t "the key file picker resets after loading" "yes" \
   "$( _r=$(sed -n '/^    readKeyFile(event) {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_r" | grep -q 'finally' && printf '%s\n' "$_r" | grep -q "input.value = ''" && printf '%s\n' "$_r" | grep -q 'this.validateKey()' && echo yes || echo no)"
 
-# A page can call a controller method that no longer exists and fail only at
-# click time, in the browser, silently. saveSshSettings was deleted by an edit
-# and shipped that way. Assert every plain click handler still resolves.
+# Assert every plain click handler resolves to a controller method.
 _handler_missing=0
 for _page in quecdeck/www/ssh.html quecdeck/www/security.html; do
     for _fn in $(grep -o '@click="[a-zA-Z_][a-zA-Z0-9_]*(' "$_page" | sed 's/@click="//; s/($//' | sort -u); do

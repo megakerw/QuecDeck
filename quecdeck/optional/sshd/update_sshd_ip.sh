@@ -10,7 +10,6 @@
 # socket: an include that tolerates a missing path would otherwise leave sshd
 # with no ListenAddress at all, which means every interface.
 
-SSHD_CONF="/opt/etc/ssh/sshd_config"
 RUNTIME_DIR=/run/quecdeck
 LISTEN_CONF="$RUNTIME_DIR/sshd-listen.conf"
 
@@ -31,14 +30,6 @@ if ! printf 'ListenAddress %s\n' "$LAN_IP" > "$_tmp" ||
    ! mv -f "$_tmp" "$LISTEN_CONF"; then
     rm -f "$_tmp"
     exit 1
-fi
-
-# One-time migration off the old in-place edit. ListenAddress is cumulative, so
-# a line left in the configuration file would add a second bind address beside
-# the one above. Anchored, and rewritten only when a line is actually present,
-# so the steady state costs no flash write.
-if grep -q '^ListenAddress' "$SSHD_CONF" 2>/dev/null; then
-    sed -i '/^ListenAddress/d' "$SSHD_CONF" || exit 1
 fi
 
 # Entware's rc.unslung runs every S* script in /opt/etc/init.d/ at boot, and the

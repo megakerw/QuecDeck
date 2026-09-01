@@ -328,7 +328,9 @@ bf_lock() {
     BF_LOCK_IP=
     _bf_file "$dir" probe >/dev/null || return 1
     lock_file="$(_bf_file "$dir" "$ip").lock"
-    if ! exec 9>>"$lock_file" || ! flock -x 9; then
+    # Do not queue CGI workers behind password verification. One request owns
+    # the complete decision and concurrent requests retry from the client.
+    if ! exec 9>>"$lock_file" || ! flock -n -x 9; then
         exec 9>&-
         return 1
     fi

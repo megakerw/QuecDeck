@@ -7,8 +7,9 @@ Tests are grouped by the environment they require:
   root, run `bash tests/host/run-tests.sh` for every suite or name one or more
   suites such as `bash tests/host/run-tests.sh monitoring`. Pass `--slow` for
   timing-dependent cases. The available suites are `libraries`, `sms`,
-  `monitoring`, `updater`, `security`, `firewall`, and `structure`. The SMS
-  suite automatically includes its `libraries` prerequisite.
+  `monitoring`, `connection-logger`, `updater`, `security`, `firewall`, and
+  `structure`. The SMS suite automatically includes its `libraries`
+  prerequisite.
 - `host/integration/` contains environment-backed host tests. `host/js/`
   contains JavaScript unit tests. `host/guards/` contains definitions shared
   by the pre-commit hook and CI, while `host/support/` contains test utilities.
@@ -17,7 +18,10 @@ Tests are grouped by the environment they require:
 - `device/` contains tests that must run on a Quectel modem. Read each script's
   header before use: some are disruptive, some require a configured device,
   and several deliberately restart services or cellular connectivity. Copy an
-  individual script to the device and run it as documented.
+  individual script to the device and run it as documented. Host tests only
+  syntax-check these scripts. They do not claim that a device test ran or that
+  its device-side assertions passed. Before a release, record the device tests
+  that were actually run and their results.
 
 `device-test-dns-proxy-settings.sh` is read-only. Onboard DNS proxy changes do
 not become active until the modem has rebooted, so configure and reboot first,

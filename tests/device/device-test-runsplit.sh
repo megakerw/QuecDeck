@@ -213,26 +213,29 @@ if [ -d "$FRESH" ]; then
         fi
     done
 
-    # Two requests from one address must serialize around both the lockout
-    # check and counter update. Without the transaction lock both can record a
-    # first failure and the threshold is bypassed.
+    # One request owns the complete lockout decision. A contender from the same
+    # address must fail immediately rather than queue another CGI process.
     _bf_parallel="$FRESH/auth_parallel"
     for _attempt in 1 2; do
         $SUDO -u www-data bash -c "
             . /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null
             BF_MAX_ATTEMPTS=2
-            bf_lock $_bf_parallel 10.0.0.2 || exit 1
-            bf_fail $_bf_parallel 10.0.0.2
+            if bf_lock $_bf_parallel 10.0.0.2; then
+                sleep 1
+                bf_fail $_bf_parallel 10.0.0.2
             printf '%s\\n' \"\$BF_FAIL_RESULT\" > $_bf_parallel/result.$_attempt
-            bf_unlock
+                bf_unlock
+            else
+                printf 'unavailable\\n' > $_bf_parallel/result.$_attempt
+            fi
         " &
     done
     wait
     _bf_results=$(cat "$_bf_parallel"/result.* 2>/dev/null | sort)
-    if [ "$_bf_results" = "$(printf 'failed\nlocked')" ]; then
-        ok "parallel failures from one client serialize and trigger lockout"
+    if [ "$_bf_results" = "$(printf 'failed\nunavailable')" ]; then
+        ok "parallel authentication contention fails without queuing"
     else
-        bad "parallel failures produced '$(printf '%s' "$_bf_results")', expected one failed and one locked"
+        bad "parallel authentication produced '$(printf '%s' "$_bf_results")', expected one failed and one unavailable"
     fi
     unset _bf_parallel _bf_results _attempt
 else

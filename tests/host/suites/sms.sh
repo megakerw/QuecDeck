@@ -474,19 +474,23 @@ if [ "$SLOW" = "1" ]; then
             (
                 . quecdeck/script/cgi-lib.sh
                 BF_MAX_ATTEMPTS=2
-                bf_lock "$_bf_parallel" 10.0.0.3 || exit 1
-                bf_fail "$_bf_parallel" 10.0.0.3
-                printf '%s\n' "$BF_FAIL_RESULT" > "$_bf_parallel/result.$_attempt"
-                bf_unlock
+                if bf_lock "$_bf_parallel" 10.0.0.3; then
+                    sleep 1
+                    bf_fail "$_bf_parallel" 10.0.0.3
+                    printf '%s\n' "$BF_FAIL_RESULT" > "$_bf_parallel/result.$_attempt"
+                    bf_unlock
+                else
+                    printf 'unavailable\n' > "$_bf_parallel/result.$_attempt"
+                fi
             ) &
         done
         wait
-        t "parallel failures from one client are both counted" \
-          "$(printf 'failed\nlocked')" \
+        t "a parallel request from one client fails without queuing" \
+          "$(printf 'failed\nunavailable')" \
           "$(cat "$_bf_parallel"/result.* 2>/dev/null | sort)"
         bf_lock "$_bf_parallel" 10.0.0.3
         bf_locked "$_bf_parallel" 10.0.0.3
-        t_rc "parallel failures leave the client locked out" 0 "$?"
+        t_rc "an unverified contender does not advance the lockout" 1 "$?"
         bf_unlock
 
         # Holding one client's lock must not serialize an unrelated client.

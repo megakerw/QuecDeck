@@ -1,4 +1,4 @@
-function securitySettings(sshPage = false) {
+function securityController(sshPage = false) {
   return {
     busy: false,
     // Which action is in flight. busy alone disables every button, so the label
@@ -27,8 +27,18 @@ function securitySettings(sshPage = false) {
     confirmDeveloperPassword: '',
     publicKey: '',
     keyError: '',
-    keyDuplicate: false,
-    pastedFingerprint: '',
+    credentialOpen: false,
+    credentialTitle: '',
+    credentialMessage: '',
+    credentialDetail: '',
+    credentialAction: 'Confirm',
+    credentialAdmin: '',
+    credentialDeveloper: '',
+    credentialDeveloperRequired: true,
+    credentialError: '',
+    credentialBusy: false,
+    credentialLocked: false,
+    credentialSubmit: null,
 
     // Whether the daemon is running, and nothing else. The toggle and its
     // caption already say whether SSH is enabled, and the alerts cover an
@@ -147,10 +157,8 @@ function securitySettings(sshPage = false) {
       }).finally(() => { this.busy = false; this.busyAction = ''; });
     },
 
-    // The picker loads a key into the box. It is not a second place a key can
-    // live, so it resets itself once read: the textarea is then the only source
-    // of truth, editing or clearing it cannot leave a stale filename behind, and
-    // picking the same file twice still fires a change event.
+    // The textarea remains the source of truth after a file is read. Resetting
+    // the picker also allows the same file to be selected again.
     readKeyFile(event) {
       const input = event.target;
       const file = input.files && input.files[0];
@@ -170,15 +178,11 @@ function securitySettings(sshPage = false) {
       });
     },
 
-    // Mirrors valid_key_syntax in ssh_keys.sh. The root helper stays the
-    // authority and re-checks everything; this only spares the round trip and,
-    // more to the point, spares typing both passwords to be told the key was
-    // never usable. Keep the two in step: the helper's rules are the spec.
+    // Catch only mistakes that are obvious without parsing a public key. The
+    // root helper remains the single authority for syntax and duplication.
     validateKey() {
       const line = this.publicKey.trim();
       this.keyError = '';
-      this.keyDuplicate = false;
-      this.pastedFingerprint = '';
       if (!line) return;
       if (line.length > 8192) {
         this.keyError = 'That key is longer than 8192 characters.';
@@ -186,67 +190,11 @@ function securitySettings(sshPage = false) {
       }
       if (/BEGIN [A-Z ]*PRIVATE KEY/.test(line)) {
         this.keyError = 'That is a private key. Paste the matching .pub file instead.';
-        return;
       }
-      const parts = line.split(/\s+/);
-      const type = parts[0];
-      const blob = parts[1];
-      const allowed = [
-        'ssh-ed25519', 'ssh-rsa',
-        'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
-      ];
-      // The algorithm must be the first field, which is also what rejects a
-      // line carrying authorized_keys options such as command= or permitopen=.
-      if (!allowed.includes(type)) {
-        this.keyError = 'Unsupported or malformed key. Use an Ed25519, ECDSA, or RSA public key with no options.';
-        return;
-      }
-      if (!blob || !/^[A-Za-z0-9+/=]+$/.test(blob)) {
-        this.keyError = 'The key data is missing or malformed.';
-        return;
-      }
-      const comment = parts.slice(2).join(' ');
-      if (comment.length > 80) {
-        this.keyError = 'The comment is longer than 80 characters.';
-        return;
-      }
-      if (comment && !/^[ -~]+$/.test(comment)) {
-        this.keyError = 'The comment contains characters that are not allowed.';
-        return;
-      }
-      this.fingerprintOf(blob).then((fingerprint) => {
-        // The field may have changed while the digest was computing.
-        if (this.publicKey.trim() !== line) return;
-        this.pastedFingerprint = fingerprint;
-        if (fingerprint && this.keys.some((k) => k.fingerprint === fingerprint)) {
-          this.keyDuplicate = true;
-          this.keyError = 'This key is already authorized.';
-        }
-      });
-    },
-
-    // Same value ssh-keygen prints: SHA-256 of the decoded blob, base64, with
-    // the padding stripped. Returns '' where SubtleCrypto is unavailable, and
-    // the server-side duplicate check then does the work as before.
-    fingerprintOf(blob) {
-      if (!window.crypto || !window.crypto.subtle) return Promise.resolve('');
-      let bytes;
-      try {
-        const binary = atob(blob);
-        bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-      } catch (e) {
-        return Promise.resolve('');
-      }
-      return crypto.subtle.digest('SHA-256', bytes)
-        .then((digest) => {
-          const b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(digest)));
-          return 'SHA256:' + b64.replace(/=+$/, '');
-        })
-        .catch(() => '');
     },
 
     get keyReady() {
-      return this.publicKey.trim() !== '' && !this.keyError && !this.keyDuplicate;
+      return this.publicKey.trim() !== '' && !this.keyError;
     },
 
     // The listing gives a raw algorithm ("ssh-ed25519", "ecdsa-sha2-nistp256").
@@ -258,35 +206,73 @@ function securitySettings(sshPage = false) {
       return type.replace(/^ssh-/, '').toUpperCase();
     },
 
-    // A key with no comment used to fall back to its algorithm, which then
-    // appeared twice in the same row: once as the title and again beneath it.
     keyTitle(key) {
       return key.comment || 'No comment';
     },
 
-    // Both key operations grant or revoke root access, so both ask for the two
-    // passwords at the moment they are taken rather than from fields parked on
-    // the card. The dialog stays open on failure with the entry intact.
-    promptCredentials({ title, message, detail, action, developerRequired = true, run, onSuccess }) {
-      this.$store.credentialModal.open({
-        title,
-        message,
-        detail,
-        action,
-        developerRequired,
-        onSubmit: (admin, developer) =>
-          run(admin, developer).then((data) => {
-            if (!data.ok) {
-              const err = new Error(data.error || 'The change could not be completed.');
-              // A per-client lockout cannot be retried away, so the dialog stops
-              // offering the attempt rather than letting it fail repeatedly.
-              err.locked = /Too many failed attempts/i.test(data.error || '');
-              throw err;
-            }
-            if (onSuccess) onSuccess();
-            return this.loadSecurity();
-          }),
+    closeCredentials() {
+      if (this.credentialBusy) return;
+      ['cred-admin', 'cred-dev'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
       });
+      this.credentialAdmin = '';
+      this.credentialDeveloper = '';
+      this.credentialOpen = false;
+      this.credentialError = '';
+      this.credentialLocked = false;
+      this.credentialSubmit = null;
+    },
+
+    submitCredentials() {
+      if (this.credentialBusy || this.credentialLocked) return;
+      if (!this.credentialAdmin || (this.credentialDeveloperRequired && !this.credentialDeveloper)) {
+        this.credentialError = this.credentialDeveloperRequired
+          ? 'Enter both passwords.'
+          : 'Enter your administrator password.';
+        return;
+      }
+      this.credentialBusy = true;
+      this.credentialError = '';
+      Promise.resolve(this.credentialSubmit(this.credentialAdmin, this.credentialDeveloper))
+        .then(() => {
+          this.credentialBusy = false;
+          this.closeCredentials();
+        })
+        .catch((err) => {
+          this.credentialError = err.message || 'The change could not be completed.';
+          this.credentialLocked = err.locked === true;
+          this.credentialBusy = false;
+        });
+    },
+
+    promptCredentials({ title, message, detail, action, developerRequired = true, run, onSuccess }) {
+      this.credentialTitle = title;
+      this.credentialMessage = message;
+      this.credentialDetail = detail || '';
+      this.credentialAction = action;
+      this.credentialDeveloperRequired = developerRequired;
+      this.credentialAdmin = '';
+      this.credentialDeveloper = '';
+      this.credentialError = '';
+      this.credentialBusy = false;
+      this.credentialLocked = false;
+      this.credentialSubmit = (admin, developer) =>
+        run(admin, developer).then((data) => {
+          if (!data.ok) {
+            const err = new Error(data.error || 'The change could not be completed.');
+            err.locked = /Too many failed attempts/i.test(data.error || '');
+            throw err;
+          }
+          if (onSuccess) onSuccess();
+          return this.loadSecurity().then(() => {
+            if (data.warning === 'ssh_key_activation') {
+              this.$store.errorModal.open('The key was saved, but SSH could not be activated and remains stopped.');
+            }
+          });
+        });
+      this.credentialOpen = true;
+      setTimeout(() => document.getElementById('cred-admin')?.focus(), 0);
     },
 
     keyActionBlocked() {
@@ -318,7 +304,7 @@ function securitySettings(sshPage = false) {
       this.promptCredentials({
         title: 'Add this key?',
         message: 'A key grants root access over SSH, so both passwords are required.',
-        detail: this.pastedFingerprint || (publicKey.length > 90 ? publicKey.slice(0, 90) + '…' : publicKey),
+        detail: publicKey.length > 90 ? publicKey.slice(0, 90) + '…' : publicKey,
         action: 'Add key',
         run: (admin, developer) =>
           this.securityAction({
@@ -336,9 +322,6 @@ function securitySettings(sshPage = false) {
       });
     },
 
-    // Not credential gated: enabling SSH grants nothing without an authorized
-    // key, and a key still needs both passwords. See the settings arm of
-    // ssh_keys.sh for the reasoning and the accepted consequence.
     saveSshSettings() {
       const port = Number(this.sshPort);
       if (!this.sshSettingsReady) {

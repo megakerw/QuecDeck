@@ -24,7 +24,7 @@ CHECKSUMMED_FILES=(
   quecdeck/script/sshd-policy-lib.sh
   quecdeck/script/write_htpasswd.sh
   quecdeck/script/change_password.sh
-  quecdeck/script/ssh_keys.sh
+  quecdeck/script/ssh_access.sh
   quecdeck/script/check_password.sh
   quecdeck/script/firewall.sh
   quecdeck/systemd/firewall.service

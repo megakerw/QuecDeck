@@ -16,7 +16,7 @@ PIDFile=/opt/var/run/sshd.pid
 # sync with the comment there if either pattern changes.
 ExecStartPre=/bin/systemctl is-active firewall
 ExecStartPre=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh
-ExecStartPre=/usrdata/quecdeck/script/ssh_keys.sh ready
+ExecStartPre=/usrdata/quecdeck/script/ssh_access.sh ready
 ExecStartPre=/opt/sbin/sshd -t
 ExecStart=/opt/sbin/sshd -D
 # SIGHUP makes sshd re-exec and re-read its configuration, but a reload does not
