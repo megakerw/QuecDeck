@@ -61,8 +61,8 @@ done
 echo ""
 echo "[Prop 1] www-data writes a session file. auth.lua accepts it as admin"
 _now=$(date +%s)
-if "$SUDO" -u www-data sh -c "printf 'user=admin\nrole=admin\ncreated=%s\nlast_access=%s\n' $_now $_now > $SESSIONS/$PROOF_TOKEN" 2>/dev/null; then
-    _code=$(/opt/bin/wget -S --max-redirect=0 -O /dev/null --no-check-certificate \
+if "$SUDO" -u www-data sh -c "umask 077; mkdir -p $SESSIONS && printf 'user=admin\nrole=admin\ncreated=%s\nlast_access=%s\n' $_now $_now > $SESSIONS/$PROOF_TOKEN" 2>/dev/null; then
+    _code=$(/opt/bin/wget --timeout=5 --tries=1 -S --max-redirect=0 -O /dev/null --no-check-certificate \
         --header="Cookie: session=$PROOF_TOKEN" "https://$IP/cgi-bin/get_system_status" 2>&1 \
         | grep -m1 -oE 'HTTP/[0-9.]+ [0-9]+' | awk '{print $2}')
     case "$_code" in
@@ -72,14 +72,16 @@ if "$SUDO" -u www-data sh -c "printf 'user=admin\nrole=admin\ncreated=%s\nlast_a
     esac
     rm -f "$SESSIONS/$PROOF_TOKEN"
 else
-    note "could not write the test session file as www-data -- $SESSIONS may not be www-data-writable on this build. That alone would REFUTE prop 1."
+    note "could not create the session directory and proof file as www-data"
 fi
 
 echo ""
 echo "=================================================================="
 echo " Results: $pass safe, $fail vulnerable, $warn notes"
-if [ "$fail" -eq 0 ]; then
+if [ "$fail" -eq 0 ] && [ "$warn" -eq 0 ]; then
     echo " VERDICT: forged sessions are rejected."
+elif [ "$fail" -eq 0 ]; then
+    echo " VERDICT: inconclusive. Review the notes above."
 else
     echo " VERDICT: forgery succeeded. This is the EXPECTED result today and"
     echo "          reflects an open design decision, not a new regression."

@@ -39,7 +39,7 @@ IP=${IP:-192.168.225.1}
 # probe <path>: prints "<status>|<location>" of the FIRST response (redirects
 # are not followed, so a 302 is seen as a 302, not its destination's 200).
 probe() {
-    _out=$(/opt/bin/wget -S --max-redirect=0 -O /dev/null --no-check-certificate "https://$IP$1" 2>&1)
+    _out=$(/opt/bin/wget --timeout=5 --tries=1 -S --max-redirect=0 -O /dev/null --no-check-certificate "https://$IP$1" 2>&1)
     _st=$(printf '%s\n' "$_out" | grep -m1 -oE 'HTTP/[0-9.]+ [0-9]+' | awk '{print $2}')
     _loc=$(printf '%s\n' "$_out" | grep -m1 -iE '^ *Location:' | awk '{print $2}')
     printf '%s|%s' "${_st:-none}" "$_loc"

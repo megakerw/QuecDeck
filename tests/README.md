@@ -53,6 +53,11 @@ commands safely unavailable, it checks the journal for the startup-minute skip
 and confirms no reboot dispatch was attempted, then restores the original
 schedule and daemon state.
 
+`device-test-ssh-helper-failclosed.sh` briefly moves the installed SSH access
+helper and invokes the firewall script directly. It confirms that managed SSH
+state without its helper is rejected before any IPv4 or IPv6 rule changes. The
+helper is restored by a trap and no service is restarted.
+
 `device-test-update-monitoring.sh` is a two-phase manual release acceptance
 test. Run `prepare`, perform a normal update, then run `verify`. Its observer
 checks that neither monitoring worker returns between the release-tree swap and
