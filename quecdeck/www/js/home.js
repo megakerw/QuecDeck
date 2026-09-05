@@ -48,6 +48,7 @@ function processAllInfos() {
     activeSim: "No SIM",
     networkProvider: "N/A",
     mccmnc: "00000",
+    imsi: null,
     apn: "Unknown",
     networkMode: "Disconnected",
     bands: "Unknown Bands",
@@ -450,6 +451,28 @@ function processAllInfos() {
             this.mccmnc = atField(qspn_line, 4) || "00000";
     },
 
+    // Pure parser: pulls the IMSI out of the device_sim response. +CIMI answers
+    // with a bare digit line, no prefix, so match on shape. Absent with no SIM,
+    // which leaves imsi null and the roaming row Unknown.
+    applyDeviceSim(simLines) {
+      this.imsi = simLines.map(l => l.trim()).find(l => /^\d{14,15}$/.test(l)) || null;
+    },
+
+    // Home network vs serving network, without asking the modem which it is:
+    // the registration command that carries roaming state differs by RAT
+    // (+CGREG under NSA, +C5GREG under SA), while this holds for both.
+    //
+    // MNC is 2 or 3 digits depending on country, and the IMSI gives no way to
+    // tell where it ends. The serving PLMN does: +QSPN's RPLMN is the same
+    // MCC+MNC concatenation, so its length is the width to slice off the IMSI.
+    // When the two countries disagree on MNC width the slice is wrong, but then
+    // the MCCs already differ and the verdict is Roaming either way.
+    get roamingStatus() {
+      const plmn = this.mccmnc;
+      if (!this.imsi || !plmn || plmn === "00000") return "Unknown";
+      return this.imsi.slice(0, plmn.length) === plmn ? "Home network" : "Roaming";
+    },
+
     // Pure parser: applies the modem_conn AT response (already split into
     // lines) to APN/IP state. Called by fetchDashboard.
     applyModemConn(connLines) {
@@ -620,6 +643,7 @@ function processAllInfos() {
           const s = parseEnvelope(text);
           if (s.modem_stats) { try { this.applyModemStats(s.modem_stats.split("\n")); } catch (e) { console.error("applyModemStats:", e); } }
           if (s.modem_conn)  { try { this.applyModemConn(s.modem_conn.split("\n")); } catch (e) { /* keep prior values */ } }
+          if (s.device_sim)  { try { this.applyDeviceSim(s.device_sim.split("\n")); } catch (e) { /* keep prior values */ } }
           if (s.system)      { try { this.applySystem(JSON.parse(s.system)); } catch (e) { /* keep prior values */ } }
         })
         .catch((error) => {

@@ -49,7 +49,12 @@
         + '<path d="M5.8 8.6h4.4M5.8 10.9h4.4"/>') },
       { href: '/developer.html', label: 'Developer', icon: icon(
         '<path d="M5.4 4.8 2.2 8l3.2 3.2"/><path d="M10.6 4.8 13.8 8l-3.2 3.2"/>') },
-    ] },
+    ],
+    // Rebooting is a system operation, not a LAN utility, so it ends this
+    // group rather than sitting among the modem toggles on settings.html.
+    // Not a destination, so it renders as a button below a divider.
+    action: { id: 'nav-reboot', label: 'Reboot', icon: icon(
+      '<path d="M13.3 5.6a5.8 5.8 0 1 1-2.4-2.6"/><path d="M13.6 2.2v3.6h-3.6"/>') } },
   ];
   const path = window.location.pathname;
 
@@ -96,9 +101,15 @@
         }).join('');
       }
 
-      const items = group.links.map(function (link) {
+      let items = group.links.map(function (link) {
         return '<li>' + renderItem(link, 'dropdown-item') + '</li>';
       }).join('');
+      if (group.action) {
+        items += '<li><hr class="dropdown-divider"></li>'
+          + '<li><button type="button" class="dropdown-item app-reboot-item"'
+          + ' id="' + group.action.id + '">' + group.action.icon
+          + '<span>' + escapeText(group.action.label) + '</span></button></li>';
+      }
       const open = group.links.some(function (link) { return isActive(link.href); });
 
       return '<li class="nav-item dropdown">'
@@ -191,6 +202,38 @@
       if (toggle) toggle.classList.add('active');
     });
   });
+
+  // The confirm overlay is z-index 1000, under the offcanvas (1045) and its
+  // backdrop (1040), so in the drawer the dialog would open behind both. Close
+  // the drawer first. Above the breakpoint there is no instance to hide.
+  function closeDrawer() {
+    const drawer = document.getElementById('appNav');
+    const instance = drawer && window.bootstrap
+      && window.bootstrap.Offcanvas.getInstance(drawer);
+    if (instance) instance.hide();
+  }
+
+  const rebootButton = document.getElementById('nav-reboot');
+  if (rebootButton) {
+    rebootButton.addEventListener('click', function () {
+      // Alpine is deferred, so the stores exist by the time anything is
+      // clickable. Bail rather than throw if the page loaded without it.
+      if (!window.Alpine) return;
+      closeDrawer();
+      window.Alpine.store('confirmModal').open(
+        'This will reboot the modem.',
+        function () {
+          // The reboot drops the connection before the response arrives. The
+          // CGI schedules it server-side, so a failed fetch is expected here.
+          postForm('/cgi-bin/set_setting', { action: 'reboot' }).catch(function () {});
+          window.Alpine.store('waitModal').start('Rebooting...', REBOOT_WAIT_SECS, function () {
+            window.location.reload();
+          });
+        },
+        'Reboot'
+      );
+    });
+  }
 
   const logoutButton = document.querySelector('.logout-btn');
   if (logoutButton) {

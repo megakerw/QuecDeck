@@ -314,7 +314,7 @@ unset _p
 t "credential failures are counted per class" "yes" \
   "$(grep -q 'auth_class=admin' quecdeck/www/cgi-bin/manage_security && grep -q 'auth_class=dev' quecdeck/www/cgi-bin/manage_security && grep -q 'auth_class=keys' quecdeck/www/cgi-bin/manage_security && grep -q 'security-auth-failures/\$auth_class' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
 t "key operations do not share a counter with administrator-only actions" "yes" \
-  "$(_c=$(sed -n '/^case "\$action" in$/,/^esac$/p' quecdeck/www/cgi-bin/manage_security | head -8); printf '%s\n' "$_c" | grep -q 'change_password|ssh_settings) auth_class=admin' && printf '%s\n' "$_c" | grep -q 'add_key|remove_key)           auth_class=keys' && echo yes || echo no)"
+  "$(_c=$(sed -n '/^case "\$action" in$/,/^esac$/p' quecdeck/www/cgi-bin/manage_security | head -8); printf '%s\n' "$_c" | grep -q 'change_password)  *auth_class=admin' && printf '%s\n' "$_c" | grep -q 'change_developer_password)  *auth_class=dev' && printf '%s\n' "$_c" | grep -q 'add_key|remove_key|ssh_settings)  *auth_class=keys' && echo yes || echo no)"
 # An absent listenaddress means every interface, so the gate must require a
 # positive result rather than only rejecting explicit wildcards.
 t "the SSH bind gate requires a listener, not just a non-wildcard one" "yes" \
@@ -325,10 +325,18 @@ t "SSH policy lines are compared literally" "yes" \
 t "the credential helper header matches what it reads" "yes" \
   "$(! grep -q 'Both modes read the current administrator password' quecdeck/script/change_password.sh && grep -q 'Reads only the current value of the credential being changed' quecdeck/script/change_password.sh && echo yes || echo no)"
 unset _c _k
-t "SSH settings require the administrator password" "yes" \
-  "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_access.sh); printf '%s\n' "$_settings" | grep -q 'verify_admin_credential' && printf '%s\n' "$_settings" | grep -q 'ADMIN_PASSWORD' && echo yes || echo no)"
-t "SSH settings do not ask for the developer password" "yes" \
-  "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_access.sh); ! printf '%s\n' "$_settings" | grep -q 'verify_credentials' && ! sed -n '/^    ssh_settings)/,/;;/p' quecdeck/www/cgi-bin/manage_security | grep -q 'developer_password' && grep -q 'developerRequired: false' quecdeck/www/js/security.js && echo yes || echo no)"
+# Two lock paths would pass every other check while excluding nothing: a key or
+# settings change would land between an install's package step and its restart.
+t "SSH changes serialise on one lock across both helpers" "yes" \
+  "$( _a=$(sed -n 's/^LOCK=\$ROOT_HOME\///p' quecdeck/script/ssh_access.sh); _b=$(sed -n 's/^LOCK=\/usrdata\/root\///p' quecdeck/script/install_sshd.sh); [ -n "$_a" ] && [ "$_a" = "$_b" ] && grep -q 'flock_wait 9 ' quecdeck/script/install_sshd.sh && [ "$(grep -c 'take_lock || exit' quecdeck/script/install_sshd.sh)" -eq 6 ] && ! sed -n '/^uninstall_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh | grep -qF "$_a" && echo yes || echo no)"
+unset _a _b
+t "SSH settings require both credentials" "yes" \
+  "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_access.sh); printf '%s\n' "$_settings" | grep -q 'verify_credentials "\$ADMIN_PASSWORD" "\$DEV_PASSWORD"' && printf '%s\n' "$_settings" | grep -q 'IFS= read -r DEV_PASSWORD' && printf '%s\n' "$_settings" | grep -q 'htpasswd_dev \] || exit 8' && ! grep -q 'verify_admin_credential' quecdeck/script/ssh_access.sh && echo yes || echo no)"
+# One rule for the page: a reader should never have to work out which change
+# takes one password and which takes two. The read-only check is the exception,
+# since it refreshes the package index and alters nothing.
+t "every change on the SSH page asks for both passwords" "yes" \
+  "$( ! grep -q 'developerRequired: false' quecdeck/www/js/security.js && sed -n '/^    ssh_settings)/,/;;/p' quecdeck/www/cgi-bin/manage_security | grep -q 'developer_password' && grep -q 'install|uninstall|update) need_developer=1' quecdeck/www/cgi-bin/trigger_sshd_action && grep -q 'check)  *need_developer=0 ; auth_class=""' quecdeck/www/cgi-bin/trigger_sshd_action && echo yes || echo no)"
 # Anchored on the privileged call, not on a case statement: the classification
 # block above the dispatch is also a "case $action in".
 t "every security action requires a current password" "yes" \

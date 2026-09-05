@@ -244,7 +244,7 @@ preflight_check() {
 
     _pf_checksums=/run/quecdeck/preflight.sha256
 
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "$_pf_checksums" "$GITROOT/quecdeck/checksums.sha256" || {
+    /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o "$_pf_checksums" "$GITROOT/quecdeck/checksums.sha256" || {
         echo "FATAL: Could not download release files. Check network connectivity and that the release tag exists."
         rm -f "$_pf_checksums"
         return 1
@@ -352,7 +352,7 @@ stage_release() {
     _attempt=1
     while [ "$_attempt" -le 4 ]; do
         rm -f "$RELEASE_TARBALL"
-        if /opt/bin/wget --timeout=60 --tries=1 -q -O "$RELEASE_TARBALL" "$_tarball_url" && [ -s "$RELEASE_TARBALL" ]; then
+        if /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 60 -o "$RELEASE_TARBALL" "$_tarball_url" && [ -s "$RELEASE_TARBALL" ]; then
             _tarball_ok=1
             break
         fi
@@ -533,7 +533,10 @@ stage_release() {
     _lighttpd_pkgs="sudo lighttpd lighttpd-mod-cgi lighttpd-mod-magnet lighttpd-mod-openssl"
     _lighttpd_needs_install=0
     _lighttpd_index_fresh=1
-    timeout 120 /opt/bin/opkg update >/dev/null 2>&1 || {
+    # Existing supported installs already have wget-ssl and CA certificates.
+    # Migrate their official feed before refreshing; never retry over HTTP.
+    sed -i 's|http://bin\.entware\.net/|https://bin.entware.net/|g' /opt/etc/opkg.conf || return 1
+    PATH=/opt/bin:/opt/sbin:$PATH timeout 120 /opt/bin/opkg update >/dev/null 2>&1 || {
         echo -e "\e[1;33mWARNING: Could not refresh the opkg package index. Proceeding with a presence-only check (version-staleness can't be verified this run).\e[0m"
         _lighttpd_index_fresh=0
     }
@@ -844,7 +847,7 @@ swap_in_release() {
     # restart the service (a restart is happening in this window anyway).
     if [ "$_lighttpd_needs_install" = "1" ]; then
         echo "Installing lighttpd packages..."
-        timeout 300 /opt/bin/opkg install $_lighttpd_pkgs || { echo -e "\e[1;31mFailed to install lighttpd packages (or it timed out).\e[0m"; result_lighttpd="FAILED"; return 1; }
+        PATH=/opt/bin:/opt/sbin:$PATH timeout 300 /opt/bin/opkg install $_lighttpd_pkgs || { echo -e "\e[1;31mFailed to install lighttpd packages (or it timed out).\e[0m"; result_lighttpd="FAILED"; return 1; }
         result_lighttpd="UPDATED"
     fi
 

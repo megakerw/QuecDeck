@@ -8,7 +8,7 @@ VERSION_FILE=/usrdata/quecdeck/version
 current=$(cat "$VERSION_FILE" 2>/dev/null | tr -d '[:space:]')
 [ -z "$current" ] && current="unknown"
 
-api_response=$(/opt/bin/wget --timeout=10 --tries=1 -q -O - \
+api_response=$(/usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 5 --max-time 10 \
     "https://api.github.com/repos/megakerw/QuecDeck/releases/latest" 2>/dev/null)
 
 if [ -z "$api_response" ]; then

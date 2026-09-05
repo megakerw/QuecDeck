@@ -227,7 +227,24 @@ t "updater starts inactive enabled ready SSH" "reset-failed sshd,start sshd," \
   "$(_ssh_reconcile_case 0 1 1)"
 unset -f _ssh_reconcile_case
 t "web updater requires initial status write" "yes" \
-  "$(grep -q '^if ! write_status running; then$' quecdeck/script/run_update.sh && echo yes || echo no)"
+  "$(grep -q '^if ! write_kind quecdeck || ! write_status running; then$' quecdeck/script/run_update.sh && echo yes || echo no)"
+t "SSH action unit is the only entry to the privileged run mode" "yes" \
+  "$(grep -q 'QD_SERVICE_UNIT:-}" != "1" \]; then' quecdeck/script/run_update.sh && grep -q '^Environment=QD_SERVICE_UNIT=1$' quecdeck/script/run_update.sh && _refuse=$(sed -n '/QD_SERVICE_UNIT:-}" != "1" \]; then/,/^    fi$/p' quecdeck/script/run_update.sh) && ! printf '%s\n' "$_refuse" | grep -q 'abort\|write_status' && echo yes || echo no)"
+t "SSH actions and QuecDeck updates exclude each other" "yes" \
+  "$([ "$(grep -c 'for _unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd; do' quecdeck/script/run_update.sh)" -eq 2 ] && grep -q 'install_quecdeck_sshd 2>/dev/null)" = "failed"' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
+t "SSH action failure carries the installer exit code to the UI" "yes" \
+  "$(grep -q 'write_status "failed:code:\$rc"' quecdeck/script/run_update.sh && grep -q 'failed:code:\*)' quecdeck/www/cgi-bin/get_update_log && grep -q '"code":%s' quecdeck/www/cgi-bin/get_update_log && grep -q 'case "\$code" in ..|\*\[!0-9\]\*) code=0' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
+t "a stale SSH check answer cannot outlive the action that changed it" "yes" \
+  "$(grep -q '\[ "\$SSHD_ACTION" = check \] || rm -f "\$SSHD_CHECK"' quecdeck/script/run_update.sh && grep -q 'rm -f "\$STATUS_FILE" "\$KIND_FILE"' quecdeck/script/run_update.sh && echo yes || echo no)"
+t "a QuecDeck version is reported only for a QuecDeck update" "yes" \
+  "$(grep -q '\[ "\$kind" = "quecdeck" \] &&' quecdeck/www/cgi-bin/get_update_log && grep -q 'quecdeck|sshd:install|sshd:update|sshd:uninstall|sshd:check)' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
+. tests/host/support/update-auth.sh
+# A new installer code that nobody maps would silently read as "could not be
+# completed", which is the one message that means we do not know what happened.
+t "every installer exit code is named by the SSH page" "yes" \
+  "$( _missing=0; for _c in $(grep -oE '^RC_[A-Z_]+=[0-9]+' quecdeck/script/install_sshd.sh | cut -d= -f2 | grep -vxE '0|1'); do grep -q "case $_c:" quecdeck/www/js/security.js || _missing=1; done; [ "$_missing" = 0 ] && echo yes || echo no)"
+t "the SSH check endpoint never runs opkg itself" "yes" \
+  "$(! grep -q '/opt/bin/opkg' quecdeck/www/cgi-bin/get_sshd_check && ! grep -q 'sudo' quecdeck/www/cgi-bin/get_sshd_check && grep -q 'CHECK_FILE=/run/quecdeck/sshd-check' quecdeck/www/cgi-bin/get_sshd_check && echo yes || echo no)"
 t "web updater requires log preparation" "yes" \
   "$(grep -q '^if ! : > "\$LOG" || ! chmod 644 "\$LOG"; then$' quecdeck/script/run_update.sh && echo yes || echo no)"
 t "web updater requires fetch-unit reload" "yes" \
@@ -278,3 +295,4 @@ t "uninstall requires writable remount first" "yes" \
   "$(sed -n '/^uninstall_quecdeck_components() {/,/# Remove any transient update unit/p' quecdeck.sh | grep -q '^    if ! remount_rw; then$' && echo yes || echo no)"
 t "uninstall refuses to race active update units" "2" \
   "$(sed -n '/^uninstall_quecdeck_components() {/,/echo.*Uninstalling QuecDeck/p' quecdeck.sh | grep -o 'install_quecdeck\(_fetch\)\?' | sort -u | wc -l | tr -d ' ')"
+. tests/host/support/entware-bootstrap.sh

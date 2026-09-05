@@ -45,10 +45,12 @@ Follow [iamromulan's guide](https://github.com/iamromulan/cellular-modem-wiki/bl
 Run the following command on your modem through ADB shell or SSH:
 
 ```sh
-cd /tmp && wget -O quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDeck/main/quecdeck.sh && chmod +x quecdeck.sh && ./quecdeck.sh && cd /
+cd /tmp && /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL -o quecdeck.sh https://raw.githubusercontent.com/megakerw/QuecDeck/main/quecdeck.sh && chmod +x quecdeck.sh && ./quecdeck.sh && cd /
 ```
 
 Select **Install/Update QuecDeck** from the menu. On first access, a setup wizard will guide you through setting your passwords.
+
+Downloads require the firmware's curl and CA certificates. The Entware bootstrap uses a temporary curl-backed wget wrapper to download its initial package index and install `wget-ssl`, `ca-certificates`, and `entware-opt` over verified HTTPS. It then removes the wrapper and uses Entware's wget for subsequent HTTPS downloads, with no HTTP fallback. For manual Entware commands, use `PATH=/opt/bin:/opt/sbin:$PATH opkg ...` so opkg uses Entware's TLS-capable wget.
 
 This release starts a new installation generation. If an older release is installed, run the installer command above and uninstall QuecDeck and Entware, reboot, then run it again to install QuecDeck. Direct updates from older installations are rejected before installed files are changed.
 

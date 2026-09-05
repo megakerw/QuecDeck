@@ -420,6 +420,24 @@ html {
   background: var(--bs-primary-bg-subtle);
 }
 
+/* The one destructive entry in the nav, in the same --bs-danger as the buttons
+   that carry the action elsewhere. Both states are written at
+   .app-nav .dropdown-item specificity: the plain :hover rule above sets
+   --bs-body-color at 0,3,0 and would otherwise take the colour back off on
+   hover. The background still comes from that rule. */
+.app-nav .dropdown-item.app-reboot-item,
+.app-nav .dropdown-item.app-reboot-item:hover {
+  color: var(--bs-danger);
+}
+
+/* This menu sets --bs-dropdown-padding-y: 0, so every row sits flush against
+   its neighbours and the menu edges. Bootstrap's 0.5rem divider margins are
+   then the only gaps in the list, and they leave a hovered row's fill floating
+   short of the rule above it. */
+.app-nav .dropdown-divider {
+  margin: 0;
+}
+
 /* Nav and logout glyphs are stroked at 1.5, so they hold their weight against
    the label rather than blotting next to it. */
 .app-nav svg,
@@ -574,6 +592,15 @@ html {
     border-radius: 0;
     font-size: 0.9rem;
     text-align: left;
+  }
+
+  /* The dropdown divider above Reboot and .app-logout's border-top below it are
+     two rules one row apart, which boxes Reboot in. On the bar there is only
+     one, because the menu is its own surface. The drawer delimits groups with
+     its small-caps headings rather than rules, so drop the divider here and let
+     Reboot end the System block on its colour alone. */
+  .app-nav .dropdown-divider {
+    display: none;
   }
 
   .app-nav-panel .app-nav {
@@ -907,6 +934,33 @@ html {
   padding-top: 1rem;
 }
 
+/* Footer stats. Micro-label over the value, reusing the .panel-title and
+   .stat-label typography so the strip stays in the product's existing voice.
+   The value carries tabular figures: both the clock and the uptime tick, and
+   proportional digits make them jitter on every poll. */
+.foot-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.foot-stat-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  line-height: 1.2;
+}
+
+.foot-stat-value {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--bs-body-color);
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
 .panel-title {
   font-size: 0.75rem;
   font-weight: 700;
@@ -976,10 +1030,14 @@ html {
   font-size: 1.25rem;
 }
 
-/* When the last direct child is a list-group (no button row below), remove the
-   panel's own bottom padding. The last item's natural padding provides the
-   visual breathing room. */
-.panel-section:has(> ul.list-group:last-child) {
+/* When the last direct child is a list-group or an info table (no button row
+   below), remove the panel's own bottom padding. The last item's natural
+   padding provides the visual breathing room.
+   table:not(.table) is the same selector that styles these tables above, so
+   this covers the dashboard's two info panels and leaves the Bootstrap .table
+   panels on logs, scanner and sms alone. */
+.panel-section:has(> ul.list-group:last-child),
+.panel-section:has(> table:not(.table):last-child) {
   padding-bottom: 0;
 }
 

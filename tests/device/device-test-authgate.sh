@@ -128,6 +128,19 @@ for _p in '/cgi-bin/../auth.lua' '/cgi-bin/%2e%2e/auth.lua' '/..%2fauth.lua'; do
     esac
 done
 
+# The CGI-name guard runs before session lookup, so these must return 403
+# even without a cookie. A 302 would mean the alias reached session handling
+# and could skip the exact-path developer check with a valid session.
+echo ""
+echo "[Check 5] CGI path suffixes rejected before authentication"
+for _p in '/cgi-bin/user_atcommand/extra' '/cgi-bin/set_cell_lock/' '/cgi-bin/auth_login/extra'; do
+    _r=$(probe "$_p")
+    case "$_r" in
+        403\|*) ok "CGI alias '$_p' rejected" ;;
+        *) bad "CGI alias '$_p' returned '$_r' (expected 403)" ;;
+    esac
+done
+
 # ---- verdict ------------------------------------------------------------
 echo ""
 echo "=================================================================="

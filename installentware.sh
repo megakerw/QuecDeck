@@ -14,6 +14,13 @@ LOADER=ld-linux.so.3
 GLIBC=2.27
 PRE_OPKG_PATH=$(which opkg)
 
+# Verified on stock firmware: curl and its CA store do not depend on Entware.
+# Refuse unsupported firmware before changing mounts or the package manager.
+[ -x /usr/bin/curl ] && [ -s /etc/ssl/certs/ca-certificates.crt ] || {
+    echo "Stock curl and CA certificates are required for HTTPS bootstrap." >&2
+    exit 1
+}
+
 # Remount filesystem as read-write
 mount -o remount,rw /
 trap 'mount -o remount,ro /' EXIT  # ensures RO is restored on any exit path
@@ -82,20 +89,63 @@ do
 done
 
 echo -e '\033[32mInfo: opkg package manager deployment...\033[0m'
-# KNOWN LIMITATION: opkg and opkg.conf are fetched over plain HTTP with no
-# integrity check (Entware ships no signed installer, and the modem's wget can't
-# validate TLS). This is used once during the first install. The exposure is a
-# WAN-path MITM during
-# bootstrap. To close: pin their sha256 here, or vendor opkg in the repo and pull
-# it over the GitHub channel with a hash check, like atcli.
-URL=http://bin.entware.net/${ARCH}/installer
-wget $URL/opkg -O /opt/bin/opkg || { echo -e "\e[1;31mFailed to download opkg binary.\e[0m"; exit 1; }
+URL=https://bin.entware.net/${ARCH}/installer
+/usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 60 --retry 1 -o /opt/bin/opkg "$URL/opkg" || { echo -e "\e[1;31mFailed to download opkg binary.\e[0m"; exit 1; }
 chmod 755 /opt/bin/opkg
-wget $URL/opkg.conf -O /opt/etc/opkg.conf || { echo -e "\e[1;31mFailed to download opkg.conf.\e[0m"; exit 1; }
+/usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o /opt/etc/opkg.conf "$URL/opkg.conf" || { echo -e "\e[1;31mFailed to download opkg.conf.\e[0m"; exit 1; }
+
+bootstrap_tls_packages() {
+    # Scope PATH and cleanup to a subshell, preserving the outer remount trap.
+    (
+        umask 077
+        _bootstrap_dir=$(mktemp -d /run/quecdeck-entware.XXXXXX) || exit 1
+        trap 'rm -rf "$_bootstrap_dir"' EXIT
+        trap 'exit 1' HUP INT TERM
+        cat > "$_bootstrap_dir/wget" <<'CURL_WGET'
+#!/bin/sh
+# Only the wget arguments emitted by opkg_download.c are supported.
+output= url= timeout=60
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -q) shift ;;
+        -O)
+            [ "$#" -ge 2 ] && [ -z "$output" ] || exit 2
+            output=$2; shift 2 ;;
+        --timeout)
+            [ "$#" -ge 2 ] || exit 2
+            case "$2" in ''|*[!0-9]*|0) exit 2 ;; esac
+            timeout=$2; shift 2 ;;
+        -Y)
+            [ "$#" -ge 2 ] && [ "$2" = on ] || exit 2
+            shift 2 ;; # curl honours opkg's exported proxy variables.
+        https://*)
+            [ -z "$url" ] || exit 2
+            url=$1; shift ;;
+        *) echo "Unsupported bootstrap wget argument: $1" >&2; exit 2 ;;
+    esac
+done
+[ -n "$output" ] && [ -n "$url" ] || exit 2
+unset LD_LIBRARY_PATH LD_PRELOAD
+exec /usr/bin/curl -q --proto '=https' --proto-redir '=https' \
+    --cacert /etc/ssl/certs/ca-certificates.crt -fsSL \
+    --connect-timeout 15 --max-time "$timeout" --retry 1 -o "$output" -- "$url"
+CURL_WGET
+        chmod 700 "$_bootstrap_dir/wget" || exit 1
+        export PATH="$_bootstrap_dir:/opt/bin:/opt/sbin:$PATH"
+        /opt/bin/opkg update || exit 1
+        /opt/bin/opkg install wget-ssl ca-certificates entware-opt || exit 1
+    )
+}
 
 echo -e '\033[32mInfo: Basic packages installation...\033[0m'
-/opt/bin/opkg update
-/opt/bin/opkg install entware-opt
+# Secure the index and every dependency from the first package batch onwards.
+sed -i 's|http://bin\.entware\.net/|https://bin.entware.net/|g' /opt/etc/opkg.conf || exit 1
+bootstrap_tls_packages || exit 1
+# opkg chooses its downloader from PATH. The firmware wget cannot verify TLS.
+PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg update || {
+    echo "Entware HTTPS verification failed. Check certificates and the device clock." >&2
+    exit 1
+}
 
 # Fix for multiuser environment
 chmod 1777 /opt/tmp

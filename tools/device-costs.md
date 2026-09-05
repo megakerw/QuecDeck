@@ -142,7 +142,7 @@ cost every other page pays while one is in flight.
 | Batch | Commands | Cost |
 |---|---|---|
 | `AT+CSQ` | 1 | 2 ms |
-| `device_sim` (`+CIMI;+ICCID;+CNUM`) | 3 | 2 ms |
+| `device_sim` (`+CIMI;+ICCID;+CNUM`) | 3 | 2 ms (3 ms re-measured 2026-09-05) |
 | `modem_conn` (`+QMAP="WWANIP";+CGCONTRDP`) | 2 | 5 ms |
 | `modem_stats` (`+QTEMP;+QENG;+QCAINFO;+CSQ;...`) | 9 | **18 ms** |
 | `get_sms` full listing (`+CMGL=4`, 128 parts, ~49 KB) | 6 | **127-136 ms** |
@@ -206,6 +206,7 @@ Reproduce with `tools/device-perf-cache.sh`. Boosted clock, as everywhere here.
 | `cache_get_or_fetch` HIT | **3900 us** |
 | `cache_get_or_fetch` MISS, `modem_stats` | **35500 us** |
 | `cache_get_or_fetch` MISS, `modem_conn` | 15500 us |
+| `cache_get_or_fetch` MISS, `device_sim` | **13500 us** |
 
 After the chmod removal, `modem_stats` is 20500 us raw against 35500 us through
 the cache, and `modem_conn` is 5000 against 15500. The wrapper adds roughly
@@ -227,6 +228,37 @@ At a 3 s dashboard cadence with ttl 2, every poll misses: **~24 AT commands per
 11 polls**. That is the price of the page refreshing at the rate it claims.
 Second-granularity comparison was cheaper (~19) only because its +-1 s error
 sometimes served stale data.
+
+### device_sim joined the dashboard poll, 2026-09-05
+
+Measured after the roaming row started reading the IMSI. `device_sim` is the
+clearest case yet of the wrapper dominating: **3000 us of modem time, 13500 us
+as a miss**. The batch is 3 commands against `modem_conn`'s 2 and still costs
+less at the port, which is the "command count does not predict cost" rule again,
+but through the cache the two are 13500 against 15500. Nearly everything a
+short batch costs is the wrapper.
+
+That took a dashboard poll from `modem_stats` + `modem_conn` to those two plus
+`device_sim`, **~48 ms to ~61.5 ms**, about 28% more, for one row. The raw AT
+figure of 3 ms would have predicted 6%.
+
+The batch cannot be folded into `modem_stats` to avoid the round trip: `+CIMI`
+errors with no SIM, and `cache_get_or_fetch` treats a non-OK body as a failed
+fetch, so it would take the whole dashboard batch down on a SIM-less device.
+
+**Cost ACCEPTED 2026-09-05, ttl left at 2.** The poll is a background refresh,
+not a hot path, and 13.5 ms is affordable against never serving a stale SIM
+identity. Raising the ttl was weighed and set aside, and the reasoning is
+recorded here so it does not have to be worked out again: all three `device_sim`
+fields (IMSI, ICCID, phone number) are static for the life of the inserted SIM,
+so ttl 2 is a consistency choice rather than a data-driven one, and raising it
+would put the dashboard on the 3900 us HIT path instead of the 13500 us miss on
+all but one poll in a hundred, at the price of staleness on `deviceinfo` after a
+SIM hot swap. SIM *status* is unaffected either way: it comes from `+QSIMSTAT?`
+in `modem_stats`.
+
+The `_epoch_now`-twice-per-miss finding is separate and still open: it costs
+~1100 us on every cache miss product-wide, not just this one.
 
 ---
 

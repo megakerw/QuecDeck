@@ -28,10 +28,10 @@ current=$(get_post_param current_password)
 # reports a generic failure on purpose, so a failed key operation cannot be
 # attributed to one side without turning it back into an oracle.
 case "$action" in
-    change_password|ssh_settings) auth_class=admin ;;
-    change_developer_password)    auth_class=dev ;;
-    add_key|remove_key)           auth_class=keys ;;
-    *)                            auth_class=other ;;
+    change_password)                        auth_class=admin ;;
+    change_developer_password)              auth_class=dev ;;
+    add_key|remove_key|ssh_settings)        auth_class=keys ;;
+    *)                                      auth_class=other ;;
 esac
 FAILURE_DIR=/run/quecdeck-web/security-auth-failures/$auth_class
 
@@ -96,8 +96,14 @@ case "$action" in
     ssh_settings)
         enabled=$(get_post_param ssh_enabled)
         port=$(get_post_param ssh_port)
+        developer=$(get_post_param developer_password)
+        if [ -z "$developer" ] || [ "${#developer}" -gt 256 ]; then
+            bf_unlock
+            json_result false "Developer password is required"
+            exit 0
+        fi
         # Both are validated by the helper before they reach a config file.
-        printf '%s\n' "$current" |
+        printf '%s\n%s\n' "$current" "$developer" |
             /opt/bin/sudo /usrdata/quecdeck/script/ssh_access.sh settings "$enabled" "$port"
         rc=${PIPESTATUS[1]}
         ;;
@@ -127,8 +133,7 @@ if [ "$rc" = 2 ] || [ "$rc" = 13 ]; then
         json_result false "Administrator and developer passwords must be different"
     else
         case "$action" in
-            change_password|change_developer_password|add_key|remove_key) json_result false "Administrator or developer password is incorrect" ;;
-            ssh_settings) json_result false "Administrator password is incorrect" ;;
+            change_password|change_developer_password|add_key|remove_key|ssh_settings) json_result false "Administrator or developer password is incorrect" ;;
             *) json_result false "Current password is incorrect" ;;
         esac
     fi

@@ -20,5 +20,11 @@ modem_stats_fetch
 printf '\n===modem_conn===\n'
 modem_conn_fetch
 
+# IMSI, for the roaming comparison against the serving PLMN. Its own batch
+# because +CIMI errors with no SIM, which would fail the whole chain if it rode
+# along in modem_stats. ICCID and CNUM come with it and go unused here.
+printf '\n===device_sim===\n'
+device_sim_fetch
+
 printf '\n===system===\n'
 system_stats_json

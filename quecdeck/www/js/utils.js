@@ -203,6 +203,21 @@ function fetchText(url, options) {
   return authFetch(url, options).then(r => r.text());
 }
 
+// Decodes one chunk of /cgi-bin/get_update_log, which returns the log as base64
+// keyed on a byte offset. The caller owns the decoder and reuses it across
+// chunks: stream:true buffers a multi-byte UTF-8 sequence split by a poll
+// boundary, and the final flush emits what is still pending at a terminal
+// status. Shared, because the updater and the SSH page read the same log.
+function decodeLogChunk(decoder, b64, finalFlush) {
+  let out = '';
+  if (b64) {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    out += decoder.decode(bytes, { stream: true });
+  }
+  if (finalFlush) out += decoder.decode();
+  return out;
+}
+
 // POSTs form-encoded params and resolves with the response text.
 // Rejects if the body contains ERROR (the CGI convention for AT failures).
 function postForm(url, params) {

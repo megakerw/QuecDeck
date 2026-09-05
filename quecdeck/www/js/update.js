@@ -117,11 +117,7 @@ function updatePage() {
     },
 
     appendLogChunk(b64, finalFlush) {
-      if (b64) {
-        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        this.log += this.logDecoder.decode(bytes, { stream: true });
-      }
-      if (finalFlush) this.log += this.logDecoder.decode();
+      this.log += decodeLogChunk(this.logDecoder, b64, finalFlush);
       this.scrollLogBox('logbox');
     },
 
@@ -151,6 +147,10 @@ function updatePage() {
         this.logFetching = true;
         fetchWithTimeout(fetchJSON, '/cgi-bin/get_update_log?offset=' + this.logOffset, 8000)
           .then((data) => {
+            // The SSH page drives the same log. Consuming its status here would
+            // report an SSH action as a QuecDeck update, and the ack below would
+            // clear the result before that page had read it.
+            if (data.kind && data.kind !== 'quecdeck') return;
             if (this.reconnecting) {
               this.reconnecting = false;
               this.reconnectingSince = null;
@@ -209,6 +209,12 @@ function updatePage() {
     init() {
       fetchJSON('/cgi-bin/get_update_log')
         .then((data) => {
+          // An SSH action owns this status. Leave it, including its ack, to the
+          // page that started it.
+          if (data.kind && data.kind !== 'quecdeck') {
+            this.checkForUpdates();
+            return;
+          }
           if (data.status === 'running') {
             this.beginUpdatingView();
             this.appendLogChunk(data.log, false);

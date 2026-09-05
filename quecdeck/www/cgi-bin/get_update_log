@@ -6,6 +6,7 @@ cgi_output_json
 
 LOG=/run/quecdeck/install.log
 STATUS_FILE=/run/quecdeck/update.status
+KIND_FILE=/run/quecdeck/update.kind
 
 # No fallback to the pre-split /tmp paths, even across the update that moves
 # them: the incoming update_quecdeck.sh creates install.log during bootstrap,
@@ -18,9 +19,17 @@ case "$offset" in
 esac
 
 if [ ! -f "$STATUS_FILE" ]; then
-    printf '{"log":"","offset":0,"status":"idle"}\n'
+    printf '{"log":"","offset":0,"status":"idle","kind":"","code":0}\n'
     exit 0
 fi
+
+# Which operation the status describes: "quecdeck", or "sshd:<action>". Only
+# these shapes are echoed back, so a corrupt file cannot inject into the JSON.
+kind=$(cat "$KIND_FILE" 2>/dev/null | tr -d '[:space:]')
+case "$kind" in
+    quecdeck|sshd:install|sshd:update|sshd:uninstall|sshd:check) ;;
+    *) kind="" ;;
+esac
 
 ack=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^ack=' | cut -d= -f2)
 if [ "$ack" = "1" ]; then
@@ -43,12 +52,25 @@ fi
 
 raw_status=$(cat "$STATUS_FILE" 2>/dev/null)
 version=""
+code=0
 case "$raw_status" in
+    # An SSH action carries the installer's own exit code, so the UI can name
+    # the failure without reading the log. Digits only, bounded, then re-emitted
+    # as a JSON number.
+    failed:code:*)
+        status="failed" ; rollback="none"
+        code=${raw_status#failed:code:}
+        case "$code" in ''|*[!0-9]*) code=0 ;; esac
+        [ "${#code}" -le 3 ] || code=0
+        ;;
 # On "done", the swapped-in version file is the installed version. Report
     # it so the UI doesn't have to infer it. Sanitized for JSON embedding.
     done)
         status="done" ; rollback="none"
-        version=$(cat /usrdata/quecdeck/version 2>/dev/null | tr -cd '0-9A-Za-z.-')
+        # Only a QuecDeck update installs a QuecDeck version. Reporting one
+        # after an SSH action would have the UI cache it as that action's result.
+        [ "$kind" = "quecdeck" ] &&
+            version=$(cat /usrdata/quecdeck/version 2>/dev/null | tr -cd '0-9A-Za-z.-')
         ;;
     failed:rollback_ok)     status="failed" ; rollback="ok"     ;;
     failed:rollback_failed) status="failed" ; rollback="failed" ;;
@@ -61,7 +83,7 @@ case "$raw_status" in
 # the fetch unit's TimeoutStartSec bypasses the cleanup paths). Anything
         # else is still running. An empty/failed query defaults to running,
         # never a false "failed".
-        if [ "$(systemctl is-active install_quecdeck 2>/dev/null)" = "failed" ] ||            [ "$(systemctl is-active install_quecdeck_fetch 2>/dev/null)" = "failed" ]; then
+        if [ "$(systemctl is-active install_quecdeck 2>/dev/null)" = "failed" ] ||            [ "$(systemctl is-active install_quecdeck_fetch 2>/dev/null)" = "failed" ] ||            [ "$(systemctl is-active install_quecdeck_sshd 2>/dev/null)" = "failed" ]; then
             status="failed" ; rollback="none"
         else
             status="running" ; rollback="none"
@@ -69,4 +91,4 @@ case "$raw_status" in
         ;;
 esac
 
-printf '{"log":"%s","offset":%s,"status":"%s","rollback":"%s","version":"%s"}\n' "$chunk_b64" "$total" "$status" "$rollback" "$version"
+printf '{"log":"%s","offset":%s,"status":"%s","rollback":"%s","version":"%s","kind":"%s","code":%s}\n' "$chunk_b64" "$total" "$status" "$rollback" "$version" "$kind" "$code"

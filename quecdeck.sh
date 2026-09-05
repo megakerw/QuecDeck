@@ -108,8 +108,8 @@ ensure_entware_installed() {
         ensure_rundir
         _ent=/run/quecdeck/installentware.sh
         rm -f "$_ent"
-        wget --timeout=30 --tries=2 -O "$_ent" "$GITROOT/installentware.sh"
-        echo "9500fb69717d37639b0e15b14a6db1bb839e61963e56d78370725aee0c2ea9da  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
+        /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o "$_ent" "$GITROOT/installentware.sh" || { echo "HTTPS bootstrap download failed." >&2; exit 1; }
+        echo "aaed731495ccea659f04fd9b5e5a7d40a933d4939196cb53a037c6e3e5bad77f  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
         echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
         # Run with the staging dir as CWD, matching the previous "cd /tmp" so a
         # relative write by the installer still lands in scratch tmpfs.
@@ -126,11 +126,16 @@ ensure_entware_installed() {
         root_home_profile || exit 1
     fi
 
-    if ! opkg list-installed 2>/dev/null | grep -q '^wget-ssl '; then
+    _entware_packages=$(/opt/bin/opkg list-installed 2>/dev/null) || exit 1
+    if ! printf '%s\n' "$_entware_packages" | grep -q '^wget-ssl ' ||
+       ! printf '%s\n' "$_entware_packages" | grep -q '^ca-certificates '; then
         echo "Installing wget-ssl and ca-certificates..."
-        opkg update
-        opkg install wget-ssl ca-certificates || { echo -e "\e[1;31mFailed to install wget-ssl.\e[0m"; exit 1; }
+        PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg update || exit 1
+        PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg install wget-ssl ca-certificates || { echo -e "\e[1;31mFailed to install Entware TLS support.\e[0m"; exit 1; }
     fi
+    # Migrate existing installations too; leave third-party feed URLs alone.
+    sed -i 's|http://bin\.entware\.net/|https://bin.entware.net/|g' /opt/etc/opkg.conf || exit 1
+    PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg update || { echo "Entware HTTPS update failed." >&2; exit 1; }
 
     # Mark only Entware installations that this generation successfully
     # prepared. If the later QuecDeck download is interrupted, the installer
@@ -257,11 +262,11 @@ uninstall_entware() {
 
 set_quecdeck_passwd(){
     root_home_dirs || return 1
-    /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckpasswd $GITROOT/quecdeck/quecdeckpasswd || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
+    /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o /usrdata/root/bin/quecdeckpasswd "$GITROOT/quecdeck/quecdeckpasswd" || { echo -e "\e[1;31mFailed to download quecdeckpasswd.\e[0m"; return 1; }
     echo "3e46ef7eb52234397f3195dbfd79fa3cec40a7b567c71874b7b74aa053f30766  /usrdata/root/bin/quecdeckpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckpasswd\e[0m"
     chmod 755 /usrdata/root/bin/quecdeckpasswd
-    /opt/bin/wget --timeout=30 --tries=2 -q -O /usrdata/root/bin/quecdeckdevpasswd $GITROOT/quecdeck/quecdeckdevpasswd || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
+    /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o /usrdata/root/bin/quecdeckdevpasswd "$GITROOT/quecdeck/quecdeckdevpasswd" || { echo -e "\e[1;31mFailed to download quecdeckdevpasswd.\e[0m"; return 1; }
     echo "60c7ac7ecb819ab3e3025d684879afcfda1ddbe67e611ed517f14b4a2e50ec37  /usrdata/root/bin/quecdeckdevpasswd" | sha256sum -c >/dev/null || { echo -e "\e[1;31mIntegrity check failed for quecdeckdevpasswd.\e[0m"; return 1; }
     echo -e "\e[1;32mIntegrity verified: quecdeckdevpasswd\e[0m"
     chmod 755 /usrdata/root/bin/quecdeckdevpasswd
@@ -295,7 +300,7 @@ fetch_and_run_installer() {
     _checksums="$_fetch_dir/checksums.sha256"
     _installer="$_fetch_dir/update_quecdeck.sh"
 
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "$_checksums" "$_tag_root/quecdeck/checksums.sha256" || {
+    /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o "$_checksums" "$_tag_root/quecdeck/checksums.sha256" || {
         echo -e "\e[1;31mFailed to download checksums.\e[0m"
         return 1
     }
@@ -306,7 +311,7 @@ fetch_and_run_installer() {
         return 1
     fi
 
-    /opt/bin/wget --timeout=30 --tries=2 -q -O "$_installer" "$_tag_root/update_quecdeck.sh" || {
+    /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o "$_installer" "$_tag_root/update_quecdeck.sh" || {
         echo -e "\e[1;31mFailed to download update_quecdeck.sh.\e[0m"
         return 1
     }
@@ -356,7 +361,7 @@ install_quecdeck_release() {
     set_quecdeck_passwd || return 1
 
     echo "Fetching latest release info..."
-    _api=$(/opt/bin/wget --timeout=10 --tries=1 -q -O - \
+    _api=$(/usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 5 --max-time 10 \
         "https://api.github.com/repos/$GITUSER/$REPONAME/releases/latest" 2>/dev/null)
     if [ -z "$_api" ]; then
         echo -e "\e[1;31mCould not reach GitHub API. Aborting.\e[0m"
@@ -668,7 +673,7 @@ uninstall_quecdeck_components() {
     rm -f /opt/etc/.htpasswd_dev
     rm -f /opt/etc/.quecdeck-setup.lock
     rm -f /opt/etc/.quecdeck-credentials.lock
-    rm -f /usrdata/root/.quecdeck-ssh-keys.lock
+    rm -f /usrdata/root/.quecdeck-ssh.lock
     rm -f /usrdata/root/.ssh/authorized_keys
     rmdir /usrdata/root/.ssh 2>/dev/null
     rm -f /usrdata/root/.profile

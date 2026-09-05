@@ -165,10 +165,33 @@ t("dev endpoint locked: 403", 403, rc)
 rc = run("/cgi-bin/get_dashboard", "session=tokD4")
 t("non-dev endpoint: passes while locked", 0, rc)
 
+for _, endpoint in ipairs({"user_atcommand", "set_cell_lock"}) do
+    for _, suffix in ipairs({"/extra", "/", "/extra/more"}) do
+        rc = run("/cgi-bin/" .. endpoint .. suffix, "session=tokD4")
+        t("CGI suffix rejected: " .. endpoint .. suffix, 403, rc)
+    end
+    rc = run("/cgi-bin/" .. endpoint .. "?example=/extra", "session=tokD4")
+    t("query cannot bypass developer gate: " .. endpoint, 403, rc)
+end
+for _, alias in ipairs({
+    "/cgi-bin/%75ser_atcommand", "/cgi%2dbin/user_atcommand",
+    "/cgi-bin/user_atcommand%2fextra", "//cgi-bin/user_atcommand",
+    "/cgi-bin//user_atcommand", "/cgi-bin/auth_login/extra",
+}) do
+    rc = run(alias, "session=tokD4")
+    t("noncanonical route rejected: " .. alias, 403, rc)
+end
+rc = run("/js/../cgi-bin/user_atcommand", "session=tokD4")
+t("literal traversal cannot use static exemption", 302, rc)
+
 local df = assert(io.open(SESSIONS .. "tokD4.dev", "w"))
 df:write("dev_unlocked=1\ngeneration=0123456789abcdef0123456789abcdef\n"); df:close()
 rc = run("/cgi-bin/user_atcommand", "session=tokD4")
 t("dev endpoint unlocked: passes", 0, rc)
+rc = run("/cgi-bin/set_cell_lock?type=nr", "session=tokD4")
+t("canonical developer CGI with query passes when unlocked", 0, rc)
+rc = run("/cgi-bin/user_atcommand/extra", "session=tokD4")
+t("CGI suffix rejected even when unlocked", 403, rc)
 
 gf = assert(io.open(DEV_GENERATION, "w"))
 gf:write("fedcba9876543210fedcba9876543210\n"); gf:close()

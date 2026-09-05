@@ -10,7 +10,9 @@ umask 077
 ROOT_HOME=/usrdata/root
 SSH_DIR=$ROOT_HOME/.ssh
 KEYS=$SSH_DIR/authorized_keys
-LOCK=$ROOT_HOME/.quecdeck-ssh-keys.lock
+# Shared with install_sshd.sh, which takes it for the whole of an install,
+# update or removal. Keep the two paths identical or neither excludes the other.
+LOCK=$ROOT_HOME/.quecdeck-ssh.lock
 SSHD_CONFIG=/opt/etc/ssh/sshd_config
 ENABLED_MARKER=/opt/etc/ssh/quecdeck_enabled
 MAX_KEYS=5
@@ -258,14 +260,6 @@ list_keys() {
     done
 }
 
-verify_admin_credential() { # verify_admin_credential <admin password>
-    local rc
-    printf '%s\n' "$1" | /usrdata/quecdeck/script/check_password.sh admin admin
-    rc=${PIPESTATUS[1]}
-    [ "$rc" != 75 ] || return 75
-    [ "$rc" = 0 ]
-}
-
 verify_credentials() {
     local admin_rc dev_rc
     # Always check both credentials so timing and the generic error do not
@@ -309,16 +303,18 @@ case "${1:-}" in
         [ "$#" -eq 1 ] || exit 1
         print_saved_state
         ;;
-    # Gated on the ADMINISTRATOR password only, unlike add and remove which
-    # need both. Enabling SSH or moving its port grants no access by itself:
-    # without an authorized key both keys_ready and the unit's
-    # ConditionPathExists refuse the start, and installing a key needs both
-    # passwords. Requiring a password here is what stops a forged www-data
-    # session from switching an existing key back on, since a forged session
-    # carries no credential.
+    # Gated on BOTH credentials, like every other change the SSH page makes. The
+    # administrator password alone would be defensible (a settings change grants
+    # no access on its own, since keys_ready and the unit's ConditionPathExists
+    # both refuse the start without a key), but one rule for the page beats a
+    # smaller ask per action. Requiring a credential at all is what stops a
+    # forged www-data session from switching an existing key back on.
+    #
+    # An unset developer password is exit 8, as in the key arms: a missing
+    # precondition, not a wrong password.
     #
     # The enabled state and port stay in argv because neither is a secret. The
-    # password arrives on stdin. Both values are validated before they reach a
+    # passwords arrive on stdin. Both values are validated before they reach a
     # configuration file.
     settings)
         [ "$#" -eq 3 ] || exit 1
@@ -334,15 +330,18 @@ case "${1:-}" in
         PAYLOAD=${PAYLOAD%.}
         [ "${#PAYLOAD}" -le 1024 ] || exit 1
         PAYLOAD=${PAYLOAD%$'\n'}
+        [ -s /opt/etc/.htpasswd_dev ] || exit 8
         {
             IFS= read -r ADMIN_PASSWORD || exit 1
+            IFS= read -r DEV_PASSWORD || exit 1
             IFS= read -r EXTRA && exit 1
         } <<< "$PAYLOAD"
         [ -n "$ADMIN_PASSWORD" ] && [ "${#ADMIN_PASSWORD}" -le 256 ] || exit 2
+        [ -n "$DEV_PASSWORD" ] && [ "${#DEV_PASSWORD}" -le 256 ] || exit 2
         exec 9>>"$LOCK" || exit 1
         chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
         flock_wait 9 5 || exit 75
-        verify_admin_credential "$ADMIN_PASSWORD"
+        verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
         credential_rc=$?
         [ "$credential_rc" != 75 ] || exit 75
         [ "$credential_rc" = 0 ] || exit 2

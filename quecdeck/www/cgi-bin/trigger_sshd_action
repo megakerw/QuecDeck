@@ -1,0 +1,120 @@
+#!/bin/bash
+# Starts an SSH component action. The work runs detached in a systemd unit, so
+# this validates, accounts for authentication failures, and relays the result.
+# The privileged dispatcher verifies credentials before starting any work.
+# Progress and the outcome come from get_update_log.
+
+. /usrdata/quecdeck/script/cgi-lib.sh
+
+cgi_require_post
+cgi_read_post 4096
+cgi_output_json
+
+json_result() { # json_result <true|false> [error]
+    if [ "$1" = true ]; then
+        printf '{"ok":true}\n'
+    else
+        printf '{"ok":false,"error":"%s"}\n' "$2"
+    fi
+}
+
+client_ip=$(cgi_client_ip)
+action=$(get_post_param action)
+port=$(get_post_param port)
+admin=$(get_post_param admin_password)
+developer=$(get_post_param developer_password)
+
+# One rule for the whole SSH page: every change takes both passwords. The check
+# is exempt because it changes nothing about SSH, though it is not free: it
+# fetches package lists and writes them, so it takes the same lock and the same
+# single-dispatch slot as the rest. Sharing the "keys" failure class with the
+# other dual-credential actions is deliberate: the class tracks the credentials
+# an action exercises, so a success clears only the counter for that pair.
+case "$action" in
+    install|uninstall|update) need_developer=1 ; auth_class=keys ;;
+    check)                    need_developer=0 ; auth_class="" ;;
+    *) json_result false "Unknown SSH action" ; exit 0 ;;
+esac
+
+# Shape only. The range lives in valid_ssh_port, which install_sshd.sh applies,
+# and the page checks it before submitting. This is here to keep anything but
+# digits out of the argv of a sudo call.
+if [ "$action" = install ]; then
+    case "$port" in
+        ''|*[!0-9]*) json_result false "Use port 22, or a port between 1024 and 65535" ; exit 0 ;;
+    esac
+fi
+
+start_action() {
+    if [ "$action" = install ]; then
+        printf '%s\n%s\n' "$admin" "$developer" |
+            /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service install "$port" >/dev/null
+    else
+        printf '%s\n%s\n' "$admin" "$developer" |
+            /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service "$action" >/dev/null
+    fi
+    rc=${PIPESTATUS[1]}
+}
+
+report_action() {
+    if [ "$rc" -eq 2 ]; then
+        json_result false "An update is already in progress"
+    elif [ "$rc" -ne 0 ]; then
+        json_result false "Failed to start the SSH action"
+    else
+        json_result true
+    fi
+}
+
+# Refreshing the package index changes nothing and reveals nothing, so it rides
+# on the session alone. Every other action verifies a credential first.
+if [ -z "$auth_class" ]; then
+    start_action
+    report_action
+    exit 0
+fi
+
+if [ -z "$admin" ] || [ "${#admin}" -gt 256 ]; then
+    json_result false "Administrator password is required"
+    exit 0
+fi
+if [ "$need_developer" = 1 ] && { [ -z "$developer" ] || [ "${#developer}" -gt 256 ]; }; then
+    json_result false "Developer password is required"
+    exit 0
+fi
+
+FAILURE_DIR=/run/quecdeck-web/security-auth-failures/$auth_class
+if ! cgi_flock_available || ! bf_lock "$FAILURE_DIR" "$client_ip"; then
+    json_result false "Password verification is temporarily unavailable"
+    exit 0
+fi
+if bf_locked "$FAILURE_DIR" "$client_ip"; then
+    bf_unlock
+    json_result false "Too many failed attempts. Try again later"
+    exit 0
+fi
+
+start_action
+if [ "$rc" = 75 ]; then
+    bf_unlock
+    json_result false "Password verification is temporarily unavailable"
+    exit 0
+fi
+if [ "$rc" = 3 ]; then
+    bf_fail "$FAILURE_DIR" "$client_ip"
+    result=$BF_FAIL_RESULT
+    bf_unlock
+    if [ "$result" = locked ]; then
+        json_result false "Too many failed attempts. Try again later"
+    elif [ "$need_developer" = 1 ]; then
+        json_result false "Administrator or developer password is incorrect"
+    else
+        json_result false "Administrator password is incorrect"
+    fi
+    exit 0
+fi
+
+bf_clear "$FAILURE_DIR" "$client_ip"
+bf_unlock
+
+report_action

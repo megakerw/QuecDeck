@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=172073b5" />
-    <link rel="stylesheet" href="css/styles.css?v=172073b5" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=a6697854" />
+    <link rel="stylesheet" href="css/styles.css?v=a6697854" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=172073b5"></script>
-    <script src="js/utils.js?v=172073b5"></script>
-    <script src="js/alpinejs.min.js?v=172073b5" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=a6697854"></script>
+    <script src="js/utils.js?v=a6697854"></script>
+    <script src="js/alpinejs.min.js?v=a6697854" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="processAllInfos()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=172073b5"></script>
+        <script src="js/nav.js?v=a6697854"></script>
 
         <div class="row mt-4 mb-0 g-3">
           <div class="col-6 col-sm-4 col-lg-2">
@@ -203,7 +203,7 @@
           </div>
         </div>
 
-        <div class="row gy-3 mt-2 mb-4 align-items-stretch">
+        <div class="row gy-3 mt-2 mb-0 align-items-stretch">
           <div class="col-12 col-md">
             <div class="panel-section panel-fill">
               <div class="panel-title">Network Information</div>
@@ -220,6 +220,10 @@
                       <tr>
                         <th>MCCMNC</th>
                         <td x-text="mccmnc"></td>
+                      </tr>
+                      <tr>
+                        <th>Roaming</th>
+                        <td x-text="roamingStatus"></td>
                       </tr>
                       <tr>
                         <th>APN</th>
@@ -252,10 +256,6 @@
                       <tr>
                         <th>IPv6</th>
                         <td class="text-break" x-text="ipv6"></td>
-                      </tr>
-                      <tr>
-                        <th>Uptime</th>
-                        <td x-text="uptime"></td>
                       </tr>
                 </tbody>
               </table>
@@ -484,8 +484,29 @@
                       </tr>
                 </tbody>
               </table>
-              <div class="panel-actions d-flex align-items-center justify-content-between flex-wrap gap-2">
-                <p class="mb-0 small text-muted">Updated: <span x-text="lastUpdate"></span></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="row gy-3 mt-4 mb-4 align-items-stretch">
+          <div class="col">
+            <div class="panel-section">
+              <!-- Page-level readouts and the refresh control, which govern the
+                   whole dashboard rather than the signal table they used to sit
+                   under. Uptime is the box's, not the connection's. The
+                   deviceinfo footer squeezes on narrow screens because it holds
+                   only text; the input group here cannot, so this one wraps. -->
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div class="d-flex align-items-center flex-wrap gap-4">
+                  <div class="foot-stat">
+                    <span class="foot-stat-label">System uptime</span>
+                    <span class="foot-stat-value" x-text="uptime"></span>
+                  </div>
+                  <div class="foot-stat">
+                    <span class="foot-stat-label">Updated</span>
+                    <span class="foot-stat-value" x-text="lastUpdate"></span>
+                  </div>
+                </div>
                 <div class="input-group input-group-sm w-auto">
                   <span class="input-group-text">Refresh Rate</span>
                   <input
@@ -495,6 +516,7 @@
                     min="3"
                     max="60"
                     x-bind:placeholder="refreshRate + 's'"
+                    aria-label="Refresh rate in seconds"
                   />
                   <button
                     @click="updateRefreshRate()"
@@ -511,6 +533,6 @@
       </div>
     </main>
 
-    <script src="js/home.js?v=172073b5"></script>
+    <script src="js/home.js?v=a6697854"></script>
   </body>
 </html>

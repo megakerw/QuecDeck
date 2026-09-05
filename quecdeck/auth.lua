@@ -21,8 +21,18 @@ end
 -- Percent-encoded dots are rejected too: this runs on the raw URI (magnet
 -- attract-raw-url), so "%2e%2e" would not match the literal ".." check yet
 -- could decode to a dot-segment later in request handling.
-if path:find("%.%.", 1, true) or path:lower():find("%2e", 1, true) then
+if path:find("..", 1, true) or path:lower():find("%2e", 1, true) then
     return redirect(LOGIN)
+end
+
+-- Application paths are literal and contain no escaped bytes or repeated
+-- slashes. Every CGI has one flat name. Reject aliases and PATH_INFO before
+-- exemptions: lighttpd can otherwise resolve them to a developer-only script
+-- after the exact-path authorization check has skipped it.
+if path:find("%", 1, true) or path:find("//", 1, true)
+    or (path:match("^/cgi%-bin/") and not path:match("^/cgi%-bin/[a-z_]+$")) then
+    lighty.status = 403
+    return 403
 end
 
 -- Redirect to setup wizard if no admin password has been configured yet.

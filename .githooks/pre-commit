@@ -108,6 +108,8 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/check_update
   quecdeck/www/cgi-bin/trigger_update
   quecdeck/www/cgi-bin/get_update_log
+  quecdeck/www/cgi-bin/trigger_sshd_action
+  quecdeck/www/cgi-bin/get_sshd_check
   quecdeck/www/cgi-bin/init_setup
   quecdeck/console/.profile
   quecdeck/atcli
