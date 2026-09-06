@@ -26,8 +26,11 @@ done
 
 t "monitoring makers use fixed installed services" "yes" \
   "$(grep -q 'systemctl restart watchcat' "$WATCHCAT_MAKER" && grep -q 'systemctl restart scheduled_restart' "$SCHEDULED_MAKER" && ! grep -qE 'create_|remove_' "$WATCHCAT_MAKER" "$SCHEDULED_MAKER" && echo yes || echo no)"
+# No conditional-restart bookkeeping: an unconditional restart is what makes
+# every save reload the worker. Asserted by the absence of the flag, not by the
+# comment that explains it.
 t "every explicit monitoring save reloads its worker" "yes" \
-  "$(! grep -q '^needs_restart=' "$WATCHCAT_MAKER" "$SCHEDULED_MAKER" && [ "$(grep -l 'Every explicit save' "$WATCHCAT_MAKER" "$SCHEDULED_MAKER" | wc -l | tr -d ' ')" = "2" ] && echo yes || echo no)"
+  "$(! grep -q '^needs_restart=' "$WATCHCAT_MAKER" "$SCHEDULED_MAKER" && echo yes || echo no)"
 t "makers clear failed state before restart" "yes" \
   "$(for _maker in "$WATCHCAT_MAKER" "$SCHEDULED_MAKER"; do _reset=$(grep -n 'systemctl reset-failed' "$_maker" | cut -d: -f1); _restart=$(grep -n 'systemctl restart' "$_maker" | cut -d: -f1); [ -n "$_reset" ] && [ "$_reset" -lt "$_restart" ] || exit 1; done && echo yes || echo no)"
 t "Watchcat commits config before clearing its old backoff" "yes" \
@@ -106,7 +109,7 @@ t "a release marker defines the future monitoring contract" "static-services-v1"
 t "compatible rollback restores monitoring boot enablement" "yes" \
   "$(printf '%s\n' "$_revert" | grep -q 'ln -sf "/lib/systemd/system/${_m}.service" "/lib/systemd/system/multi-user.target.wants/${_m}.service"' && echo yes || echo no)"
 t "compatible rollback defers monitoring until update bookkeeping finishes" "yes" \
-  "$(! printf '%s\n' "$_revert" | grep -q 'systemctl restart.*\$_m' && printf '%s\n' "$_revert" | grep -q 'restarted only after the updater' && echo yes || echo no)"
+  "$(! printf '%s\n' "$_revert" | grep -q 'systemctl restart.*\$_m' && echo yes || echo no)"
 t "legacy rollback removes monitoring enablement" "yes" \
   "$(printf '%s\n' "$_revert" | grep -q 'Legacy monitoring was left disabled after rollback' && printf '%s\n' "$_revert" | grep -q 'rm -f "/lib/systemd/system/multi-user.target.wants/${_m}.service"' && echo yes || echo no)"
 unset _revert
@@ -214,9 +217,55 @@ unset _apn_fixture _apn_mock _apn_runner _apn_calls _apn_output
 t "reboot lease protocol has been removed" "yes" \
   "$(! grep -qE 'REBOOT_LEASE|claim_reboot|release_reboot|reboot_in_progress' "$COORD" "$WATCHCAT" quecdeck/www/cgi-bin/run_cell_scan quecdeck/www/cgi-bin/save_apn && echo yes || echo no)"
 
-# ---------------------------------------------------------- Watchcat behavior
-t "Watchcat accepts the UI ranges" "yes" \
-  "$(grep -q 'PING_INTERVAL.*-ge 10.*-le 600' "$WATCHCAT" && grep -q 'PING_FAILURE_COUNT.*-ge 3.*-le 10' "$WATCHCAT" && echo yes || echo no)"
+# ------------------------------------------------- worker config validation --
+# Both workers validate their configuration in top-level code, so there is no
+# function to extract. Copy the worker, repoint its library and config paths,
+# and truncate it after the last range check so the main loop never starts. A
+# rejected value prints its reason through inactive(), an accepted one prints
+# nothing.
+#
+# Assert the bounds by outcome. A grep for the literal operands matches a
+# widened bound too, so it cannot tell 600 from 6000.
+_worker_config_reject() { # <worker> <anchor> <config-json> -> inactive reason, or empty
+    (
+        _wcd=$(mktemp -d) || return 1
+        # tail -1: the anchor names the LAST validation line to keep. A moved or
+        # deleted check leaves the anchor unfound and the case fails loudly
+        # rather than silently testing a truncated prefix.
+        _wce=$(grep -n "$2" "$1" | tail -1 | cut -d: -f1)
+        if [ -z "$_wce" ]; then
+            printf 'anchor not found in %s: %s\n' "$1" "$2"
+            rm -rf "$_wcd"
+            return 1
+        fi
+        head -n "$_wce" "$1" \
+            | sed "s|/usrdata/quecdeck/script/|$PWD/quecdeck/script/|; s|^CONFIG=.*|CONFIG=$_wcd/config.json|" \
+            > "$_wcd/worker.sh"
+        printf '%s\n' "$3" > "$_wcd/config.json"
+        bash "$_wcd/worker.sh" 2>&1 >/dev/null
+        rm -rf "$_wcd"
+    )
+}
+
+_watchcat_anchor='PING_FAILURE_COUNT" -ge'
+_watchcat_config() { # <ping_interval> <ping_failure_count>
+    printf '{"enabled":true,"track_ips":["8.8.8.8"],"ping_interval":%s,"ping_failure_count":%s,"disable_on_no_sim":false,"reboot_backoff":false,"log_restarts":false}' "$1" "$2"
+}
+_watchcat_range() { # <ping_interval> <ping_failure_count>
+    _worker_config_reject "$WATCHCAT" "$_watchcat_anchor" "$(_watchcat_config "$1" "$2")"
+}
+# The UI offers 10 to 600 seconds and 3 to 10 rounds. Both ends of both ranges,
+# plus the first value outside each, so neither bound can move unnoticed.
+t "Watchcat accepts the shortest offered interval"  "" "$(_watchcat_range 10 3)"
+t "Watchcat accepts the longest offered interval"   "" "$(_watchcat_range 600 3)"
+t "Watchcat rejects an interval below the range"    "watchcat: ping_interval out of range" "$(_watchcat_range 9 3)"
+t "Watchcat rejects an interval above the range"    "watchcat: ping_interval out of range" "$(_watchcat_range 601 3)"
+t "Watchcat accepts the fewest offered rounds"      "" "$(_watchcat_range 30 3)"
+t "Watchcat accepts the most offered rounds"        "" "$(_watchcat_range 30 10)"
+t "Watchcat rejects fewer rounds than the range"    "watchcat: ping_failure_count out of range" "$(_watchcat_range 30 2)"
+t "Watchcat rejects more rounds than the range"     "watchcat: ping_failure_count out of range" "$(_watchcat_range 30 11)"
+unset -f _watchcat_config _watchcat_range
+unset _watchcat_anchor
 t "Watchcat caps targets at six" "yes" \
   "$(grep -q 'head -6' "$WATCHCAT" && echo yes || echo no)"
 t "Watchcat rotates the first target and stops on success" "yes" \
@@ -270,8 +319,23 @@ REBOOT_BACKOFF=0; calc_backoff_delay; t "disabled backoff adds no delay" 0 "$bac
 unset -f calc_backoff_delay
 
 # --------------------------------------------------- Scheduled Restart behavior
-t "scheduled restart rejects invalid day and time ranges" "yes" \
-  "$(grep -q 'RESTART_DAY.*-ge 1.*-le 7' "$SCHEDULED" && grep -q 'RESTART_HOUR.*-ge 0.*-le 23' "$SCHEDULED" && grep -q 'RESTART_MINUTE.*-ge 0.*-le 59' "$SCHEDULED" && echo yes || echo no)"
+_scheduled_anchor='RESTART_MINUTE" -ge'
+_scheduled_range() { # <day> <hour> <minute>
+    _worker_config_reject "$SCHEDULED" "$_scheduled_anchor" \
+      "$(printf '{"enabled":true,"type":"weekly","day":%s,"hour":%s,"minute":%s}' "$1" "$2" "$3")"
+}
+# ISO weekdays 1 to 7 and a 24-hour clock. Both ends of each range and the
+# first value past each end.
+t "scheduled restart accepts the first weekday" "" "$(_scheduled_range 1 4 5)"
+t "scheduled restart accepts the last weekday"  "" "$(_scheduled_range 7 4 5)"
+t "scheduled restart rejects weekday zero"      "scheduled_restart: day out of range" "$(_scheduled_range 0 4 5)"
+t "scheduled restart rejects an eighth weekday" "scheduled_restart: day out of range" "$(_scheduled_range 8 4 5)"
+t "scheduled restart accepts midnight"          "" "$(_scheduled_range 3 0 0)"
+t "scheduled restart accepts the last minute of the day" "" "$(_scheduled_range 3 23 59)"
+t "scheduled restart rejects a 24th hour"       "scheduled_restart: hour out of range" "$(_scheduled_range 3 24 5)"
+t "scheduled restart rejects a 60th minute"     "scheduled_restart: minute out of range" "$(_scheduled_range 3 4 60)"
+unset -f _scheduled_range
+unset _scheduled_anchor
 t "scheduled restart waits for a plausible wall clock" "yes" \
   "$(grep -q '^CLOCK_FLOOR=' "$SCHEDULED" && grep -q 'now_epoch.*-lt.*CLOCK_FLOOR' "$SCHEDULED" && echo yes || echo no)"
 t "scheduled restart dispatches once per occurrence" "yes" \
@@ -283,4 +347,5 @@ t "scheduled restart skips a matching startup minute" "yes" \
 t "system status verifies the scheduled worker is running" "yes" \
   "$(grep '^SERVICE_UNITS=' quecdeck/www/cgi-bin/get_system_status | grep -q 'scheduled_restart' && grep -q 'state_scheduled_restart.*active' quecdeck/www/cgi-bin/get_system_status && grep -q "serviceState('scheduled_restart')" quecdeck/www/deviceinfo.html && grep -q 'svc.running === true' quecdeck/www/js/deviceinfo.js && echo yes || echo no)"
 
+unset -f _worker_config_reject
 unset WATCHCAT SCHEDULED COORD WATCHCAT_MAKER SCHEDULED_MAKER

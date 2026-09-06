@@ -36,7 +36,7 @@ if [ -f "$MARKER" ]; then
             ok "active SSH server listens on port $SSH_PORT" ||
             bad "SSH is active but does not listen on port $SSH_PORT"
     else
-        [ ! -s /usrdata/root/.ssh/authorized_keys ] &&
+        [ ! -s /opt/etc/ssh/authorized_keys ] &&
             ok "SSH remains inactive because no authorized key is available" ||
             bad "SSH is enabled with a key but is not active"
     fi
@@ -60,7 +60,7 @@ else
         "permitrootlogin prohibit-password" \
         "pubkeyauthentication yes" \
         "authenticationmethods publickey" \
-        "authorizedkeysfile /usrdata/root/.ssh/authorized_keys" \
+        "authorizedkeysfile /opt/etc/ssh/authorized_keys" \
         "allowtcpforwarding no" \
         "allowagentforwarding no" \
         "allowstreamlocalforwarding no" \

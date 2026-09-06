@@ -26,7 +26,6 @@ function authFetch(url, options) {
     });
 }
 
-// Register global stores
 document.addEventListener('alpine:init', () => {
   Alpine.store('scanBanner', {
     active: false,
@@ -296,8 +295,7 @@ function cleanIp(ip) {
 
 // One shape for every service status badge, so pages bind
 // `:class="x.cls"` and `x-text="x.label"` instead of repeating a ternary chain.
-// Four pages had drifted to four different spellings of two states before this
-// existed ("Not Installed" against "Not installed", "..." against "Loading").
+// Keeps the wording of the two states identical across pages.
 //
 //   undefined  the snapshot has not loaded yet
 //   null       the component is not installed

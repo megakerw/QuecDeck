@@ -17,7 +17,7 @@ kbdinteractiveauthentication no
 permitrootlogin prohibit-password
 pubkeyauthentication yes
 authenticationmethods publickey
-authorizedkeysfile /usrdata/root/.ssh/authorized_keys
+authorizedkeysfile /opt/etc/ssh/authorized_keys
 allowtcpforwarding no
 allowagentforwarding no
 allowstreamlocalforwarding no

@@ -53,9 +53,8 @@ function securityController(sshPage = false) {
     credentialTitle: '',
     credentialMessage: '',
     credentialDetail: '',
-    // For an action with no single identifier to echo back. A removal is a list
-    // of things that go away, and a sentence in the detail strip only restates
-    // the message above it.
+    // For an action with no single identifier to echo back, such as a removal
+    // that takes several things away at once.
     credentialDetailList: [],
     credentialAction: 'Confirm',
     credentialAdmin: '',
@@ -66,14 +65,29 @@ function securityController(sshPage = false) {
     credentialLocked: false,
     credentialSubmit: null,
 
-    // Whether the daemon is running, and nothing else. The toggle and its
-    // caption already say whether SSH is enabled, and the alerts cover an
-    // unreadable state, so repeating either here only competes with them. The
-    // three states map straight onto serviceBadge's contract.
+    // Whether the daemon is running, and nothing else. The toggle says whether
+    // SSH is enabled and the alerts cover an unreadable state.
     get sshBadge() {
       if (!this.loaded) return serviceBadge(undefined);
       if (!this.sshInstalled) return serviceBadge(null);
       return serviceBadge(this.sshActive);
+    },
+
+    // Words for the stood-down Authorized Keys card, which holds the column
+    // whenever there are no keys to manage. Ordered by precedence: an action in
+    // flight outranks the installed flag, so an uninstall that cleared it still
+    // reads Locked while it runs.
+    get keysStandDown() {
+      if (!this.loaded) {
+        return { badge: 'Checking', message: 'Checking the SSH server.' };
+      }
+      if (this.sshdRunning) {
+        return { badge: 'Locked', message: 'Key management is unavailable while the SSH server is being changed.' };
+      }
+      return {
+        badge: 'Unavailable',
+        message: 'Public keys are the only SSH login method. This becomes available once the SSH server is installed.',
+      };
     },
 
     get sshSettingsChanged() {
@@ -129,9 +143,8 @@ function securityController(sshPage = false) {
         this.$store.errorModal.open('The new passwords do not match.');
         return;
       }
-      // The developer password is not requested here. The root helper rejects a
-      // replacement that matches the other stored credential, so the two stay
-      // distinct without this form handling both.
+      // The developer password is not requested here. The root helper rejects
+      // a replacement that matches the other stored credential.
       this.busy = true;
       this.busyAction = 'password';
       this.securityAction({
@@ -162,8 +175,7 @@ function securityController(sshPage = false) {
         return;
       }
       // The administrator password is not requested here. The root helper
-      // rejects a replacement that matches the other stored credential, so the
-      // two stay distinct without this form handling both.
+      // rejects a replacement that matches the other stored credential.
       this.busy = true;
       this.busyAction = 'developer';
       this.saveMessage = '';
@@ -215,8 +227,13 @@ function securityController(sshPage = false) {
         this.keyError = 'That key is longer than 8192 characters.';
         return;
       }
-      if (/BEGIN [A-Z ]*PRIVATE KEY/.test(line)) {
+      if (/BEGIN [A-Z0-9 ]*PRIVATE KEY/.test(line)) {
         this.keyError = 'That is a private key. Paste the matching .pub file instead.';
+        return;
+      }
+      // PuTTYgen's "Save public key" writes this instead of the OpenSSH line.
+      if (/BEGIN SSH2 PUBLIC KEY/.test(line)) {
+        this.keyError = 'This file uses SSH2 public-key format. Export it in OpenSSH authorized_keys format, then paste the resulting single line.';
       }
     },
 
@@ -323,9 +340,8 @@ function securityController(sshPage = false) {
         this.$store.errorModal.open('Paste a public key, or choose a .pub file.');
         return;
       }
-      // The button is already disabled at the limit. This covers reaching the
-      // action any other way, so the cost is not two passwords and a round trip
-      // to be told the store is full.
+      // The button is already disabled at the limit. This catches the action
+      // reached any other way, before it costs two passwords and a round trip.
       if (this.keys.length >= 5) {
         this.$store.errorModal.open('The maximum of 5 SSH keys has been reached. Remove one first.');
         return;
@@ -401,10 +417,9 @@ function securityController(sshPage = false) {
     },
 
 
-    // Exit codes from install_sshd.sh. A code earns a message when the remedy
-    // differs, not merely because the step does. The rest leave the previous
-    // installation in place and are a retry, so they share one message and the
-    // log names the step that declined.
+    // Exit codes from install_sshd.sh. A code gets its own message only when
+    // the remedy differs. The rest leave the previous installation in place
+    // and are a plain retry.
     sshdFailureMessage() {
       switch (this.sshdCode) {
         case 10: return 'SSH is no longer installed. Reload the page.';
@@ -415,9 +430,8 @@ function securityController(sshPage = false) {
         case 21: return 'Another SSH change is already running. Wait for it to finish and try again.';
         case 22: return 'The packages were installed, but sshd could not be started. Check the SSH server panel.';
         case 24: return 'SSH was removed, but the firewall rules could not be reapplied. Check the firewall and the web server.';
-        // Settings, account, packages, config, unit, firewall, index. Listed
-        // rather than left to the default so every code the installer can
-        // return is visibly accounted for, and an unmapped one falls below.
+        // Settings, account, packages, config, unit, firewall, index. Listed so
+        // every code the installer can return is accounted for here.
         case 12: case 15: case 16: case 17: case 18: case 19: case 23:
           return 'Nothing was changed. Open the log for the step that declined.';
         default: return 'The SSH action could not be completed.';
@@ -444,10 +458,9 @@ function securityController(sshPage = false) {
       return 'Not checked';
     },
 
-    // A success has nothing left to act on, so it clears itself the way
-    // saveMessage does. Failures stay: they are the ones asking for something.
-    // A removal stays too: the page changed shape underneath it, and its log is
-    // the only record left of what happened.
+    // Only a success clears itself. A failure still needs acting on, and a
+    // removal changed the shape of the page, with its log the only record of
+    // what happened.
     scheduleSshdDismiss() {
       if (this.sshdAction === 'uninstall') return;
       clearTimeout(this.sshdDoneTimer);
@@ -456,8 +469,8 @@ function securityController(sshPage = false) {
       }, 6000);
     },
 
-    // Both removal outcomes completed: the keys are gone either way, so
-    // refreshing into a half-true view is worse than making the reader reload.
+    // Both removal outcomes completed and the keys are gone either way, so a
+    // refresh would show a half-true view. Make the reader reload instead.
     sshdNeedsReload() {
       return this.sshdOutcome === 'failed' && (this.sshdCode === 20 || this.sshdCode === 24);
     },
@@ -490,9 +503,8 @@ function securityController(sshPage = false) {
       this.sshdRunning = true;
       this.sshdOutcome = '';
       this.sshdCode = 0;
-      // Seeded, not empty: the first poll is three seconds out, and the runner
-      // has to start its unit before it marks a step, so the line would
-      // otherwise be blank for the first few seconds of every action.
+      // Seeded, because the first poll is three seconds out and the runner has
+      // to start its unit before it marks a step.
       this.sshdStep = 'Starting...';
       this.sshdLog = '';
       this.sshdLogOffset = 0;
@@ -538,9 +550,6 @@ function securityController(sshPage = false) {
             this.sshdPollTimer = null;
             fetch('/cgi-bin/get_update_log?ack=1').catch(() => {});
             this.loadSshdCheck();
-            // A partial removal leaves the page describing keys that are gone,
-            // so it is the one outcome that must not silently refresh into a
-            // half-true view.
             if (!this.sshdNeedsReload()) this.loadSecurity();
             if (data.status === 'done') this.scheduleSshdDismiss();
           })

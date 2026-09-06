@@ -22,7 +22,7 @@
 #      ExecReload must not be a bare kill.
 #
 # Run as root with QuecDeck installed. Checks 5 and 6 additionally need sshd
-# installed; they are skipped if it is not.
+# installed and are skipped if it is not.
 #
 #     sh device-test-bind-fragment.sh        # prompts before disrupting
 #     sh device-test-bind-fragment.sh -y     # skip the prompt
@@ -46,7 +46,7 @@ SSHD_PUBLISHER=/usrdata/quecdeck/optional/sshd/update_sshd_ip.sh
 SSHD_UNIT=/lib/systemd/system/sshd.service
 SSHD_CONFIG=/opt/etc/ssh/sshd_config
 ENABLED_MARKER=/opt/etc/ssh/quecdeck_enabled
-ROOT_SSH_DIR=/usrdata/root/.ssh
+ROOT_SSH_DIR=/opt/etc/ssh
 KEYS="$ROOT_SSH_DIR/authorized_keys"
 DIR=/tmp/quecdeck-bindfrag
 

@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=a6697854" />
-    <link rel="stylesheet" href="css/styles.css?v=a6697854" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=f99e81fd" />
+    <link rel="stylesheet" href="css/styles.css?v=f99e81fd" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=a6697854"></script>
-    <script src="js/utils.js?v=a6697854"></script>
-    <script src="js/alpinejs.min.js?v=a6697854" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=f99e81fd"></script>
+    <script src="js/utils.js?v=f99e81fd"></script>
+    <script src="js/alpinejs.min.js?v=f99e81fd" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="securityController(true)">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=a6697854"></script>
+        <script src="js/nav.js?v=f99e81fd"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-start">
 
@@ -56,7 +56,7 @@
 
                   <div class="mb-4">
                     <label class="form-label fw-semibold" for="install-port">SSH Port</label>
-                    <div class="text-muted small mb-2">Use the standard port 22, or a port from 1024 to 65535. You can change it later.</div>
+                    <div class="text-muted small mb-2">Use the standard port 22, or a port from 1024 to 65535. Can be changed later.</div>
                     <input
                       id="install-port"
                       type="number"
@@ -261,41 +261,22 @@
                card, so arriving data changes its contents and never the layout. -->
           <div class="col-lg-6">
 
-            <!-- Installed or not is unknown until the fetch lands. Claim
-                 neither: a premature "Unavailable" would be wrong on every
-                 installed device for as long as the request takes. -->
-            <template x-if="!loaded">
-              <div class="panel-section opacity-50">
-                <div class="panel-title">Authorized Keys</div>
-                <p class="text-muted small mb-0">Checking the SSH server.</p>
-              </div>
-            </template>
-
-            <!-- Uninstalling clears the authorized keys, so there is nothing
-                 here to manage. The card still holds its half of the row. -->
-            <template x-if="loaded && !sshInstalled">
+            <!-- Three states have no keys to manage: the fetch has not landed,
+                 an action is rewriting the keys, or SSH is absent. One card for
+                 all three, with keysStandDown supplying the words. Its
+                 condition is the exact complement of the live panel's below, so
+                 one of the two always renders and the column never empties. -->
+            <template x-if="!(loaded && sshInstalled && !sshdRunning)">
               <div class="panel-section opacity-50">
                 <div class="panel-title d-flex justify-content-between align-items-center">
                   <span>Authorized Keys</span>
-                  <span class="badge text-bg-secondary">Unavailable</span>
+                  <span class="badge text-bg-secondary" x-text="keysStandDown.badge"></span>
                 </div>
-                <p class="text-muted small mb-0">Public keys are the only SSH login method. This becomes available once the SSH server is installed.</p>
+                <p class="text-muted small mb-0" x-text="keysStandDown.message"></p>
               </div>
             </template>
 
-              <!-- An install or removal is rewriting the very keys this panel
-                   lists, so it stands down rather than showing a list that is
-                   becoming false while it is read. -->
-              <template x-if="loaded && sshInstalled && sshdRunning">
-                <div class="panel-section opacity-50">
-                  <div class="panel-title d-flex justify-content-between align-items-center">
-                    <span>Authorized Keys</span>
-                    <span class="badge text-bg-secondary">Locked</span>
-                  </div>
-                  <p class="text-muted small mb-0">Key management is unavailable while the SSH server is being changed.</p>
-                </div>
-              </template>
-              <template x-if="loaded && sshInstalled && !sshdRunning">
+            <template x-if="loaded && sshInstalled && !sshdRunning">
               <div class="panel-section">
                 <div class="panel-title d-flex justify-content-between align-items-center">
                   <span>Authorized Keys</span>
@@ -432,7 +413,8 @@
         </div>
       </div>
     </main>
-    <script src="js/capslock.js?v=a6697854"></script>
-    <script src="js/security.js?v=a6697854"></script>
+    <script src="js/capslock.js?v=f99e81fd"></script>
+    <script src="js/password-toggle.js?v=f99e81fd"></script>
+    <script src="js/security.js?v=f99e81fd"></script>
   </body>
 </html>

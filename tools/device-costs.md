@@ -45,8 +45,8 @@ otherwise unmodified: `git show HEAD:path > /tmp/old`.
 
 Better still, **alternate rounds** rather than measuring each variant once, so
 drift cancels instead of landing on whichever variant you timed second.
-`tests/device/device-test-authforkbench.sh` does this properly and is the pattern to
-copy for anything marginal.
+`tests/device/device-test-authforkbench.sh` alternates rounds, and is the
+pattern to copy for anything marginal.
 
 ---
 
@@ -107,7 +107,7 @@ all variants returning identical values:
 | pure Bash, stopping at the last tag (~23% of the file) | 11900 us (1.6x worse) |
 
 Every fork removed successfully in this codebase was a single operation on a
-handful of lines. Don't generalise the wins to bulk text processing.
+handful of lines. The measurements above show the opposite result on bulk text.
 
 ---
 
@@ -167,7 +167,7 @@ Chained deletes scale **linearly**: 21 ms per slot chained against 20 ms for a
 single slot, so batching the round trips buys nothing. QuecDeck therefore does
 **not** chain (see `tools/sms-delete-flow.md`). The chained figure is kept
 because it is what settled that question. Both are one-shot measurements against
-real messages, which is why they were not taken sooner.
+real messages.
 
 The manual's stated maximum for `+CMGD` is **300 ms**, i.e. 15x the observed
 cost. Size timeouts on the manual's figure, not this one: it is the vendor's
@@ -178,7 +178,7 @@ clock is ~3.5x slower. `delete_sms` uses `budget=45 slot_tmo=2` on that basis.
 
 ## Endpoints, at a real 3 s cadence
 
-The honest numbers. Burst figures for the same endpoints are roughly a third of
+Measured at cadence. Burst figures for the same endpoints are roughly a third of
 these.
 
 | Endpoint | Cost | Note |
@@ -264,8 +264,8 @@ The `_epoch_now`-twice-per-miss finding is separate and still open: it costs
 
 ## Where the measurements live
 
-This file is the index. Domain detail stays in its own document. Don't copy
-numbers here that already have a home.
+This file is the index. Domain detail stays in its own document, and numbers
+that already have a home stay there.
 
 | Harness | Measures |
 |---|---|

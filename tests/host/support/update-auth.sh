@@ -1,6 +1,6 @@
 # Behavioral regressions for updater input and the privileged SSH dispatcher.
 # Sourced by the updater suite. All fixed device paths are rewritten into a
-# private fixture; service starts and password checks only record calls.
+# private fixture. Service starts and password checks only record calls.
 _update_auth_fixture=$(mktemp -d)
 mkdir -p "$_update_auth_fixture/release/script"
 sed -e "s|/run/quecdeck|$_update_auth_fixture/run|g" \

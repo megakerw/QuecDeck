@@ -110,7 +110,6 @@ function processAllInfos() {
     // Pure parser: applies the modem_stats AT response (already split into
     // lines) to component state. Called by fetchDashboard. Never fetches.
     applyModemStats(lines) {
-            // Cache repeated line lookups
             const servingcell_line = lines.find((l) => l.includes('+QENG: "servingcell"'));
             const lte_line = lines.find((l) => l.includes('+QENG: "LTE"'));
             const nr5g_nsa_line = lines.find((l) => l.includes('+QENG: "NR5G-NSA"'));
@@ -686,8 +685,8 @@ function processAllInfos() {
         this.pollOnce();
       }, this.refreshRate * 1000);
 
-      // Re-registering on every init() call caused duplicate/lost listeners
-      // on iOS Safari across multiple resumes.
+      // Register once. init() runs again on every iOS Safari resume, and
+      // re-registering there duplicates and loses listeners.
       if (!this._handlersRegistered) {
         this._handlersRegistered = true;
 

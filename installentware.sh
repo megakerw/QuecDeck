@@ -1,5 +1,11 @@
 #!/bin/sh
 # Modified by iamromulan to set up a proper entware environment for Quectel RM5xx series m.2 modems
+# The stock ADB root shell uses umask 0000.  Entware creates its feed config and
+# package indexes using the caller's mask, so pin both the command search path
+# and mask before the first privileged download.
+PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 022
 TYPE='generic'
 #|---------|-----------------|
 #| TARGET  | Quectel Modem   |
@@ -14,6 +20,62 @@ LOADER=ld-linux.so.3
 GLIBC=2.27
 PRE_OPKG_PATH=$(which opkg)
 
+# opkg trusts both its configuration and every cached package index while it is
+# running as root.  Keep that trust state root-owned even when an outer caller
+# supplied a permissive umask.  Reject special files rather than following a
+# symlink planted during an interrupted or damaged installation.
+secure_opkg_metadata() {
+    _opkg_config=/opt/etc/opkg.conf
+    _opkg_lists=/opt/var/opkg-lists
+
+    [ -d /opt/etc ] && [ ! -L /opt/etc ] || return 1
+    [ -f "$_opkg_config" ] && [ ! -L "$_opkg_config" ] || return 1
+    _opkg_mode=$(stat -c %a /opt/etc 2>/dev/null) || return 1
+    [ "$(stat -c %u /opt/etc 2>/dev/null)" = 0 ] &&
+        [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    _opkg_mode=$(stat -c %a "$_opkg_config" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$_opkg_config" 2>/dev/null)" = 0 ] &&
+        [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    chown root:root /opt/etc "$_opkg_config" || return 1
+    chmod 755 /opt/etc && chmod 644 "$_opkg_config" || return 1
+
+    [ -d "$_opkg_lists" ] && [ ! -L "$_opkg_lists" ] || return 1
+    _opkg_mode=$(stat -c %a "$_opkg_lists" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$_opkg_lists" 2>/dev/null)" = 0 ] &&
+        [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    chown root:root "$_opkg_lists" && chmod 755 "$_opkg_lists" || return 1
+    for _opkg_entry in "$_opkg_lists"/* "$_opkg_lists"/.[!.]* "$_opkg_lists"/..?*; do
+        [ -e "$_opkg_entry" ] || [ -L "$_opkg_entry" ] || continue
+        [ -f "$_opkg_entry" ] && [ ! -L "$_opkg_entry" ] || return 1
+        _opkg_mode=$(stat -c %a "$_opkg_entry" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$_opkg_entry" 2>/dev/null)" = 0 ] &&
+            [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+        chown root:root "$_opkg_entry" && chmod 644 "$_opkg_entry" || return 1
+    done
+}
+
+# Package indexes are the trust root for every archive and maintainer script
+# opkg executes.  HTTPS is therefore mandatory for every enabled feed, including
+# third-party feeds an administrator may have added deliberately.
+require_https_opkg_feeds() {
+    _opkg_source_count=0
+    while IFS= read -r _opkg_line || [ -n "$_opkg_line" ]; do
+        IFS=' 	' read -r _opkg_kind _opkg_name _opkg_url _opkg_rest <<EOF
+$_opkg_line
+EOF
+        case "$_opkg_kind" in
+            src|src/gz)
+                [ -n "$_opkg_name" ] && [ -n "$_opkg_url" ] || return 1
+                case "$_opkg_url" in
+                    https://*) _opkg_source_count=$((_opkg_source_count + 1)) ;;
+                    *) return 1 ;;
+                esac
+                ;;
+        esac
+    done < /opt/etc/opkg.conf || return 1
+    [ "$_opkg_source_count" -gt 0 ]
+}
+
 # Verified on stock firmware: curl and its CA store do not depend on Entware.
 # Refuse unsupported firmware before changing mounts or the package manager.
 [ -x /usr/bin/curl ] && [ -s /etc/ssl/certs/ca-certificates.crt ] || {
@@ -25,12 +87,36 @@ PRE_OPKG_PATH=$(which opkg)
 mount -o remount,rw /
 trap 'mount -o remount,ro /' EXIT  # ensures RO is restored on any exit path
 
+# Write systemd units with their final ownership and mode before replacing the
+# live path. This avoids inheriting a permissive caller umask or retaining the
+# mode of an older unit while the root filesystem is writable.
+write_system_unit() { # write_system_unit <absolute path>; content on stdin
+    _unit_target=$1
+    _unit_tmp=$(mktemp "${_unit_target}.XXXXXX") || return 1
+    if ! cat > "$_unit_tmp" ||
+       ! chown root:root "$_unit_tmp" ||
+       ! chmod 644 "$_unit_tmp" ||
+       ! mv -f "$_unit_tmp" "$_unit_target"; then
+        rm -f "$_unit_tmp"
+        return 1
+    fi
+}
+
 create_opt_mount() {
     # Bind /usrdata/opt to /opt
     echo -e '\033[32mInfo: Setting up /opt mount to /usrdata/opt...\033[0m'
-    cat <<EOF > /lib/systemd/system/opt.mount
+    write_system_unit /lib/systemd/system/opt.mount <<'EOF' || return 1
 [Unit]
 Description=Bind /usrdata/opt to /opt
+# Mount units normally run before local-fs.target. On this firmware that is
+# several seconds before the vendor data initialization has finished, even
+# though usrdata.mount already reports active. Place this bind mount in the
+# normal multi-user transaction after the vendor's data initialization.
+DefaultDependencies=no
+Requires=usrdata.mount
+After=usrdata.mount data-init.service
+Before=umount.target
+Conflicts=umount.target
 
 [Mount]
 What=/usrdata/opt
@@ -41,27 +127,14 @@ Options=bind
 [Install]
 WantedBy=multi-user.target
 EOF
-    
-    systemctl daemon-reload
+
+    # opt.mount already has normal systemd enablement metadata. Enable it
+    # directly so dependent units can order against the real mount operation.
+    rm -f /lib/systemd/system/multi-user.target.wants/start-opt-mount.service \
+        /lib/systemd/system/start-opt-mount.service
+    ln -sf /lib/systemd/system/opt.mount /lib/systemd/system/multi-user.target.wants/opt.mount || return 1
+    systemctl daemon-reload || return 1
     systemctl start opt.mount
-    
-    # Additional systemd service to ensure opt.mount starts at boot
-    echo -e '\033[32mInfo: Creating service to start opt.mount at boot...\033[0m'
-    cat <<EOF > /lib/systemd/system/start-opt-mount.service
-[Unit]
-Description=Ensure opt.mount is started at boot
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/bin/systemctl start opt.mount
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    systemctl daemon-reload
-    ln -sf /lib/systemd/system/start-opt-mount.service /lib/systemd/system/multi-user.target.wants/start-opt-mount.service
 }
 
 if [ -n "$PRE_OPKG_PATH" ]; then
@@ -75,7 +148,7 @@ fi
 echo -e '\033[32mInfo: Creating /opt mount pointed to /usrdata/opt ...\033[0m'
 mkdir -p /usrdata/opt
 mkdir -p /opt
-create_opt_mount
+create_opt_mount || exit 1
 echo -e '\033[32mInfo: Proceeding with main installation ...\033[0m'
 # no need to create many folders. The entware-opt package creates most
 for folder in bin etc lib/opkg tmp var/lock
@@ -90,14 +163,29 @@ done
 
 echo -e '\033[32mInfo: opkg package manager deployment...\033[0m'
 URL=https://bin.entware.net/${ARCH}/installer
-/usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 60 --retry 1 -o /opt/bin/opkg "$URL/opkg" || { echo -e "\e[1;31mFailed to download opkg binary.\e[0m"; exit 1; }
-chmod 755 /opt/bin/opkg
-/usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o /opt/etc/opkg.conf "$URL/opkg.conf" || { echo -e "\e[1;31mFailed to download opkg.conf.\e[0m"; exit 1; }
+_opkg_bin_tmp=$(mktemp /opt/bin/.opkg.XXXXXX) || exit 1
+if ! /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 60 --retry 1 -o "$_opkg_bin_tmp" "$URL/opkg" ||
+   [ ! -s "$_opkg_bin_tmp" ] || ! chown root:root "$_opkg_bin_tmp" ||
+   ! chmod 755 "$_opkg_bin_tmp" || ! "$_opkg_bin_tmp" --version >/dev/null 2>&1 ||
+   ! mv -f "$_opkg_bin_tmp" /opt/bin/opkg; then
+    rm -f "$_opkg_bin_tmp"
+    echo -e "\e[1;31mFailed to install opkg binary securely.\e[0m"
+    exit 1
+fi
+_opkg_conf_tmp=$(mktemp /opt/etc/.opkg.conf.XXXXXX) || exit 1
+if ! /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o "$_opkg_conf_tmp" "$URL/opkg.conf" ||
+   ! chown root:root "$_opkg_conf_tmp" || ! chmod 644 "$_opkg_conf_tmp" ||
+   ! mv -f "$_opkg_conf_tmp" /opt/etc/opkg.conf; then
+    rm -f "$_opkg_conf_tmp"
+    echo -e "\e[1;31mFailed to install opkg.conf securely.\e[0m"
+    exit 1
+fi
 
 bootstrap_tls_packages() {
     # Scope PATH and cleanup to a subshell, preserving the outer remount trap.
     (
         umask 077
+        require_https_opkg_feeds || exit 1
         _bootstrap_dir=$(mktemp -d /run/quecdeck-entware.XXXXXX) || exit 1
         trap 'rm -rf "$_bootstrap_dir"' EXIT
         trap 'exit 1' HUP INT TERM
@@ -133,6 +221,7 @@ CURL_WGET
         chmod 700 "$_bootstrap_dir/wget" || exit 1
         export PATH="$_bootstrap_dir:/opt/bin:/opt/sbin:$PATH"
         /opt/bin/opkg update || exit 1
+        secure_opkg_metadata || exit 1
         /opt/bin/opkg install wget-ssl ca-certificates entware-opt || exit 1
     )
 }
@@ -140,9 +229,19 @@ CURL_WGET
 echo -e '\033[32mInfo: Basic packages installation...\033[0m'
 # Secure the index and every dependency from the first package batch onwards.
 sed -i 's|http://bin\.entware\.net/|https://bin.entware.net/|g' /opt/etc/opkg.conf || exit 1
+require_https_opkg_feeds || {
+    echo "Every enabled Entware feed must use HTTPS." >&2
+    exit 1
+}
 bootstrap_tls_packages || exit 1
 # opkg chooses its downloader from PATH. The firmware wget cannot verify TLS.
-PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg update || {
+PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg update
+_opkg_update_rc=$?
+secure_opkg_metadata || {
+    echo "Entware metadata permissions could not be secured." >&2
+    exit 1
+}
+[ "$_opkg_update_rc" -eq 0 ] || {
     echo "Entware HTTPS verification failed. Check certificates and the device clock." >&2
     exit 1
 }
@@ -168,14 +267,14 @@ done
 
 # Create and enable rc.unslung service
 echo -e '\033[32mInfo: Creating rc.unslung (Entware init.d service)...\033[0m'
-cat <<EOF > /lib/systemd/system/rc.unslung.service
+write_system_unit /lib/systemd/system/rc.unslung.service <<'EOF' || exit 1
 [Unit]
 Description=Start Entware services
+Requires=opt.mount
+After=opt.mount
 
 [Service]
 Type=oneshot
-# Add a delay to give /opt time to mount
-ExecStartPre=/bin/sleep 5
 ExecStart=/opt/etc/init.d/rc.unslung start
 RemainAfterExit=yes
 
@@ -183,9 +282,9 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-ln -sf /lib/systemd/system/rc.unslung.service /lib/systemd/system/multi-user.target.wants/rc.unslung.service
-systemctl start rc.unslung.service
+ln -sf /lib/systemd/system/rc.unslung.service /lib/systemd/system/multi-user.target.wants/rc.unslung.service || exit 1
+systemctl daemon-reload || exit 1
+systemctl start rc.unslung.service || exit 1
 echo -e '\033[32mInfo: Congratulations!\033[0m'
 echo -e '\033[32mInfo: If there are no errors above then Entware was successfully initialized.\033[0m'
 echo -e '\033[32mInfo: Add /opt/bin & /opt/sbin to $PATH variable\033[0m'

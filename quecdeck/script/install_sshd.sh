@@ -15,17 +15,59 @@
 # code to its own copy. Add a code rather than overloading one.
 
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
+umask 022
 QUECDECK_DIR=/usrdata/quecdeck
 ASSET_DIR=$QUECDECK_DIR/optional/sshd
 MANIFEST=$QUECDECK_DIR/checksums.sha256
-# ssh_access.sh's lock, deliberately the same file. Key and settings changes go
-# straight through that helper while install and removal run in a unit, so two
-# separate locks would exclude nothing between them. Covers every SSH change,
-# not just keys, which is what the name says.
+# ssh_access.sh's lock, deliberately the same file, covering every SSH change.
+# Key and settings changes go straight through that helper while install and
+# removal run in a unit, so two separate locks would exclude nothing.
 LOCK=/usrdata/root/.quecdeck-ssh.lock
 
 . $QUECDECK_DIR/script/sshd-policy-lib.sh || exit 1
 . $QUECDECK_DIR/script/lock-lib.sh || exit 1
+
+secure_opkg_metadata() {
+    local config=/opt/etc/opkg.conf lists=/opt/var/opkg-lists entry mode
+    [ -d /opt/etc ] && [ ! -L /opt/etc ] || return 1
+    [ -f "$config" ] && [ ! -L "$config" ] || return 1
+    mode=$(stat -c %a /opt/etc 2>/dev/null) || return 1
+    [ "$(stat -c %u /opt/etc 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    mode=$(stat -c %a "$config" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$config" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    chown root:root /opt/etc "$config" || return 1
+    chmod 755 /opt/etc && chmod 644 "$config" || return 1
+    [ -d "$lists" ] && [ ! -L "$lists" ] || return 1
+    mode=$(stat -c %a "$lists" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$lists" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    chown root:root "$lists" && chmod 755 "$lists" || return 1
+    for entry in "$lists"/* "$lists"/.[!.]* "$lists"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        [ -f "$entry" ] && [ ! -L "$entry" ] || return 1
+        mode=$(stat -c %a "$entry" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$entry" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+        chown root:root "$entry" && chmod 644 "$entry" || return 1
+    done
+}
+
+require_https_opkg_feeds() {
+    local source_count=0 line kind name url rest
+    while IFS= read -r line || [ -n "$line" ]; do
+        IFS=' 	' read -r kind name url rest <<EOF
+$line
+EOF
+        case "$kind" in
+            src|src/gz)
+                [ -n "$name" ] && [ -n "$url" ] || return 1
+                case "$url" in
+                    https://*) source_count=$((source_count + 1)) ;;
+                    *) return 1 ;;
+                esac
+                ;;
+        esac
+    done < /opt/etc/opkg.conf || return 1
+    [ "$source_count" -gt 0 ]
+}
 
 RC_OK=0
 RC_USAGE=1
@@ -82,8 +124,7 @@ remount_ro() { mount -o remount,ro /; }
 # through the unit's ExecStartPost, and firewall.sh applies its rules atomically
 # on its own. Restart only when the unit is inactive: a direct rebuild would
 # leave it that way, and sshd's ExecStartPre gate refuses to start against an
-# inactive firewall. Same shape as apply_network_policy in ssh_access.sh, which
-# is why a port change from the settings panel does not drop the page.
+# inactive firewall. Same shape as apply_network_policy in ssh_access.sh.
 apply_firewall() {
     if systemctl is-active --quiet firewall 2>/dev/null; then
         /bin/bash "$QUECDECK_DIR/script/firewall.sh" >/dev/null 2>&1
@@ -210,7 +251,7 @@ HostKey /opt/etc/ssh/ssh_host_rsa_key
 PermitRootLogin prohibit-password
 PubkeyAuthentication yes
 AuthenticationMethods publickey
-AuthorizedKeysFile /usrdata/root/.ssh/authorized_keys
+AuthorizedKeysFile /opt/etc/ssh/authorized_keys
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 AllowUsers root
@@ -277,28 +318,18 @@ EOF
 # leaves the previous installation as it was.
 install_sshd() {
     local ssh_port="$1" ssh_enabled="$2"
-    local was_installed=0 live_enabled="" live_port="" need_firewall=0 live_state
     local package_rc init_cleanup_rc
-
-    sshd_is_installed && was_installed=1
-    # Captured before anything is rewritten. A firewall restart takes lighttpd
-    # down with it (lighttpd.service is PartOf=firewall.service), so skip it when
-    # the rules would not change. Compare against the state the loaded rules were
-    # built from, never against which front end asked. An unreadable live state
-    # restarts rather than trusting a guess.
-    if [ "$was_installed" = 1 ]; then
-        live_state=$("$QUECDECK_DIR/script/ssh_access.sh" status 2>/dev/null) &&
-            IFS=$'\t' read -r live_enabled live_port <<< "$live_state"
-    fi
-    if [ "$was_installed" = 0 ] ||
-       [ -z "$live_port" ] ||
-       [ "$ssh_port" != "$live_port" ] ||
-       [ "$ssh_enabled" != "$live_enabled" ]; then
-        need_firewall=1
-    fi
 
     [ -x /opt/bin/opkg ] || {
         echo -e "\e[1;31mEntware is not installed. Install QuecDeck first.\e[0m"
+        return "$RC_ENTWARE"
+    }
+    secure_opkg_metadata || {
+        echo -e "\e[1;31mEntware metadata permissions are unsafe. Update QuecDeck and try again.\e[0m"
+        return "$RC_ENTWARE"
+    }
+    require_https_opkg_feeds || {
+        echo -e "\e[1;31mEvery enabled Entware feed must use HTTPS.\e[0m"
         return "$RC_ENTWARE"
     }
     verify_asset sshd.service && verify_asset update_sshd_ip.sh || {
@@ -346,14 +377,14 @@ install_sshd() {
     trap - EXIT
     systemctl daemon-reload
 
-    if [ "$need_firewall" = 1 ]; then
-        step "Applying the firewall rules"
-        if ! apply_firewall; then
-            systemctl stop sshd >/dev/null 2>&1 || true
-            echo -e "\e[1;31mWARNING: the firewall rules could not be applied. Sshd was not started.\e[0m"
-            echo -e "\e[1;31mCheck 'systemctl status firewall lighttpd', then start sshd after the firewall is active.\e[0m"
-            return "$RC_FIREWALL"
-        fi
+    # Reconcile the live chain on every install/update. Comparing only the
+    # desired settings misses a stale chain left by an earlier boot-time race.
+    step "Applying the firewall rules"
+    if ! apply_firewall; then
+        systemctl stop sshd >/dev/null 2>&1 || true
+        echo -e "\e[1;31mWARNING: the firewall rules could not be applied. Sshd was not started.\e[0m"
+        echo -e "\e[1;31mCheck 'systemctl status firewall lighttpd', then start sshd after the firewall is active.\e[0m"
+        return "$RC_FIREWALL"
     fi
 
     if [ "$ssh_enabled" = 0 ]; then
@@ -385,19 +416,16 @@ uninstall_sshd() {
     done
     remove_entware_sshd_init_scripts || package_failed=1
     cleanup_ssh_account
-    rm -rf /opt/etc/ssh
-    # Authorized keys live in root's home, not /opt/etc/ssh, so they outlive the
-    # packages. Left behind they are unreachable from the web UI (every
-    # ssh_access.sh arm requires sshd installed) and go live again the moment SSH
-    # is reinstalled, which needs no credential. Clear them here instead. The
-    # directory stays: it may predate QuecDeck.
-    if [ -s /usrdata/root/.ssh/authorized_keys ]; then
+    # Authorized keys sit inside /opt/etc/ssh, so the removal below takes them
+    # with the packages. Keys left behind would go live again the moment SSH is
+    # reinstalled, which needs no credential. Announce it before the delete.
+    # The lock file lives in root's home and is untouched: this runs holding it,
+    # and unlinking it would leave a waiter holding a lock on an unnamed inode
+    # while the next caller locks a freshly created one.
+    if [ -s /opt/etc/ssh/authorized_keys ]; then
         echo -e "\e[1;33mRemoving authorized SSH keys. Re-adding one needs the administrator and developer passwords.\e[0m"
     fi
-    # The lock file stays. This runs holding it, and unlinking it would leave a
-    # waiter holding a lock on an unnamed inode while the next caller locks a
-    # freshly created one, so neither would exclude the other.
-    rm -f /usrdata/root/.ssh/authorized_keys
+    rm -rf /opt/etc/ssh
     trap 'remount_ro' EXIT
     remount_rw || return "$RC_PARTIAL_REMOVAL"
     rm -f /lib/systemd/system/sshd.service \
@@ -434,8 +462,13 @@ check_packages() {
         echo -e "\e[1;31msshd is not installed.\e[0m" >&2
         return "$RC_NOT_INSTALLED"
     }
+    secure_opkg_metadata || return "$RC_ENTWARE"
+    require_https_opkg_feeds || return "$RC_ENTWARE"
     step "Refreshing the package index"
-    timeout 120 /opt/bin/opkg update >/dev/null 2>&1 || {
+    timeout 120 /opt/bin/opkg update >/dev/null 2>&1
+    local update_rc=$?
+    secure_opkg_metadata || return "$RC_ENTWARE"
+    [ "$update_rc" -eq 0 ] || {
         echo -e "\e[1;31mCould not refresh the package index. No changes were made.\e[0m" >&2
         return "$RC_INDEX"
     }

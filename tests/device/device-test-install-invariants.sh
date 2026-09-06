@@ -18,6 +18,8 @@
 #      the life of the install. Boot-time rewriting is the regression.
 #   4. PRIVILEGE. The sudo-reachable root helpers must stay root-only. One of
 #      them becoming group-writable is a direct root escalation for www-data.
+#   5. ENTWARE TRUST. opkg runs package scripts as root, so its feed config and
+#      cached indexes must never be writable by the web account.
 #
 # Usage: sh device-test-install-invariants.sh
 
@@ -107,8 +109,8 @@ else
 fi
 
 echo "== 3. configuration immutability =="
-# The old prestart rewrote these at every boot, which moved the installed copy
-# away from its manifest hash and made verification impossible.
+# A boot-time rewrite of any of these moves the installed copy away from its
+# manifest hash and makes verification impossible.
 for rel in lighttpd.conf auth.lua script/firewall.sh script/lighttpd_prestart.sh \
            script/lan-ip-lib.sh script/lock-lib.sh; do
     want=$(awk -v p="*quecdeck/$rel" '$2 == p {print $1}' "$MANIFEST" 2>/dev/null)
@@ -155,6 +157,26 @@ case "$m" in
     "root 755"|"root 750"|"root 700") ok "/opt/etc is $m" ;;
     *) bad "/opt/etc is $m, which would let www-data reset credentials" ;;
 esac
+
+echo "== 5. Entware package trust =="
+m=$(stat -c '%U:%G %a' /opt/etc/opkg.conf 2>/dev/null)
+[ "$m" = "root:root 644" ] &&
+    ok "opkg.conf is $m" ||
+    bad "opkg.conf is ${m:-missing}, want root:root 644"
+m=$(stat -c '%U:%G %a' /opt/var/opkg-lists 2>/dev/null)
+[ "$m" = "root:root 755" ] &&
+    ok "opkg list directory is $m" ||
+    bad "opkg list directory is ${m:-missing}, want root:root 755"
+opkg_lists_ok=1
+for f in /opt/var/opkg-lists/* /opt/var/opkg-lists/.[!.]* /opt/var/opkg-lists/..?*; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    m=$(stat -c '%U:%G %a' "$f" 2>/dev/null)
+    [ -f "$f" ] && [ ! -L "$f" ] && [ "$m" = "root:root 644" ] || {
+        bad "$f is ${m:-missing} or is not a regular file, want root:root 644"
+        opkg_lists_ok=0
+    }
+done
+[ "$opkg_lists_ok" = 1 ] && ok "every cached opkg index is root:root 644"
 
 echo ""
 echo "Result: $pass passed, $fail failed, $skip skipped"

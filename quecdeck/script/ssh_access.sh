@@ -8,7 +8,11 @@ umask 077
 . /usrdata/quecdeck/script/sshd-policy-lib.sh || exit 1
 
 ROOT_HOME=/usrdata/root
-SSH_DIR=$ROOT_HOME/.ssh
+# Keys live under /opt, not in root's home, because sshd runs StrictModes and
+# walks every parent of AuthorizedKeysFile. /usrdata is 775 system:system, so a
+# member of that group could rename root's home aside and plant its own store.
+# /opt, /opt/etc and /opt/etc/ssh are all root-owned and not group-writable.
+SSH_DIR=/opt/etc/ssh
 KEYS=$SSH_DIR/authorized_keys
 # Shared with install_sshd.sh, which takes it for the whole of an install,
 # update or removal. Keep the two paths identical or neither excludes the other.
@@ -28,16 +32,35 @@ safe_root_home() {
         [ "$(stat -c %a "$ROOT_HOME" 2>/dev/null)" = 700 ]
 }
 
+# StrictModes walks the whole AuthorizedKeysFile path. Check every persistent
+# directory we trust before following it or writing beneath it.
+trusted_store_dir() { # trusted_store_dir <path>
+    local path=$1 mode
+    [ -d "$path" ] && [ ! -L "$path" ] || return 1
+    [ "$(stat -c %u "$path" 2>/dev/null)" = 0 ] || return 1
+    mode=$(stat -c %a "$path" 2>/dev/null)
+    case "$mode" in ''|*[!0-7]*) return 1 ;; esac
+    [ $(( 8#$mode & 022 )) -eq 0 ]
+}
+
+store_parents_safe() {
+    trusted_store_dir /opt && trusted_store_dir /opt/etc
+}
+
+store_dir_safe() {
+    store_parents_safe && trusted_store_dir "$SSH_DIR"
+}
+
 prepare_store() {
     safe_root_home || return 1
+    # Check parents before mkdir can follow either of them.
+    store_parents_safe || return 1
     [ ! -L "$SSH_DIR" ] || return 1
     if [ ! -e "$SSH_DIR" ]; then
         mkdir "$SSH_DIR" || return 1
-        chown root:root "$SSH_DIR" && chmod 700 "$SSH_DIR" || return 1
+        chown root:root "$SSH_DIR" && chmod 755 "$SSH_DIR" || return 1
     fi
-    [ -d "$SSH_DIR" ] && [ ! -L "$SSH_DIR" ] || return 1
-    [ "$(stat -c %u "$SSH_DIR" 2>/dev/null)" = 0 ] || return 1
-    chmod 700 "$SSH_DIR" || return 1
+    store_dir_safe || return 1
     [ ! -L "$KEYS" ] || return 1
     if [ -e "$KEYS" ]; then
         [ -f "$KEYS" ] && [ ! -L "$KEYS" ] || return 1
@@ -133,8 +156,7 @@ has_usable_key() {
 keys_ready() {
     local effective listen
     safe_root_home || return 1
-    [ -d "$SSH_DIR" ] && [ ! -L "$SSH_DIR" ] || return 1
-    [ "$(stat -c '%u %a' "$SSH_DIR" 2>/dev/null)" = "0 700" ] || return 1
+    store_dir_safe || return 1
     [ -f "$KEYS" ] && [ ! -L "$KEYS" ] || return 1
     [ "$(stat -c '%u %a' "$KEYS" 2>/dev/null)" = "0 600" ] || return 1
     has_usable_key || return 1
@@ -356,9 +378,10 @@ case "${1:-}" in
     list)
         [ "$#" -eq 1 ] || exit 1
         safe_root_home || exit 9
+        store_parents_safe || exit 1
         [ ! -L "$SSH_DIR" ] || exit 1
         if [ -e "$SSH_DIR" ]; then
-            [ -d "$SSH_DIR" ] && [ "$(stat -c %u "$SSH_DIR" 2>/dev/null)" = 0 ] || exit 1
+            store_dir_safe || exit 1
         fi
         [ ! -L "$KEYS" ] || exit 1
         [ ! -e "$KEYS" ] || [ -f "$KEYS" ] || exit 1

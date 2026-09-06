@@ -231,13 +231,6 @@ while IFS= read -r f; do
     [ "$actual" = "$expected" ] || err "pinned hash stale for $f (update quecdeck.sh)"
 done < <(hook_list PINNED_FILES)
 
-# The updater fetches the whole quecdeck/ subtree as one archive rather than
-# per-file, so a manifest-vs-per-file-download-URL diff no longer applies:
-# every checksummed file is fetched by construction. The old drift hazard
-# between stage_release()'s exclusion list and the verify loop's "expected
-# missing" whitelist is gone too: both are driven by the single _STAGE_EXEMPT
-# list in stage_release().
-
 # --------------------------------------------- asset version consistency ---
 # The ?v= token in every HTML must equal the hash the hook derives from the
 # checksummed JS+CSS content.
@@ -248,11 +241,6 @@ expected_v=$(
 )
 stray_v=$(grep -rhoE '\?v=[a-f0-9]+' quecdeck/www/*.html | sort -u | grep -v "?v=$expected_v" || true)
 [ -n "$stray_v" ] && err "HTML asset version tokens out of date: found $stray_v, expected ?v=$expected_v"
-
-# The updater no longer generates its installer via a heredoc: update_quecdeck.sh
-# runs its install phase directly (update_quecdeck.sh --install <tag>), so it is
-# ordinary committed code covered by the bash -n loop at the top of this file.
-# The old heredoc-escaping validator was removed with that refactor.
 
 # ----------------------------------------------------------------------------
 if [ "$errors" = "0" ]; then

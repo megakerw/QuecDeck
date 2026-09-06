@@ -14,7 +14,7 @@
   function hintEl() {
     if (!hint) {
       hint = document.createElement('div');
-      hint.className = 'form-text text-warning';
+      hint.className = 'form-text text-warning caps-hint';
       // Announced by screen readers when it appears, without stealing focus.
       hint.setAttribute('role', 'status');
       hint.textContent = 'Caps Lock is on';
@@ -26,16 +26,27 @@
     if (hint && hint.parentNode) hint.parentNode.removeChild(hint);
   }
 
+  // A field revealed by password-toggle.js is type=text, so the mark it
+  // leaves behind is what identifies it once that happens.
+  function isPasswordField(el) {
+    return !!el && (el.type === 'password' || el.dataset.pwToggle === '1');
+  }
+
   function update(e) {
     var field = e.target;
-    if (!field || field.type !== 'password') return;
+    if (!isPasswordField(field)) return;
     var on = typeof e.getModifierState === 'function' && e.getModifierState('CapsLock');
     if (!on) {
       detach();
       return;
     }
     var el = hintEl();
-    if (field.nextElementSibling !== el) field.insertAdjacentElement('afterend', el);
+    // password-toggle.js wraps the field in an .input-group, which lays its
+    // children out in a row. The hint goes after the whole group.
+    var anchor = field.parentNode && field.parentNode.classList.contains('input-group')
+      ? field.parentNode
+      : field;
+    if (anchor.nextElementSibling !== el) anchor.insertAdjacentElement('afterend', el);
   }
 
   // Capture phase: the password fields carry their own keydown handlers
@@ -44,6 +55,6 @@
   document.addEventListener('keydown', update, true);
   document.addEventListener('keyup', update, true);
   document.addEventListener('focusout', function (e) {
-    if (e.target && e.target.type === 'password') detach();
+    if (isPasswordField(e.target)) detach();
   }, true);
 })();

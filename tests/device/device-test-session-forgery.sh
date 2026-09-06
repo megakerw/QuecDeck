@@ -23,8 +23,8 @@
 # access log. That is why it is a separate file: authgate guarantees pure
 # unauthenticated GETs and must stay that way.
 #
-# Scope note: the fixed-path /tmp write checks that used to live here are gone.
-# They are covered properly at runtime by tests/device/device-test-runsplit.sh,
+# Scope note: fixed-path /tmp write checks live in
+# tests/device/device-test-runsplit.sh at runtime,
 # and at commit time by tests/host/guards/runtime-path.sh, which catches a
 # reintroduced /tmp path before it can ever reach a device.
 

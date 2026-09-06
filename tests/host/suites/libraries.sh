@@ -49,8 +49,7 @@ t "at_response_ok rejects a longer word"  "1" "$(at_response_ok $'DATA\nOKAY'; e
 t "at_response_ok whitespace only"        "1" "$(at_response_ok $'   \n\n'; echo $?)"
 
 # at_result is what every write CGI reports through, so a wrong answer here is
-# a page claiming a settings change succeeded when it did not. It had one test
-# for four behaviours.
+# a page claiming a settings change succeeded when it did not.
 t "at_result passes a good reply through" "$(printf '+CSQ: 31,99\nOK')" \
     "$(at_result "$(printf '+CSQ: 31,99\nOK')")"
 t "at_result surfaces the modem's error line" "+CME ERROR: 30" \

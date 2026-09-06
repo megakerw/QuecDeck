@@ -11,12 +11,11 @@ if [ -z "$BASH_VERSION" ]; then
 fi
 
 # Everything this library writes (cache, logs, lockout counters) is www-data's
-# private state, so seal it at the source. Umask is a builtin, so this costs no
-# fork on the poll path, and unlike a unit's UMask= it holds no matter who
-# invokes the caller (sudo, a shell, a future unit that forgets the directive).
-# The units set UMask=0077 too, which is what covers auth.lua: it runs inside
-# lighttpd as Lua, cannot source this file, and has no chmod. Asserted by
-# tests/host/ci-checks.sh and device-test-runsplit.sh.
+# private state. A builtin umask costs no fork on the poll path and holds no
+# matter who invokes the caller, where a unit's UMask= does not. The units set
+# UMask=0077 as well, which is what covers auth.lua: it runs inside lighttpd as
+# Lua and cannot source this file. Asserted by tests/host/ci-checks.sh and
+# device-test-runsplit.sh.
 umask 077
 
 # AT access layer (atcmd_run, atcmd_fire), used by the cache helpers below.
@@ -142,7 +141,6 @@ MOBILEAP_CFG=/etc/data/mobileap_cfg.xml
 # supplied by CGIs, never request input.
 #
 # Call it directly, NOT inside $(...): the variables would die with the subshell.
-# Keep the grep: a pure-bash parser measures 2x slower on this ~16 KB config.
 mobileap_read() {
     local tag alt line t v seen
     alt=""
@@ -153,11 +151,8 @@ mobileap_read() {
     done
     [ -f "$MOBILEAP_CFG" ] || return 0
     # Heredoc rather than a pipe: a pipe would run the loop in a subshell and
-    # the variables set below would be lost.
-    #
-    # Keep the grep: a pure-bash scan of this 462-line file measured 1.6x to
-    # 5.1x slower. A fork beats about 40 lines of bash processing. The threshold
-    # and the numbers are in tools/device-costs.md.
+    # the variables set below would be lost. Keep the grep, a pure-bash scan of
+    # this 462-line file measures 1.6x to 5.1x slower (tools/device-costs.md).
     while IFS= read -r line; do
         [ -n "$line" ] || continue
         t="${line%%>*}"; t="${t#<}"
@@ -172,12 +167,10 @@ EOF
 }
 
 # Sets $mf_lan_ip to the configured LAN IP, or empty if absent or malformed.
-# Deliberately does NOT default the way lighttpd_prestart.sh does: that fallback
-# exists so the server always binds somewhere, whereas a guess here would seed
-# the settings form, and saving it would write the guess to the modem for real.
-# Reads APIPAddr itself only if the caller has not already batched it in, so it
-# stays correct standalone while costing nothing after a mobileap_read.
-# Sets a variable rather than echoing, so no caller wraps it in $(...) either.
+# No default, unlike lighttpd_prestart.sh: a guess here would seed the settings
+# form, and saving it would write the guess to the modem for real. Reads
+# APIPAddr itself only if the caller has not already batched it in. Sets a
+# variable rather than echoing, so no caller wraps it in $(...) either.
 mobileap_lan_ip() {
     [ -n "${mf_APIPAddr+set}" ] || mobileap_read APIPAddr
     mf_lan_ip=""
@@ -204,12 +197,11 @@ write_json_config() {
 }
 
 # Serve a JSON file, or <fallback> when it is missing or empty. Emptiness is
-# checked, not just existence: a zero-byte file cat'd under a JSON content type
-# is an empty body, which the page reads as a failed request rather than as
-# "nothing published yet". Usage: cgi_serve_json_file <path> <fallback json>
-# Builtin read, not cat: get_watchcat_stats is polled every 2s while the page is
-# open and the payload is a few hundred bytes, so the fork+exec cost more than the
-# work. Same idiom get_system_status uses. See tools/device-costs.md.
+# checked, not just existence: an empty body reads to the page as a failed
+# request rather than as "nothing published yet".
+# Usage: cgi_serve_json_file <path> <fallback json>
+# Builtin read, not cat: get_watchcat_stats polls every 2 s for a few hundred
+# bytes, so fork+exec costs more than the work (tools/device-costs.md).
 cgi_serve_json_file() {
     cgi_output_json
     if [ -s "$1" ]; then
@@ -223,9 +215,9 @@ cgi_serve_json_file() {
 
 # True when <watchcat_config> turns monitoring on. The watchcat unit is
 # boot-enabled but exits cleanly when disabled, so configuration and unit state
-# answer different questions. Substring match rather than json_get: this runs on polled and
-# hot paths and json_get costs up to three grep forks (tools/device-costs.md).
-# Both spacings are matched: the makers write ": true", the defaults ":false".
+# answer different questions. Substring match rather than json_get, which costs
+# up to three grep forks on this hot path (tools/device-costs.md). Both
+# spacings are matched: the makers write ": true", the defaults ":false".
 # Usage: watchcat_config_enabled "$config_json"
 watchcat_config_enabled() {
     case "$1" in
@@ -441,19 +433,19 @@ qscan_is_active() {
 }
 
 # Sets $_NOW_CS (epoch centiseconds) and $_NOW (epoch seconds) from /proc/uptime
-# and /proc/stat's btime. Assigns rather than echoes: a command substitution
-# would restore the fork this exists to avoid. $EPOCHSECONDS is bash 5.0, device
-# is 3.2.57, and date(1) costs ~3.6x this (tools/device-costs.md). The btime field is
-# re-read per call, not memoized, so a clock step is seen.
+# and /proc/stat's btime. Assigns rather than echoes, so no caller pays a
+# command substitution: date(1) costs ~3.6x this and $EPOCHSECONDS needs bash
+# 5.0 against the device's 3.2.57 (tools/device-costs.md). btime is re-read per
+# call, not memoized, so a clock step is seen.
 #
-# Compare ages in _NOW_CS, never _NOW. The btime field is device-verified constant (75
-# reads, one value), so it cancels in a subtraction, leaving uptime's own
-# centiseconds: ages exact to 10 ms. Floored seconds carry +-1 s, which on a 2 s
-# TTL flips hits to misses. $_NOW is for whole-second callers, here delete_sms.
+# Compare ages in _NOW_CS, never _NOW. btime cancels in a subtraction, leaving
+# uptime's own centiseconds, so ages are exact to 10 ms. Floored seconds carry
+# +-1 s, which on a 2 s TTL flips hits to misses. $_NOW is for whole-second
+# callers.
 #
-# Requires 64-bit shell arithmetic: _NOW_CS is ~1.8e11 (38 bits). Verified on
-# armv7l/3.2.57. A 32-bit shell would wrap it silently. The date(1) fallback is
-# for a host without procfs, which neither the device nor Git Bash is.
+# Requires 64-bit shell arithmetic: _NOW_CS is ~1.8e11 (38 bits), and a 32-bit
+# shell would wrap it silently. The date(1) fallback covers a host without
+# procfs, which neither the device nor Git Bash is.
 _epoch_now() {
     local u= k= v= bt= frac=
     read -r u _ < /proc/uptime 2>/dev/null
@@ -481,9 +473,8 @@ _epoch_now() {
 # reply as another's, and get_dashboard loads two files per process.
 #
 # read -d '' is a builtin where $(<f) costs a subshell, ~4x dearer
-# (tools/device-costs.md). It differs only in keeping trailing newlines
-# (cache_write writes none) and stopping at a NUL (an AT reply is text), and it
-# returns 1 at EOF with the variable filled, so its status is ignored.
+# (tools/device-costs.md). It returns 1 at EOF with the variable filled, so its
+# status is ignored.
 _cache_load() {
     local all= hdr=
     _CACHE_TS=
@@ -522,11 +513,11 @@ at_response_ok() {
 }
 
 # Turn a write command's AT reply into a result the frontend can positively
-# ack: the reply passes through on success when it ends in OK. Otherwise it becomes a
-# line CONTAINING "ERROR" (the modem's own error line, or a synthesized one for
-# an empty/timed-out reply). So an empty reply, e.g. the daemon restarting,
-# reads as failure instead of false success. Callers that must tolerate a
-# cut-off reply (modem reboots) should skip this and print optimistically.
+# ack. A reply ending in OK passes through. Anything else becomes a line
+# containing "ERROR" (the modem's own, or a synthesized one for an empty or
+# timed-out reply), so a daemon restart reads as failure rather than success.
+# Callers that must tolerate a cut-off reply (modem reboots) skip this and
+# print optimistically.
 # Usage: result=$(atcmd_run "AT+X"). at_result "$result"
 at_result() {
     local reply="$1" err
@@ -534,38 +525,31 @@ at_result() {
         printf '%s\n' "$reply"
         return
     fi
-    # No \r strip: at-lib guarantees CR-free replies (atcli strips at source),
-    # device-probed 2026-08-05 across query, chained, ERROR and PDU-mode output.
-    # Re-adding one would be a fourth process on this path for nothing.
+    # No \r strip: atcli strips at source, device-probed 2026-08-05 across
+    # query, chained, ERROR and PDU-mode output.
     err=$(printf '%s' "$reply" | grep -iE 'ERROR' | head -1)
     printf '%s\n' "${err:-ERROR: no response from the modem}"
 }
 
 
-# Atomically write content to a cache file via temp file + mv.
-# Cache dir is 700 and files are created 600 by this library's umask. www-data
-# is the sole application reader/writer, and root can inspect them through its
-# DAC override. mv remains deliberate: the atomic replace stops readers seeing a
-# torn file without adding a per-write chmod fork.
+# Atomically write content to a cache file via temp file + mv. The dir is 700
+# and files land 600 from this library's umask, so no per-write chmod fork.
+# www-data is the only application reader, and root bypasses DAC.
 cache_write() {
     local f="$1" content="$2" tmp
     tmp="${f}.tmp.$$"
-    # Guarded because the dir exists for every write after the first since boot,
-    # and mkdir is a fork on the miss path, which is every dashboard poll.
-    # The runtime unit creates the directory in production. Keep a private
-    # fallback so standalone host and device tests remain self-contained.
+    # Guarded because mkdir is a fork on the miss path, which is every dashboard
+    # poll, and the dir already exists after the first write since boot. The
+    # runtime unit creates it in production. The fallback keeps standalone host
+    # and device tests self-contained.
     [ -d "$_CACHE_DIR" ] || ( umask 077; mkdir -p "$_CACHE_DIR" )
     _epoch_now
-    # No chmod: this library's umask makes the temp 0600 even when a caller runs
-    # outside systemd. Unit-level masks cover Lua and standalone service writers.
-    # Dropping chmod saves a fork on every dashboard-poll cache miss. Only
-    # www-data reads these, and root bypasses DAC.
     if printf '%s\n%s' "$_NOW_CS" "$content" > "$tmp" \
         && mv "$tmp" "$f"; then
         return 0
     fi
-    # Keep: the likeliest failure is a full tmpfs, where the half-written temp
-    # holds the space that ran out.
+    # The likeliest failure is a full tmpfs, where the half-written temp holds
+    # the space that ran out.
     rm -f "$tmp"
     return 1
 }
@@ -592,7 +576,7 @@ cache_get_or_fetch() {
     local f="$1" ttl="$2" at_cmd="$3" at_timeout="${4:-3000}"
     local result cached=0
     # One load serves the scan path and the freshness check. The fallback after
-    # a failed fetch deliberately re-reads instead. See that function for details.
+    # a failed fetch re-reads instead, for the reason given there.
     _cache_load "$f" && cached=1
     if qscan_is_active; then
         [ "$cached" -eq 1 ] && printf '%s' "$_CACHE_PAYLOAD"
@@ -602,19 +586,17 @@ cache_get_or_fetch() {
         printf '%s' "$_CACHE_PAYLOAD"
         return
     fi
-    # No mkdir here: cache_write is the only writer and creates the dir itself.
-    # Retry once when the reply was cut short, since a second attempt may
-    # complete. Two cases are not retried, both because a retry cannot help:
-    # an empty result (timeout, and retrying stacks the delay), and a reply the
-    # modem terminated itself. The atcli client exits 0 only on a terminator, so rc 0 with
-    # a body that is not OK means the modem's answer *is* an error (no SIM,
-    # unsupported command) - final, and asking again costs the serialized port
-    # another round trip for the same reply. Only the exit status separates that
-    # from a truncated reply. The body alone cannot.
+    # Retry once when the reply was cut short. Two cases are not retried because
+    # a retry cannot help: an empty result (a timeout, where retrying stacks the
+    # delay), and a reply the modem terminated itself. atcli exits 0 only on a
+    # terminator, so rc 0 with a non-OK body means the modem's answer is the
+    # error (no SIM, unsupported command) and asking again costs the serialized
+    # port a round trip for the same reply. Only the exit status separates that
+    # from a truncated reply.
     #
-    # An atcli too-long refusal (rc 65, non-empty body) would also take the
-    # retry path, which cannot help. Unreachable here: every command below is a
-    # fixed literal far under CMD_MAX.
+    # An atcli too-long refusal (rc 65, non-empty body) would take the retry
+    # path too, where it cannot help. Unreachable only while every caller below
+    # passes a fixed literal far under CMD_MAX.
     local attempt=0 rc=0 ok=0
     result=""
     while [ $attempt -lt 2 ]; do
@@ -648,19 +630,16 @@ cache_get_or_fetch() {
 #
 # TTL must stay below the dashboard poll floor (home.js clamps refreshRate to
 # 3), never equal it: a poll reads ~290 cs, so ttl 3 would call it fresh and
-# re-render the previous snapshot at an effective 6 s. This cache dedupes
-# readers in one tick, it does not skip polls.
-#
-# Measured 2026-08-05: at a 3 s cadence every poll is a miss, ~24 AT commands
-# per 11 polls.
+# re-render the previous snapshot at an effective 6 s. Two readers in the same
+# tick share one fetch, but no poll is ever skipped.
 modem_stats_fetch() {
     cache_get_or_fetch "$_CACHE_MODEM_ALL" 2 \
         'AT+QTEMP;+QENG="servingcell";+QCAINFO;+CSQ;+QGDNRCNT?;+QGDCNT?;+QUIMSLOT?;+QSPN;+QSIMSTAT?' 2000
 }
 
-# Connection info: WWAN IP(s) and APN. Connection-dependent, so it may fail with
-# no active bearer. Callers fall back gracefully. Cached for 2 seconds with a
-# 2-second AT timeout. The same dashboard-poll constraint as modem_stats_fetch applies.
+# Connection info: WWAN IP(s) and APN. May fail with no active bearer, and
+# callers fall back gracefully. Cached 2 s, 2 s AT timeout, under the same
+# dashboard-poll constraint as modem_stats_fetch.
 modem_conn_fetch() {
     cache_get_or_fetch "$_CACHE_MODEM_CONN" 2 'AT+QMAP="WWANIP";+CGCONTRDP' 2000
 }

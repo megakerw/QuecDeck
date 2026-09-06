@@ -16,8 +16,8 @@
 #   3. The PDU sits on the next non-empty line after its header.
 #   4. No bucket is missing parts. A repeated sequence is reference reuse, not
 #      a fault - the split rule at the end separates those.
-#   5. Non-adjacent storage slots, which broke the old adjacency heuristic.
-#      Zero means it was not reproducible today, not that the heuristic was ok.
+#   5. Non-adjacent storage slots, which no adjacency rule can bucket correctly.
+#      Zero means it was not reproducible today.
 
 set -u
 ATLIB=/usrdata/quecdeck/script/at-lib.sh

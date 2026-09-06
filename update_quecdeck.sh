@@ -20,6 +20,48 @@ umask 022
 # Do not search the legacy root bin until harden_root_home has quarantined it.
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin
 
+secure_opkg_metadata() {
+    local config=/opt/etc/opkg.conf lists=/opt/var/opkg-lists entry mode
+    [ -d /opt/etc ] && [ ! -L /opt/etc ] || return 1
+    [ -f "$config" ] && [ ! -L "$config" ] || return 1
+    mode=$(stat -c %a /opt/etc 2>/dev/null) || return 1
+    [ "$(stat -c %u /opt/etc 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    mode=$(stat -c %a "$config" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$config" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    chown root:root /opt/etc "$config" || return 1
+    chmod 755 /opt/etc && chmod 644 "$config" || return 1
+    [ -d "$lists" ] && [ ! -L "$lists" ] || return 1
+    mode=$(stat -c %a "$lists" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$lists" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    chown root:root "$lists" && chmod 755 "$lists" || return 1
+    for entry in "$lists"/* "$lists"/.[!.]* "$lists"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        [ -f "$entry" ] && [ ! -L "$entry" ] || return 1
+        mode=$(stat -c %a "$entry" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$entry" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+        chown root:root "$entry" && chmod 644 "$entry" || return 1
+    done
+}
+
+require_https_opkg_feeds() {
+    local source_count=0 line kind name url rest
+    while IFS= read -r line || [ -n "$line" ]; do
+        IFS=' 	' read -r kind name url rest <<EOF
+$line
+EOF
+        case "$kind" in
+            src|src/gz)
+                [ -n "$name" ] && [ -n "$url" ] || return 1
+                case "$url" in
+                    https://*) source_count=$((source_count + 1)) ;;
+                    *) return 1 ;;
+                esac
+                ;;
+        esac
+    done < /opt/etc/opkg.conf || return 1
+    [ "$source_count" -gt 0 ]
+}
+
 # All root-owned runtime state lives here. Root-owned and not world-writable,
 # so www-data can read the log but cannot plant a name for root to follow.
 # Reachable both from run_update.sh and a direct interactive run.
@@ -30,9 +72,8 @@ if [ -L /run/quecdeck ] || ! mkdir -p /run/quecdeck ||
 fi
 
 # Convert the installer's persisted outcome into the bootstrap's user-facing
-# result. The status file is authoritative. The systemctl result is only the synchronous
-# wait mechanism and its return code is useful solely when no terminal status
-# was committed.
+# result. The status file is authoritative. systemctl is only the synchronous
+# wait, and its return code counts only when no terminal status was committed.
 report_install_outcome() { # report_install_outcome <status> <systemctl-rc>
     case "$1" in
         done)
@@ -448,7 +489,6 @@ stage_release() {
     _stage_inventory=/run/quecdeck/stage-inventory.$$
     : > "$_manifest_inventory" || return 1
     while IFS= read -r line; do
-        # Skip comments and blank lines
         case "$line" in '#'*|'') continue ;; esac
         expected=$(echo "$line" | awk '{print $1}')
         key=$(echo "$line" | awk '{print $2}')
@@ -535,8 +575,16 @@ stage_release() {
     _lighttpd_index_fresh=1
     # Existing supported installs already have wget-ssl and CA certificates.
     # Migrate their official feed before refreshing; never retry over HTTP.
+    secure_opkg_metadata || return 1
     sed -i 's|http://bin\.entware\.net/|https://bin.entware.net/|g' /opt/etc/opkg.conf || return 1
-    PATH=/opt/bin:/opt/sbin:$PATH timeout 120 /opt/bin/opkg update >/dev/null 2>&1 || {
+    require_https_opkg_feeds || {
+        echo -e "\e[1;31mFATAL: Every enabled Entware feed must use HTTPS.\e[0m"
+        return 1
+    }
+    PATH=/opt/bin:/opt/sbin:$PATH timeout 120 /opt/bin/opkg update >/dev/null 2>&1
+    _opkg_update_rc=$?
+    secure_opkg_metadata || return 1
+    [ "$_opkg_update_rc" -eq 0 ] || {
         echo -e "\e[1;33mWARNING: Could not refresh the opkg package index. Proceeding with a presence-only check (version-staleness can't be verified this run).\e[0m"
         _lighttpd_index_fresh=0
     }
@@ -642,20 +690,19 @@ swap_in_release() {
     _had_previous=0
     [ -d "$QUECDECK_DIR/www" ] && _had_previous=1
 
-    # Snapshot the live release's systemd unit filenames before the swap. Unlike
-    # everything else inside $QUECDECK_DIR (which the rename-based rollback
-    # restores wholesale), unit files are copied out into /lib/systemd/system/
-    # by name, so a brand-new unit introduced by this release would be left
-    # behind as an orphan if we have to roll back, since the restored old
-    # release's systemd/ directory never contained it. Diff the staged set
-    # against this snapshot below so _revert_swap knows what to remove.
+    # Snapshot the live release's systemd unit filenames before the swap. The
+    # rename-based rollback restores everything else in $QUECDECK_DIR wholesale,
+    # but unit files are copied out to /lib/systemd/system/ by name, so a unit
+    # this release introduces is absent from the restored release's systemd/
+    # directory and would be orphaned there. _revert_swap removes what the diff
+    # against this snapshot names.
     _old_systemd_units=""
     [ "$_had_previous" = "1" ] && _old_systemd_units=$(ls "$QUECDECK_DIR/systemd/" 2>/dev/null)
 
-    # Tracks whether we've actually started rearranging the live install. Only
-    # then is there anything for _revert_swap to undo. A failure before this
-    # point means the old site is still sitting at $QUECDECK_DIR untouched, so
-    # reporting a "rollback" (let alone a failed one) would be actively misleading.
+    # Set once the live install starts being rearranged, which is the only
+    # point from which _revert_swap has anything to undo. A failure before it
+    # leaves the old site untouched at $QUECDECK_DIR, where reporting a
+    # rollback would be misleading.
     _swap_committed=0
 
     # Only stop/start lighttpd if config, the unit file, or packages changed.
@@ -840,13 +887,17 @@ swap_in_release() {
         return 1
     }
 
-    # Whether lighttpd packages need installing was already determined (and
-    # the opkg index already refreshed if so) back in stage_release, while
-    # the old site was still serving. So this is just the actual install,
-    # which only needs to happen here because opkg's postinst scripts may
-    # restart the service (a restart is happening in this window anyway).
+    # stage_release already decided this and refreshed the opkg index while the
+    # old site was still serving. Only the install itself belongs here, because
+    # opkg's postinst scripts may restart lighttpd, and this window is already
+    # restarting it.
     if [ "$_lighttpd_needs_install" = "1" ]; then
         echo "Installing lighttpd packages..."
+        secure_opkg_metadata && require_https_opkg_feeds || {
+            echo -e "\e[1;31mEntware feed validation failed before package installation.\e[0m"
+            result_lighttpd="FAILED"
+            return 1
+        }
         PATH=/opt/bin:/opt/sbin:$PATH timeout 300 /opt/bin/opkg install $_lighttpd_pkgs || { echo -e "\e[1;31mFailed to install lighttpd packages (or it timed out).\e[0m"; result_lighttpd="FAILED"; return 1; }
         result_lighttpd="UPDATED"
     fi
@@ -957,18 +1008,16 @@ swap_in_release() {
 
     rm -rf "$OLD_DIR"
 
-    # Deliberately AFTER the OLD_DIR removal, i.e. past the point of no return:
+    # Must run AFTER the OLD_DIR removal, past the point of no return:
     # _revert_swap needs $OLD_DIR, so nothing removed here can ever need
-    # restoring. Doing it earlier would be unsafe, because a rollback re-copies
-    # unit FILES from the restored tree but only relinks the seven names it
-    # knows, so a dropped unit would come back disabled.
+    # restoring. Earlier, a rollback would re-copy the unit files but relink
+    # only the six names it knows, bringing a dropped unit back disabled.
     #
-    # Units a previous release shipped and this one dropped otherwise stay
+    # Without this, a unit a previous release shipped and this one dropped stays
     # installed and enabled forever: _newly_introduced_units covers the rollback
-    # direction only, and nothing tracks the forward one. Ours identify
-    # themselves with an Exec* path under /usrdata/quecdeck, which no manifest
-    # can go stale against (marker asserted by tests/host/ci-checks.sh).
-    # Enable state is a hand-made multi-user.target.wants symlink, so remove both.
+    # direction only. Ours identify themselves by an Exec* path under
+    # /usrdata/quecdeck (marker asserted by tests/host/ci-checks.sh). Enable
+    # state is a hand-made multi-user.target.wants symlink, so remove both.
     _dropped_units=0
     for _f in /lib/systemd/system/*.service; do
         [ -f "$_f" ] || continue

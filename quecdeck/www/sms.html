@@ -7,75 +7,112 @@
   <meta name="color-scheme" content="dark" />
   <style>html,body{background:#0f1117}</style>
   <title>QuecDeck</title>
-  <link rel="stylesheet" href="css/bootstrap.min.css?v=a6697854" />
-  <link rel="stylesheet" href="css/styles.css?v=a6697854" />
+  <link rel="stylesheet" href="css/bootstrap.min.css?v=f99e81fd" />
+  <link rel="stylesheet" href="css/styles.css?v=f99e81fd" />
   <link rel="icon" href="favicon.ico" />
-  <script src="js/bootstrap.bundle.min.js?v=a6697854"></script>
-  <script src="js/utils.js?v=a6697854"></script>
-  <script src="js/alpinejs.min.js?v=a6697854" defer></script>
+  <script src="js/bootstrap.bundle.min.js?v=f99e81fd"></script>
+  <script src="js/utils.js?v=f99e81fd"></script>
+  <script src="js/alpinejs.min.js?v=f99e81fd" defer></script>
 </head>
 
 <body>
   <main>
     <div class="container my-4" x-data="fetchSMS()">
       <div id="nav-placeholder"></div>
-      <script src="js/nav.js?v=a6697854"></script>
+      <script src="js/nav.js?v=f99e81fd"></script>
       <div class="row gy-3 mt-4 mb-4 align-items-stretch">
         <div class="col">
           <div class="panel-section">
             <div class="panel-title d-flex align-items-center gap-2">
               SMS Inbox
+              <span x-show="messages.length > 0" class="badge text-bg-secondary" x-cloak
+                x-text="messages.length + (messages.length === 1 ? ' message' : ' messages')"></span>
               <span x-show="isLoading" class="spinner-border spinner-border-sm text-secondary" role="status" aria-label="Loading" x-cloak></span>
               <button class="btn btn-sm btn-primary ms-auto" type="button" @click="init()" :disabled="isLoading">Refresh</button>
             </div>
-            <div class="sms-inbox-scroll">
-                <table class="table table-hover">
-                  <thead x-show="messages.length > 0" x-cloak>
-                    <tr>
-                      <th>
-                        <div class="form-check mb-0">
-                          <input id="selectAllCheckbox" class="form-check-input" type="checkbox" @change="toggleAll($event)" />
-                          <label class="form-check-label" for="selectAllCheckbox">Select All</label>
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template x-if="messages.length === 0 && !isLoading">
-                      <tr><td class="text-muted">Inbox is empty.</td></tr>
-                    </template>
-                    <template x-for="(message, index) in messages" :key="index">
-                      <tr>
-                        <td>
-                          <div class="form-check">
-                            <input class="form-check-input" type="checkbox" :value="index"
-                              x-model="selectedMessages" />
-                            <div class="row column-gap-1 mb-2">
-                              <div class="col-md-3">
-                                <p x-text="'Sender: ' + message.sender"></p>
-                              </div>
-                              <div class="col">
-                                <p x-text="'Date and Time: ' + message.displayDate"></p>
-                              </div>
-                            </div>
-                            <div class="col-md-9">
-                              <p x-text="message.text"></p>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    </template>
-                  </tbody>
-                </table>
-            </div>
-            <div class="panel-actions d-flex">
-              <button class="btn btn-danger ms-auto" type="button" @click="deleteSelectedSMS()" :disabled="isLoading || selectedMessages.length === 0">Delete Selected</button>
+
+            <div class="sms-inbox">
+              <div class="sms-toolbar" x-show="messages.length > 0" x-cloak>
+                <div class="sms-search">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5 14 14" stroke-linecap="round" />
+                  </svg>
+                  <input class="form-control form-control-sm" type="search" x-model="filter"
+                    placeholder="Filter by sender or text" aria-label="Filter messages" />
+                </div>
+                <div class="form-check mb-0">
+                  <input id="selectAllCheckbox" class="form-check-input" type="checkbox"
+                    :checked="allVisibleSelected" @change="toggleAll($event)" />
+                  <label class="form-check-label" for="selectAllCheckbox">Select all</label>
+                </div>
+                <span class="sms-count ms-auto" x-show="filter.trim() !== ''"
+                  x-text="visibleMessages.length + ' of ' + messages.length + ' shown'"></span>
+              </div>
+
+              <div class="sms-selbar" x-show="selectedMessages.length > 0" x-cloak>
+                <span class="sms-selbar-text"
+                  x-text="selectedMessages.length + (selectedMessages.length === 1 ? ' message selected' : ' messages selected')"></span>
+                <button class="btn btn-sm btn-outline-secondary ms-auto" type="button"
+                  @click="selectedMessages = []" :disabled="isLoading">Clear</button>
+                <button class="btn btn-sm btn-danger" type="button"
+                  @click="deleteSelectedSMS()" :disabled="isLoading">Delete selected</button>
+              </div>
+
+              <div class="sms-list" @resize.window.debounce.150ms="remeasureAll()">
+                <template x-if="messages.length === 0 && !isLoading">
+                  <div class="sms-empty">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M4 5h16v11H8l-4 3z" /><path d="M8 9h8" /><path d="M8 12.5h5" />
+                    </svg>
+                    <div class="sms-empty-title">No messages stored</div>
+                    <div class="sms-empty-sub">New messages appear here after a refresh.</div>
+                  </div>
+                </template>
+                <template x-if="messages.length > 0 && visibleMessages.length === 0">
+                  <div class="sms-empty">
+                    <div class="sms-empty-title">No matches</div>
+                    <div class="sms-empty-sub">No message contains that sender or text.</div>
+                  </div>
+                </template>
+                <template x-for="entry in visibleMessages" :key="entry.index">
+                  <div class="sms-card" :class="{ 'is-selected': selectedMessages.includes(entry.index) }">
+                    <input class="form-check-input" type="checkbox"
+                      :checked="selectedMessages.includes(entry.index)"
+                      @change="toggleMessage(entry.index)"
+                      :aria-label="'Select message from ' + entry.message.sender" />
+                    <span class="sms-avatar" :class="'is-' + entry.message.kind" :title="entry.message.kindLabel">
+                      <template x-if="entry.message.kind === 'contact'">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="6" y="2" width="12" height="20" rx="2" /><path d="M11 18h2" />
+                        </svg>
+                      </template>
+                      <template x-if="entry.message.kind !== 'contact'">
+                        <span x-text="entry.message.initials"></span>
+                      </template>
+                    </span>
+                    <div class="sms-main">
+                      <div class="sms-head">
+                        <span class="sms-sender" x-text="entry.message.sender"></span>
+                        <template x-if="entry.message.indices.length > 1">
+                          <span class="sms-chip" x-text="entry.message.indices.length + ' parts'"></span>
+                        </template>
+                        <span class="sms-time" x-text="entry.message.displayDate" :title="entry.message.fullDate"></span>
+                      </div>
+                      <p class="sms-text" :class="{ 'is-clamped': !expanded.includes(entry.index) }"
+                        x-text="entry.message.text"
+                        x-init="$nextTick(() => measureClamp($el))"></p>
+                      <button class="sms-more" type="button" @click="toggleExpanded(entry.index)"
+                        x-text="expanded.includes(entry.index) ? 'Show less' : 'Show more'"></button>
+                    </div>
+                  </div>
+                </template>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
   </main>
-  <script src="js/sms.js?v=a6697854"></script>
+  <script src="js/sms.js?v=f99e81fd"></script>
 </body>
 </html>

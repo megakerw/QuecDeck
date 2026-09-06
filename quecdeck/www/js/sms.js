@@ -15,20 +15,23 @@ const SMS_GSM7_EXTENDED = {
 };
 
 // The delete CGI answers with a counted failure ("ERROR: 3 of 40 message parts
-// could not be deleted", or the time-budget wording), and postForm carries that
-// body in err.message. Show it, with the ERROR: prefix stripped and a hint that
-// the refreshed list is authoritative. Falls back to a generic line if the
-// rejection came from somewhere without a body, e.g. a network drop.
+// could not be deleted"), which postForm carries in err.message. Falls back to
+// a generic line when the rejection carries no body, such as a network drop.
 function deleteFailureText(err) {
   var body = (err && err.message ? String(err.message) : '').trim();
   if (!body || body.indexOf('ERROR') === -1) {
     return 'The messages could not be deleted.';
   }
-  // "shows what is left" would read as "...parts left. ...what is left" against
-  // the time-budget wording, which already says it.
   return body.replace(/^ERROR:\s*/, '').replace(/^./, function (c) {
     return c.toUpperCase();
   }) + '. The list below has been refreshed.';
+}
+
+// A local calendar date expressed as a stable integer. Date subtraction cannot
+// be used for this: consecutive local midnights are 23 or 25 hours apart at a
+// daylight-saving transition.
+function localDayNumber(date) {
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
 }
 
 function fetchSMS() {
@@ -36,22 +39,40 @@ function fetchSMS() {
     isLoading: false,
     messages: [],
     selectedMessages: [],
+    expanded: [],
+    filter: '',
 
     clearData() {
       this.messages = [];
       this.selectedMessages = [];
-      const selectAllCheckbox = document.getElementById('selectAllCheckbox');
-      if (selectAllCheckbox) {
-        selectAllCheckbox.checked = false;
-      }
+      this.expanded = [];
+    },
+
+    // Entries carry their index in this.messages, because that index is what
+    // selection and deletion are keyed on and the filter would renumber it.
+    get visibleMessages() {
+      const query = this.filter.trim().toLowerCase();
+      const entries = this.messages.map((message, index) => ({ message, index }));
+      if (!query) return entries;
+      return entries.filter(entry =>
+        entry.message.sender.toLowerCase().includes(query) ||
+        entry.message.text.toLowerCase().includes(query));
+    },
+
+    // Drives the select-all box. Reads against what is on screen, not the whole
+    // inbox: with a filter on, selecting all can only mean the matches.
+    get allVisibleSelected() {
+      const visible = this.visibleMessages;
+      return visible.length > 0 &&
+        visible.every(entry => this.selectedMessages.includes(entry.index));
     },
 
     requestSMS() {
       this.isLoading = true;
       fetchText("/cgi-bin/get_sms", { method: "POST" })
         .then(data => {
-          // get_sms reports a failed listing in the body (the CGI convention.
-          // authFetch only rejects on the login redirect). Throwing keeps what
+          // get_sms reports a failed listing in the body (the CGI convention,
+          // and authFetch only rejects on the login redirect). Throwing keeps what
           // is on screen, since a partial listing parses as a complete shorter
           // inbox. +CMS/+CME match too: they terminate the command, so the CGI
           // exits 0 and passes them through. No false positives, as headers are
@@ -62,6 +83,10 @@ function fetchSMS() {
             .join('\n');
           this.clearData();
           this.parseSMSData(filtered);
+          // x-init measures a card when its element is created, and x-for
+          // reuses elements across a refresh when the keys repeat, so the new
+          // text would keep the previous listing's measurement.
+          this.$nextTick(() => this.remeasureAll());
         })
         .catch(() => {
           this.$store.errorModal.open('Failed to load messages. Please refresh the page.');
@@ -141,11 +166,17 @@ function fetchSMS() {
         // Earliest part dates the message: parts of one message can carry
         // timestamps a second or two apart.
         const date = new Date(Math.min(...group.map(part => part.date.getTime())));
+        const sender = group[0].sender;
+        const kind = this.senderKind(sender);
         this.messages.push({
           text: this.joinParts(group),
-          sender: group[0].sender,
+          sender: sender,
           date: date,
           displayDate: this.formatDate(date),
+          fullDate: date.toLocaleString([], { hour12: false }),
+          kind: kind,
+          kindLabel: this.senderKindLabel(kind),
+          initials: this.senderInitials(sender, kind),
           // Every part's slot, so deleting the message deletes all of it.
           indices: group.map(part => part.index)
         });
@@ -284,7 +315,15 @@ function fetchSMS() {
     // a short code or an operator brand name arrives as.
     decodeAddress(type, bytes, digits) {
       if ((type & 0x70) === 0x50) {
-        return this.decodeGSM7(this.unpackSeptets(bytes, 0, Math.floor((digits * 4) / 7)));
+        const septets = Math.floor((digits * 4) / 7);
+        const name = this.decodeGSM7(this.unpackSeptets(bytes, 0, septets));
+        // The length field counts semi-octets, not characters, so it cannot say
+        // whether a last septet landing exactly on the final octet boundary is a
+        // character or the zero fill of a name one shorter. That is the 7, 15,
+        // 23 character case: "Telekom" packs into 7 octets and reads back as an
+        // 8th septet of zero. Zero is "@" in GSM-7, which no operator ends a
+        // sender name with, so it is the fill.
+        return septets * 7 === bytes.length * 8 ? name.replace(/@$/, '') : name;
       }
       let out = '';
       for (const byte of bytes) {
@@ -328,8 +367,44 @@ function fetchSMS() {
       return out;
     },
 
+    // Classifies the decoded sender by the shape of the string, not by the
+    // address type byte: a number in national format carries no + and still has
+    // to read as a number. Only the avatar and its tooltip use it.
+    senderKind(sender) {
+      if (/^\+?\d{7,}$/.test(sender)) return 'contact';
+      if (/^\d{1,6}$/.test(sender)) return 'code';
+      return 'brand';
+    },
+
+    senderKindLabel(kind) {
+      if (kind === 'contact') return 'Phone number';
+      if (kind === 'code') return 'Short code';
+      return 'Named sender';
+    },
+
+    // A phone number renders the icon instead, so its value is never shown. A
+    // short code gets "#", since two digits of a five digit code say nothing.
+    senderInitials(sender, kind) {
+      if (kind === 'code') return '#';
+      const words = sender.replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ');
+      const letters = words.length > 1 ? words[0][0] + words[1][0] : sender.slice(0, 2);
+      return (letters || '?').toUpperCase();
+    },
+
+    // Relative for the last week, absolute before that. The full stamp stays on
+    // the element's title.
     formatDate(date) {
-      return date.toLocaleString([], { hour12: false });
+      const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      const days = localDayNumber(new Date()) - localDayNumber(date);
+      // Days is negative for a timestamp ahead of the browser's clock, which
+      // falls through to the dated form.
+      if (days === 0) return time;
+      if (days === 1) return 'Yesterday ' + time;
+      if (days > 1 && days < 7) return date.toLocaleDateString([], { weekday: 'short' }) + ' ' + time;
+      const dated = { day: 'numeric', month: 'short' };
+      // Only across a year boundary, so the common case stays short.
+      if (date.getFullYear() !== new Date().getFullYear()) dated.year = 'numeric';
+      return date.toLocaleDateString([], dated) + ' ' + time;
     },
 
     // Always by index, even when everything is selected. A "delete all" call
@@ -345,24 +420,20 @@ function fetchSMS() {
       });
       if (indicesToDelete.length === 0) return;
 
-      // postForm rejects on ERROR in the body (the CGI convention), which is
-      // what separates a delete that erased nothing from one that worked.
-      // A session that expires mid-delete rejects with SessionExpiredError
-      // while authFetch is already redirecting to login. Reporting a delete
-      // failure there is wrong, and refreshing against a dead session is
-      // pointless, so the flag skips both. Same guard as js/network.js.
-      // isLoading drives the spinner AND disables the button. A delete of many
-      // parts can run for seconds, and without this the page looks idle, so a
-      // second click re-POSTs every index and queues behind the first on the
-      // serialized AT port.
+      // isLoading drives the spinner and disables the button. A delete of many
+      // parts runs for seconds, and a second click would re-POST every index
+      // and queue behind the first on the serialized AT port.
+      //
+      // A session expiring mid-delete rejects with SessionExpiredError while
+      // authFetch is already redirecting to login, so the flag skips both the
+      // error and the refresh. Same guard as js/security.js.
       this.isLoading = true;
       let expired = false;
       postForm("/cgi-bin/delete_sms", { indices: indicesToDelete.join(',') })
         .catch((err) => {
           if (isSessionExpired(err)) { expired = true; return; }
-          // postForm rejects with the CGI's own body, which counts the parts
-          // that still hold a message or were left when the budget expired.
-          // Surfacing it is the point: a fixed string would hide the scale.
+          // Surface the CGI's own body: it counts the parts that still hold a
+          // message, which a fixed string would hide.
           this.$store.errorModal.open(deleteFailureText(err));
         })
         .finally(() => {
@@ -378,8 +449,52 @@ function fetchSMS() {
       this.requestSMS();
     },
 
+    // Acts on what is on screen and leaves selections hidden by the filter
+    // alone, so unchecking here cannot silently drop them from the count in the
+    // selection bar.
     toggleAll(event) {
-      this.selectedMessages = event.target.checked ? this.messages.map((_, index) => index) : [];
+      const visible = this.visibleMessages.map(entry => entry.index);
+      if (event.target.checked) {
+        this.selectedMessages = [...new Set(this.selectedMessages.concat(visible))];
+      } else {
+        this.selectedMessages = this.selectedMessages.filter(index => !visible.includes(index));
+      }
+    },
+
+    toggleMessage(index) {
+      if (this.selectedMessages.includes(index)) {
+        this.selectedMessages = this.selectedMessages.filter(i => i !== index);
+      } else {
+        this.selectedMessages = this.selectedMessages.concat(index);
+      }
+    },
+
+    // Whether the clamp actually hides anything, which decides if the card
+    // offers a toggle. Measured rather than inferred from the character count,
+    // which cannot see the newlines in a message or how wide the card is: it
+    // offered the toggle on long text that already fit, and withheld it on
+    // short text broken over four lines, which was then clipped with no way to
+    // open it. The flag goes on the element for CSS to act on, so there is no
+    // second copy of it to keep in step.
+    // An expanded message measures as fitting, so measuring one would drop its
+    // own toggle. The clamp class is the test for that, no extra state.
+    measureClamp(el) {
+      if (!el.classList.contains('is-clamped')) return;
+      // A pixel of tolerance for sub-pixel line heights.
+      el.parentElement.classList.toggle('is-clipped', el.scrollHeight > el.clientHeight + 1);
+    },
+
+    // The wrap point moves with the card's width.
+    remeasureAll() {
+      document.querySelectorAll('.sms-list .sms-text').forEach(el => this.measureClamp(el));
+    },
+
+    toggleExpanded(index) {
+      if (this.expanded.includes(index)) {
+        this.expanded = this.expanded.filter(i => i !== index);
+      } else {
+        this.expanded = this.expanded.concat(index);
+      }
     }
   };
 }

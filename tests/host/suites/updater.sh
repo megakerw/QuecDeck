@@ -2,11 +2,10 @@
 # Sourced by tests/host/run-tests.sh.
 
 # --------------------------------------------- updater pure helpers --------
-# The updater's install phase is now plain committed code (no generated
-# heredoc), so its pure helpers can be extracted and tested directly.
+# The install phase is plain committed code, so its pure helpers extract and run
+# directly.
 eval "$(extract_fn update_quecdeck.sh _tag_to_version)"
-# v-strip for the version file. Regression guard for the bug the de-heredoc
-# equivalence diff caught (would have written "v1.0.15" instead of "1.0.15").
+# The version file carries no leading v.
 t "tag_to_version strips v"   "1.0.15" "$(_tag_to_version v1.0.15)"
 t "tag_to_version idempotent" "1.0.15" "$(_tag_to_version 1.0.15)"
 t "tag_to_version branch"     "main"   "$(_tag_to_version main)"
@@ -39,9 +38,8 @@ rm -rf "$_generation_fixture"
 unset -f _install_generation_supported
 unset _generation_fixture
 
-# The bind address moved to a tmpfs fragment, so the installed conf no longer
-# drifts from the staged one and needs no normalizing before the diff. A sed
-# here would now be able to mask a real change instead of an IP patch.
+# The bind address lives in a tmpfs fragment, so the installed conf matches the
+# staged one byte for byte. Normalizing before the diff would mask a real change.
 t "lighttpd config compare is direct" "yes" \
   "$(grep -q 'diff -q "\$STAGE_DIR/lighttpd.conf" "\$QUECDECK_DIR/lighttpd.conf"' update_quecdeck.sh && ! grep -q '_normalize_bind' update_quecdeck.sh && echo yes || echo no)"
 
@@ -274,8 +272,10 @@ t "updater health probe avoids blocked loopback HTTP" "yes" \
 t "updater health probe exercises auth CGI as web uid" "yes" \
   "$( _probe_src=$(sed -n '/^    _probe_site() {/,/^    }/p' update_quecdeck.sh); printf '%s\n' "$_probe_src" | grep -q 'su www-data' && printf '%s\n' "$_probe_src" | grep -q 'auth_login' && echo yes || echo no)"
 _at_probe=$(sed -n '/systemctl restart atcmd-daemon/,/systemctl restart connection-logger/p' update_quecdeck.sh)
+# Match the retry bound up to its closing bracket. Without it the .* lets a
+# widened bound (100, 1000) satisfy a pattern written for 10.
 t "AT daemon health probe tolerates one systemd restart" "yes" \
-  "$(printf '%s\n' "$_at_probe" | grep -q '_at_probe_attempt.*-lt 10' && printf '%s\n' "$_at_probe" | grep -q "atcmd_run 'AT' 1000" && ! printf '%s\n' "$_at_probe" | grep -q 'sleep 2' && echo yes || echo no)"
+  "$(printf '%s\n' "$_at_probe" | grep -q '_at_probe_attempt" -lt 10 \]' && printf '%s\n' "$_at_probe" | grep -q "atcmd_run 'AT' 1000" && ! printf '%s\n' "$_at_probe" | grep -q 'sleep 2' && echo yes || echo no)"
 unset _at_probe
 t "updater health probe requires lighttpd-owned LAN HTTPS socket" "yes" \
   "$( _probe_src=$(sed -n '/^    _probe_site() {/,/^    }/p' update_quecdeck.sh); printf '%s\n' "$_probe_src" | grep -q 'systemctl show -p MainPID' && printf '%s\n' "$_probe_src" | grep -q '_health_hex:01BB' && printf '%s\n' "$_probe_src" | grep -q 'socket:\[\$_https_inode\]' && echo yes || echo no)"
@@ -291,8 +291,17 @@ t "monitoring boot-link failure aborts the forward swap" "yes" \
   "$(sed -n '/for _m in watchcat scheduled_restart/,/done/p' update_quecdeck.sh | head -20 | grep -q 'FATAL: Could not enable' && echo yes || echo no)"
 t "pre-commit loads runtime guard from staged index" "yes" \
   "$(sed -n '/tmpguard_defs=$(mktemp)/,/rm -f "\$tmpguard_defs"/p' .githooks/pre-commit | grep -q 'git show :tests/host/guards/runtime-path.sh' && echo yes || echo no)"
+# Ordering inside the extracted function rather than a range ending at a
+# comment: a reworded comment would widen the window to the rest of the file
+# and the assertions below would still pass.
+_uninstall_fn=$(extract_fn quecdeck.sh uninstall_quecdeck_components)
+# Unit files live on the read-only root, so nothing can be removed before the
+# remount succeeds.
 t "uninstall requires writable remount first" "yes" \
-  "$(sed -n '/^uninstall_quecdeck_components() {/,/# Remove any transient update unit/p' quecdeck.sh | grep -q '^    if ! remount_rw; then$' && echo yes || echo no)"
+  "$(_remount=$(printf '%s\n' "$_uninstall_fn" | grep -n '^    if ! remount_rw; then$' | cut -d: -f1); _first_rm=$(printf '%s\n' "$_uninstall_fn" | grep -n '^ *rm -f /lib/systemd/system/' | head -1 | cut -d: -f1); [ -n "$_remount" ] && [ -n "$_first_rm" ] && [ "$_remount" -lt "$_first_rm" ] && echo yes || echo no)"
+# Asserted on the guard loop itself. Counting the names across the whole
+# function would stay satisfied by unrelated mentions if the loop were dropped.
 t "uninstall refuses to race active update units" "2" \
-  "$(sed -n '/^uninstall_quecdeck_components() {/,/echo.*Uninstalling QuecDeck/p' quecdeck.sh | grep -o 'install_quecdeck\(_fetch\)\?' | sort -u | wc -l | tr -d ' ')"
+  "$(printf '%s\n' "$_uninstall_fn" | grep -oE '^ *for _update_unit in [a-z_ ]+; do' | grep -o 'install_quecdeck\(_fetch\)\?' | sort -u | wc -l | tr -d ' ')"
+unset _uninstall_fn _remount _first_rm
 . tests/host/support/entware-bootstrap.sh

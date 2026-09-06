@@ -68,9 +68,9 @@ UPDATE_TMP="$RUNDIR/update"
 CHECKSUMS="$UPDATE_TMP/quecdeck_update_checksums.sha256"
 UPDATE_SCRIPT="$UPDATE_TMP/quecdeck_update.sh"
 
-# Create it before anything else because every entry point writes here. Check
-# the result. If creation fails, the fetch unit never starts and no status is written, so
-# the UI would sit on "idle" as though nothing had been requested.
+# Before anything else, because every entry point writes here. Without the
+# directory no status is ever written and the UI sits on "idle" as though
+# nothing had been requested.
 if ! mkdir -p "$RUNDIR" || ! chmod 755 "$RUNDIR"; then
     echo "FATAL: cannot create $RUNDIR. Refusing to start an update that could not report its own status."
     exit 1
@@ -306,11 +306,11 @@ if [ -z "$TAG" ]; then
     exit 1
 fi
 
-# Mutual exclusion via systemd for BOTH stages: the install runs as the
+# Mutual exclusion via systemd for both stages: the install runs as the
 # install_quecdeck oneshot, the download window as the install_quecdeck_fetch
 # transient unit. "activating" is a oneshot's running state, "active" covers
-# RemainAfterExit. The reset-failed call clears leftovers from prior runs so the fetch
-# window reads as running, not failed, in get_update_log.
+# RemainAfterExit. reset-failed clears leftovers so the fetch window reads as
+# running, not failed, in get_update_log.
 take_dispatch_lock || {
     echo "An update is already in progress. Not starting another." >> "$LOG" 2>/dev/null
     exit 2
@@ -334,13 +334,12 @@ if ! : > "$LOG" || ! chmod 644 "$LOG"; then
     abort "FATAL: cannot prepare the update log. Refusing to start."
 fi
 
-# Start the fetch phase as a oneshot written to /run, the same field-proven
-# pattern the bootstrap uses for the install unit (do NOT swap in systemd-run:
-# its D-Bus path is unverified from the CGI-sudo context). The systemd unit runs
-# at most one instance per unit name, so a concurrent trigger coalesces into
-# this start instead of racing the download window (the is-active check above
-# cannot see a fetch that has not started yet). The unit detaches from the CGI
-# on its own. No nohup or lock file is needed.
+# Start the fetch phase as a oneshot written to /run, the pattern the bootstrap
+# uses for the install unit. Do NOT swap in systemd-run: its D-Bus path is
+# unverified from the CGI-sudo context. systemd runs one instance per unit
+# name, so a second trigger arriving before this one starts joins this run
+# instead of starting a second download. The unit detaches from the CGI on its
+# own, so no nohup or lock file.
 FETCH_UNIT_FILE=/run/systemd/system/install_quecdeck_fetch.service
 mkdir -p /run/systemd/system || abort "FATAL: cannot create systemd's runtime unit directory."
 rm -f "$FETCH_UNIT_FILE" || abort "FATAL: cannot replace the previous fetch unit."

@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Define toolkit paths
 # The legacy root bin may have been world-writable. Use only trusted command
 # directories. Installed login shells add root/bin after it has been hardened.
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin
+# Stock ADB shells use 0000; package indexes must never inherit that mask.
+umask 022
 GITUSER="megakerw"
 REPONAME="QuecDeck"
 GITTREE="main"
@@ -14,12 +15,101 @@ GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 QUECDECK_DIR="/usrdata/quecdeck"
 INSTALL_GENERATION=2
 ENTWARE_BOOTSTRAP_MARKER="/usrdata/opt/.quecdeck-install-generation"
-# Function to remount file system as read-write
+
+secure_opkg_metadata() {
+    _opkg_config=/opt/etc/opkg.conf
+    _opkg_lists=/opt/var/opkg-lists
+    [ -d /opt/etc ] && [ ! -L /opt/etc ] || return 1
+    [ -f "$_opkg_config" ] && [ ! -L "$_opkg_config" ] || return 1
+    _opkg_mode=$(stat -c %a /opt/etc 2>/dev/null) || return 1
+    [ "$(stat -c %u /opt/etc 2>/dev/null)" = 0 ] && [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    _opkg_mode=$(stat -c %a "$_opkg_config" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$_opkg_config" 2>/dev/null)" = 0 ] && [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    chown root:root /opt/etc "$_opkg_config" || return 1
+    chmod 755 /opt/etc && chmod 644 "$_opkg_config" || return 1
+    [ -d "$_opkg_lists" ] && [ ! -L "$_opkg_lists" ] || return 1
+    _opkg_mode=$(stat -c %a "$_opkg_lists" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$_opkg_lists" 2>/dev/null)" = 0 ] && [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    chown root:root "$_opkg_lists" && chmod 755 "$_opkg_lists" || return 1
+    for _opkg_entry in "$_opkg_lists"/* "$_opkg_lists"/.[!.]* "$_opkg_lists"/..?*; do
+        [ -e "$_opkg_entry" ] || [ -L "$_opkg_entry" ] || continue
+        [ -f "$_opkg_entry" ] && [ ! -L "$_opkg_entry" ] || return 1
+        _opkg_mode=$(stat -c %a "$_opkg_entry" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$_opkg_entry" 2>/dev/null)" = 0 ] && [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+        chown root:root "$_opkg_entry" && chmod 644 "$_opkg_entry" || return 1
+    done
+}
+
+require_https_opkg_feeds() {
+    _opkg_source_count=0
+    while IFS= read -r _opkg_line || [ -n "$_opkg_line" ]; do
+        IFS=' 	' read -r _opkg_kind _opkg_name _opkg_url _opkg_rest <<EOF
+$_opkg_line
+EOF
+        case "$_opkg_kind" in
+            src|src/gz)
+                [ -n "$_opkg_name" ] && [ -n "$_opkg_url" ] || return 1
+                case "$_opkg_url" in
+                    https://*) _opkg_source_count=$((_opkg_source_count + 1)) ;;
+                    *) return 1 ;;
+                esac
+                ;;
+        esac
+    done < /opt/etc/opkg.conf || return 1
+    [ "$_opkg_source_count" -gt 0 ]
+}
+
+# Restore Entware's TLS downloader without ever asking the firmware wget to
+# fetch an HTTPS feed. The wrapper accepts only opkg's small wget argument set
+# and delegates certificate validation to the stock curl and CA store.
+install_entware_tls_packages() {
+    (
+        umask 077
+        require_https_opkg_feeds || exit 1
+        _bootstrap_dir=$(mktemp -d /run/quecdeck-entware.XXXXXX) || exit 1
+        trap 'rm -rf "$_bootstrap_dir"' EXIT
+        trap 'exit 1' HUP INT TERM
+        cat > "$_bootstrap_dir/wget" <<'CURL_WGET'
+#!/bin/sh
+output= url= timeout=60
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -q) shift ;;
+        -O)
+            [ "$#" -ge 2 ] && [ -z "$output" ] || exit 2
+            output=$2; shift 2 ;;
+        --timeout)
+            [ "$#" -ge 2 ] || exit 2
+            case "$2" in ''|*[!0-9]*|0) exit 2 ;; esac
+            timeout=$2; shift 2 ;;
+        -Y)
+            [ "$#" -ge 2 ] && [ "$2" = on ] || exit 2
+            shift 2 ;;
+        https://*)
+            [ -z "$url" ] || exit 2
+            url=$1; shift ;;
+        *) echo "Unsupported bootstrap wget argument: $1" >&2; exit 2 ;;
+    esac
+done
+[ -n "$output" ] && [ -n "$url" ] || exit 2
+unset LD_LIBRARY_PATH LD_PRELOAD
+exec /usr/bin/curl -q --proto '=https' --proto-redir '=https' \
+    --cacert /etc/ssl/certs/ca-certificates.crt -fsSL \
+    --connect-timeout 15 --max-time "$timeout" --retry 1 -o "$output" -- "$url"
+CURL_WGET
+        chmod 700 "$_bootstrap_dir/wget" || exit 1
+        PATH="$_bootstrap_dir:/opt/bin:/opt/sbin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            /opt/bin/opkg update || exit 1
+        secure_opkg_metadata || exit 1
+        require_https_opkg_feeds || exit 1
+        PATH="$_bootstrap_dir:/opt/bin:/opt/sbin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            /opt/bin/opkg install wget-ssl ca-certificates
+    )
+}
 remount_rw() {
     mount -o remount,rw /
 }
 
-# Function to remount file system as read-only
 remount_ro() {
     mount -o remount,ro /
 }
@@ -33,8 +123,8 @@ ensure_rundir() {
     chmod 755 /run/quecdeck
 }
 
-# One-time repair marker. Before this existed, /usrdata/root and bin were 0777.
-# Their contents therefore cannot be trusted merely by changing the mode.
+# One-time repair marker. Older installs leave /usrdata/root and bin at 0777,
+# so their contents cannot be trusted by fixing the mode alone.
 ROOT_HOME_HARDENED=/usrdata/root/.quecdeck-home-hardened
 
 write_root_profile() {
@@ -89,7 +179,6 @@ root_home_profile() {
     write_root_profile
 }
 
-# Check for existing Entware/opkg installation, install if not installed
 ensure_entware_installed() {
     require_supported_install_state || return 1
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
@@ -109,7 +198,7 @@ ensure_entware_installed() {
         _ent=/run/quecdeck/installentware.sh
         rm -f "$_ent"
         /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o "$_ent" "$GITROOT/installentware.sh" || { echo "HTTPS bootstrap download failed." >&2; exit 1; }
-        echo "aaed731495ccea659f04fd9b5e5a7d40a933d4939196cb53a037c6e3e5bad77f  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
+        echo "315eff6501b1e901e71887570949c90b3cf5e248e6f221b68cd92c8ccf1e49ea  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
         echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
         # Run with the staging dir as CWD, matching the previous "cd /tmp" so a
         # relative write by the installer still lands in scratch tmpfs.
@@ -126,16 +215,22 @@ ensure_entware_installed() {
         root_home_profile || exit 1
     fi
 
+    secure_opkg_metadata || { echo "Entware metadata permissions could not be secured." >&2; exit 1; }
+    # Migrate the official legacy URL before any operation that can fetch. Keep
+    # custom feeds, but require their transport to meet the same HTTPS boundary.
+    sed -i 's|http://bin\.entware\.net/|https://bin.entware.net/|g' /opt/etc/opkg.conf || exit 1
+    require_https_opkg_feeds || { echo "Every enabled Entware feed must use HTTPS." >&2; exit 1; }
     _entware_packages=$(/opt/bin/opkg list-installed 2>/dev/null) || exit 1
     if ! printf '%s\n' "$_entware_packages" | grep -q '^wget-ssl ' ||
-       ! printf '%s\n' "$_entware_packages" | grep -q '^ca-certificates '; then
+        ! printf '%s\n' "$_entware_packages" | grep -q '^ca-certificates '; then
         echo "Installing wget-ssl and ca-certificates..."
-        PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg update || exit 1
-        PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg install wget-ssl ca-certificates || { echo -e "\e[1;31mFailed to install Entware TLS support.\e[0m"; exit 1; }
+        install_entware_tls_packages || { echo -e "\e[1;31mFailed to install Entware TLS support.\e[0m"; exit 1; }
     fi
-    # Migrate existing installations too; leave third-party feed URLs alone.
-    sed -i 's|http://bin\.entware\.net/|https://bin.entware.net/|g' /opt/etc/opkg.conf || exit 1
-    PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg update || { echo "Entware HTTPS update failed." >&2; exit 1; }
+    require_https_opkg_feeds || { echo "Every enabled Entware feed must use HTTPS." >&2; exit 1; }
+    PATH=/opt/bin:/opt/sbin:$PATH /opt/bin/opkg update
+    _opkg_update_rc=$?
+    secure_opkg_metadata || { echo "Entware metadata permissions could not be secured." >&2; exit 1; }
+    [ "$_opkg_update_rc" -eq 0 ] || { echo "Entware HTTPS update failed." >&2; exit 1; }
 
     # Mark only Entware installations that this generation successfully
     # prepared. If the later QuecDeck download is interrupted, the installer
@@ -153,7 +248,6 @@ ensure_entware_installed() {
     trap - EXIT
 }
 
-#Uninstall Entware if the Users chooses
 uninstall_entware() {
     echo -e "\e[1;32mUninstalling Entware/OPKG...\e[0m"
 
@@ -168,18 +262,17 @@ uninstall_entware() {
     [ -f /opt/etc/init.d/rc.unslung ] && /opt/etc/init.d/rc.unslung stop
     systemctl stop opt.mount 2>/dev/null
 
-    # Stop sshd if installed (it is an Entware package and won't survive Entware removal)
+    # sshd is an Entware package and will not survive Entware removal.
     [ -f /lib/systemd/system/sshd.service ] && result_sshd="REMOVED"
     systemctl stop sshd 2>/dev/null
 
-    # Unmount /opt before removing it
     if mountpoint -q /opt; then
         umount /opt \
             && result_opt_unmount="OK" \
             || { result_opt_unmount="WARNING"; echo -e "\e[1;31mWARNING: Could not unmount /opt. A reboot may be required to complete removal.\e[0m"; }
     fi
 
-    # Remove Entware data directory (/usrdata is always writable)
+    # /usrdata is always writable, so this needs no remount.
     [ -d /usrdata/opt ] && result_entware_data="REMOVED"
     rm -rf /usrdata/opt
 
@@ -190,6 +283,7 @@ uninstall_entware() {
     rm -f /lib/systemd/system/multi-user.target.wants/rc.unslung.service
     rm -f /lib/systemd/system/rc.unslung.service
     rm -f /lib/systemd/system/multi-user.target.wants/start-opt-mount.service
+    rm -f /lib/systemd/system/multi-user.target.wants/opt.mount
     rm -f /lib/systemd/system/opt.mount
     rm -f /lib/systemd/system/start-opt-mount.service
     rm -f /lib/systemd/system/sshd.service
@@ -335,7 +429,6 @@ fetch_and_run_installer() {
     rm -rf "$_fetch_dir"
 }
 
-# Function to install/update QuecDeck from latest GitHub release
 supported_install_state() {
     if [ -d "$QUECDECK_DIR/www" ]; then
         grep -qx "$INSTALL_GENERATION" "$QUECDECK_DIR/install-generation" 2>/dev/null || return 1
@@ -398,11 +491,10 @@ valid_git_ref() { # valid_git_ref <ref>
     [ "${#1}" -le 100 ]
 }
 
-# Function to install/update QuecDeck from a development branch. Same integrity
-# chain as the other install paths: the manifest, the installer, and the archive
-# are all fetched from the chosen ref and verified against each other. That
-# proves the download was not tampered with in transit, not that the branch is
-# fit to run. Unreleased code, so the prompt says so.
+# Install from a development branch. Same integrity chain as the other paths:
+# manifest, installer and archive all come from the chosen ref and are verified
+# against each other. That proves the download arrived intact, not that the
+# branch is fit to run, which is what the prompt below warns about.
 install_quecdeck_dev() {
     echo -e "\e[1;33mDevelopment branches carry untested changes and can leave the modem\e[0m"
     echo -e "\e[1;33mwithout a working web interface. Use a release for normal installs.\e[0m"
@@ -420,7 +512,7 @@ install_quecdeck_dev() {
     install_quecdeck "$_dev_ref"
 }
 
-# Function to install/update QuecDeck from a branch. The ref is passed through
+# Install from a branch. The ref is passed through
 # to update_quecdeck.sh rather than left to its default, so the manifest, the
 # installer, and the release archive all come from the same branch.
 install_quecdeck() { # install_quecdeck [ref]
@@ -508,7 +600,6 @@ remove_monitoring_unit() { # remove_monitoring_unit <unit>
     fi
 }
 
-# Function to Uninstall QuecDeck and dependencies
 uninstall_quecdeck_components() {
     echo -e "\e[1;31mThis will completely uninstall QuecDeck and all its components.\e[0m"
     read -p "Are you sure? (y/n): " confirm
@@ -637,7 +728,6 @@ uninstall_quecdeck_components() {
     rm -f /lib/systemd/system/multi-user.target.wants/ttyd.service
     rm -f /bin/ttyd
 
-    # Check if Lighttpd service is installed and remove it if present
     if [ -f "/lib/systemd/system/lighttpd.service" ]; then
         # Remove only lighttpd: --force-removal-of-dependent-packages cascades to
         # the lighttpd-mod-* packages (they depend on it). Listing them explicitly
@@ -674,8 +764,7 @@ uninstall_quecdeck_components() {
     rm -f /opt/etc/.quecdeck-setup.lock
     rm -f /opt/etc/.quecdeck-credentials.lock
     rm -f /usrdata/root/.quecdeck-ssh.lock
-    rm -f /usrdata/root/.ssh/authorized_keys
-    rmdir /usrdata/root/.ssh 2>/dev/null
+    rm -f /opt/etc/ssh/authorized_keys
     rm -f /usrdata/root/.profile
     [ "$(readlink /bin/menu 2>/dev/null)" != /usrdata/root/bin/menu ] || rm -f /bin/menu
     rm -f /usrdata/root/bin/menu

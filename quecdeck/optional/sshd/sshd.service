@@ -2,7 +2,7 @@
 Description=OpenBSD Secure Shell server
 Documentation=man:sshd(8) man:sshd_config(5)
 After=network.target opt.mount firewall.service
-ConditionPathExists=/usrdata/root/.ssh/authorized_keys
+ConditionPathExists=/opt/etc/ssh/authorized_keys
 ConditionPathExists=/opt/etc/ssh/quecdeck_enabled
 
 [Service]
@@ -15,6 +15,7 @@ PIDFile=/opt/var/run/sshd.pid
 # firewall.service's ExecStartPost for the must-go-DOWN pattern. Keep in
 # sync with the comment there if either pattern changes.
 ExecStartPre=/bin/systemctl is-active firewall
+ExecStartPre=/bin/bash /usrdata/quecdeck/script/firewall.sh --check-ssh
 ExecStartPre=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh
 ExecStartPre=/usrdata/quecdeck/script/ssh_access.sh ready
 ExecStartPre=/opt/sbin/sshd -t

@@ -197,8 +197,8 @@ if [ -d "$FRESH" ]; then
             *) ok "fresh $_d created $_fm (owner-only write)" ;;
         esac
     done
-    # The FILE mode, not just its parent. cache_write no longer chmods, so this
-    # is what catches a lost umask. The probe ran under sudo, outside any unit,
+    # The FILE mode, not just its parent. cache_write sets no mode of its own, so
+    # this is what catches a lost umask. The probe ran under sudo, outside any unit,
     # so it can only pass if cgi-lib.sh sets the mask itself: a mode that came
     # from a unit's UMask= would show up here as 644.
     for _f in "$FRESH/cache/probe" "$FRESH/auth_failures"/*; do
@@ -278,7 +278,7 @@ for _f in "$WEBDIR/logs"/*; do
     [ "$_lm" = "600" ] || note "$_f is $_lm: appended files keep their creation mode until /run clears at reboot"
 done
 
-# ---- C: the old paths are dead -------------------------------------------
+# ---- C: pre-split paths are unused ---------------------------------------
 echo ""
 echo "[C] pre-split paths are no longer used"
 if [ "$DEPLOYED" = "0" ]; then

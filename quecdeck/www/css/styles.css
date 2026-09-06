@@ -860,6 +860,14 @@ html {
   font-weight: 500;
 }
 
+/* The Caps Lock hint appears mid-typing, so it is kept tight against the
+   field and reclaims part of the gap below rather than pushing the form. */
+.caps-hint {
+  margin-top: 0.2rem;
+  margin-bottom: -0.35rem;
+  line-height: 1.25;
+}
+
 /* ============================================================
    LIST GROUP
    ============================================================ */
@@ -944,20 +952,22 @@ html {
   gap: 0.1rem;
 }
 
+/* Typed off the panel tables above, not off .panel-title: the footer sits under
+   two tables of label/value rows and reads as one more of them, so it borrows
+   their th and td treatment rather than the uppercase micro-label idiom, which
+   belongs to headings and stat cards. */
 .foot-stat-label {
-  font-size: 0.68rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--bs-secondary-color);
   line-height: 1.2;
 }
 
 .foot-stat-value {
-  font-size: 0.92rem;
-  font-weight: 600;
+  font-size: 0.9rem;
   color: var(--bs-body-color);
   line-height: 1.25;
+  /* Both figures tick, and proportional digits make them jitter every poll. */
   font-variant-numeric: tabular-nums;
 }
 
@@ -1083,4 +1093,124 @@ html {
    Left inert rather than removed from the markup, which would touch two pages
    for no gain. */
 
-.sms-inbox-scroll { max-height: 400px; overflow-y: scroll; overflow-x: hidden; }
+/* ============================================================
+   SMS INBOX
+   ============================================================ */
+/* The page owns vertical scrolling. A nested scroll area puts a second
+   scrollbar against the cards, and its gutter comes out of the container's own
+   content box, so anything left outside ends up wider than the cards. No
+   max-height or overflow here.
+   The box groups the inbox and bounds the sticky selection bar's travel.
+   min-width is defensive: nothing currently relies on it, since the cards break
+   long words themselves. */
+.sms-inbox { min-width: 0; }
+
+.sms-toolbar { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+.sms-search { position: relative; flex: 1 1 14rem; max-width: 22rem; }
+.sms-search input { padding-left: 2.1rem; }
+.sms-search svg {
+  position: absolute; left: .7rem; top: 50%; transform: translateY(-50%);
+  color: var(--bs-secondary-color); pointer-events: none;
+}
+
+.sms-count { font-size: .82rem; color: var(--bs-secondary-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Selection bar, shown only while something is picked. The delete action lives
+   here rather than in a permanent .panel-actions row, so the destructive button
+   is never sitting under an inbox with nothing selected.
+   Sticky against the page, so delete stays reachable at any scroll position.
+   The background has to be opaque because cards pass under it, so the tint is
+   layered over the panel's surface colour rather than written as one blended
+   hex that would drift if --sa-surface changed. */
+.sms-selbar {
+  display: flex; align-items: center; gap: .75rem;
+  position: sticky;
+  top: .5rem;
+  z-index: 2;
+  padding: .55rem .55rem .55rem .9rem;
+  margin-bottom: .85rem;
+  border: 1px solid rgba(96, 165, 250, .35);
+  border-radius: var(--sa-control-radius);
+  background: linear-gradient(rgba(96, 165, 250, .09), rgba(96, 165, 250, .09)), var(--sa-surface);
+  box-shadow: 0 .35rem .8rem rgba(0, 0, 0, .22);
+}
+.sms-selbar-text { font-size: .875rem; font-variant-numeric: tabular-nums; }
+.sms-selbar .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .6rem; --bs-btn-font-size: .82rem; }
+
+.sms-list { display: flex; flex-direction: column; gap: .5rem; }
+
+/* Checkbox, avatar, then the message. The card is not a label: message text is
+   there to be selected and copied, and a drag inside a label toggles it. */
+.sms-card {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: .8rem;
+  align-items: start;
+  padding: .75rem .9rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--sa-control-radius);
+  background: rgba(255, 255, 255, .018);
+  transition: background var(--sa-transition), border-color var(--sa-transition);
+}
+.sms-card:hover { background: rgba(255, 255, 255, .045); border-color: rgba(255, 255, 255, .16); }
+.sms-card.is-selected { border-color: rgba(96, 165, 250, .6); background: rgba(96, 165, 250, .08); }
+.sms-card .form-check-input { margin-top: .55rem; }
+
+.sms-avatar {
+  width: 2.3rem; height: 2.3rem; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: .78rem; font-weight: 700;
+}
+.sms-avatar svg { width: 1.05rem; height: 1.05rem; }
+/* Sender class, not decoration: named sender, dialable number, short code. */
+.sms-avatar.is-brand   { background: rgba(96, 165, 250, .16); color: #8fbcfb; }
+.sms-avatar.is-contact { background: rgba(25, 135, 84, .18);  color: #52c98f; }
+.sms-avatar.is-code    { background: rgba(255, 193, 7, .14);  color: #e0b13c; }
+
+/* min-width on the grid child, or a long unbroken body widens the whole card. */
+.sms-main { min-width: 0; }
+
+.sms-head { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .2rem; }
+.sms-sender { font-weight: 600; font-size: .95rem; overflow-wrap: anywhere; }
+.sms-time {
+  margin-left: auto; white-space: nowrap;
+  font-size: .78rem; color: var(--bs-secondary-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.sms-text {
+  margin: 0;
+  font-size: .9rem; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* Three lines. sms.js measures the element against this to decide whether to
+   offer the toggle, so the line count can change here alone. */
+.sms-text.is-clamped {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Shown only on a card whose text the clamp actually cuts off. sms.js sets
+   is-clipped from a measurement, since no selector can ask whether an element
+   overflows. */
+.sms-more { display: none; }
+.sms-main.is-clipped .sms-more {
+  display: block;
+  background: none; border: 0; padding: 0; margin-top: .3rem;
+  font-size: .8rem; font-weight: 600; color: var(--status-color-blue);
+}
+.sms-main.is-clipped .sms-more:hover { text-decoration: underline; }
+
+.sms-chip {
+  font-size: .68rem; font-weight: 600; letter-spacing: .03em;
+  padding: .1rem .38rem; border-radius: 999px;
+  color: var(--bs-secondary-color);
+  border: 1px solid var(--bs-border-color);
+  white-space: nowrap;
+}
+
+.sms-empty { display: flex; flex-direction: column; align-items: center; gap: .5rem; padding: 3rem 1rem; text-align: center; }
+.sms-empty svg { color: var(--bs-secondary-color); opacity: .55; }
+.sms-empty-title { font-weight: 600; }
+.sms-empty-sub { font-size: .875rem; color: var(--bs-secondary-color); max-width: 34ch; }

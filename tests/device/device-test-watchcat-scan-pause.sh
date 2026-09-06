@@ -12,8 +12,8 @@
 # It covers the one property no host test can reach: that run_cell_scan pauses
 # the running daemon for the duration of a real scan, that the pause survives a
 # settings save restarting the unit mid-scan, and that the trap lifts it
-# afterwards. Stopping the unit, which is what this replaced, could not survive
-# that restart, and the reboot it prevents is the reason the mechanism exists.
+# afterwards. A marker survives that restart where stopping the unit could not,
+# and the reboot it prevents is the reason the mechanism exists.
 #
 # Targets are real internet addresses so the scan genuinely makes them fail. The
 # interval is 30s and the failure count its maximum of 10, so even if every ping

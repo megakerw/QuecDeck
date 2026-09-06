@@ -21,7 +21,7 @@
         + '<path d="M3.2 7.4a6.8 6.8 0 0 1 9.6 0"/>') },
       { href: '/scanner.html', label: 'Cell Scan', icon: icon(
         '<circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2 14 14"/>') },
-      { href: '/settings.html', label: 'LAN & Utilities', icon: icon(
+      { href: '/settings.html', label: 'LAN & Modem Options', icon: icon(
         '<circle cx="8" cy="8" r="2.2"/><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6'
         + 'M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M12.5 3.5l-1.1 1.1M4.6 11.4l-1.1 1.1"/>') },
     ] },
@@ -50,8 +50,6 @@
       { href: '/developer.html', label: 'Developer', icon: icon(
         '<path d="M5.4 4.8 2.2 8l3.2 3.2"/><path d="M10.6 4.8 13.8 8l-3.2 3.2"/>') },
     ],
-    // Rebooting is a system operation, not a LAN utility, so it ends this
-    // group rather than sitting among the modem toggles on settings.html.
     // Not a destination, so it renders as a button below a divider.
     action: { id: 'nav-reboot', label: 'Reboot', icon: icon(
       '<path d="M13.3 5.6a5.8 5.8 0 1 1-2.4-2.6"/><path d="M13.6 2.2v3.6h-3.6"/>') } },

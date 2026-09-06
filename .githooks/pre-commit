@@ -71,6 +71,7 @@ CHECKSUMMED_FILES=(
   quecdeck/www/js/logs.js
   quecdeck/www/js/setup.js
   quecdeck/www/js/nav.js
+  quecdeck/www/js/password-toggle.js
   quecdeck/www/js/update.js
   quecdeck/www/css/styles.css
   quecdeck/www/cgi-bin/auth_login
