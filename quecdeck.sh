@@ -376,6 +376,11 @@ uninstall_entware() {
     trap - EXIT
 
     systemctl daemon-reload
+    # As in uninstall_quecdeck_components: clear the failed results of units
+    # whose files this function just removed.
+    for _u in rc.unslung opt.mount start-opt-mount sshd; do
+        systemctl reset-failed "$_u" >/dev/null 2>&1
+    done
 
     echo ""
     echo -e "\e[1;32mUninstall Summary\e[0m"
@@ -848,6 +853,9 @@ uninstall_quecdeck_components() {
         # symlinks are hand-made, not systemctl-managed.
         systemctl stop "${_u%.service}" >/dev/null 2>&1
         rm -f "$_f" "/lib/systemd/system/multi-user.target.wants/$_u"
+        # Named here rather than in the sweep below, which cannot know what an
+        # earlier release called its units.
+        systemctl reset-failed "${_u%.service}" >/dev/null 2>&1
     done
 
     rm -f /opt/etc/sudoers.d/www-data
@@ -867,9 +875,22 @@ uninstall_quecdeck_components() {
     # first migration. Any quarantine is retained for manual recovery and will
     # intentionally keep the otherwise user-owned root home from being rmdir'd.
     rm -f "$ROOT_HOME_HARDENED"
+    # Releases before the key store moved to /opt/etc/ssh kept authorized_keys
+    # here. rmdir, never rm -rf: an empty directory is ours to reap, but one
+    # still holding a key belongs to the reader, like the quarantine above.
+    rmdir /usrdata/root/.ssh 2>/dev/null
     rmdir /usrdata/root/bin 2>/dev/null
     rmdir /usrdata/root 2>/dev/null
     systemctl daemon-reload
+    # A unit that exited non-zero keeps its failed result after its file is
+    # gone, so systemctl --failed reports QuecDeck units on a device that no
+    # longer has QuecDeck. Named one by one: a bare reset-failed would also
+    # clear the firmware's own failed units, which are not ours to touch.
+    for _u in lighttpd firewall ttyd atcmd-daemon connection-logger sshd \
+              watchcat scheduled_restart install_quecdeck \
+              install_quecdeck_fetch install_quecdeck_sshd; do
+        systemctl reset-failed "$_u" >/dev/null 2>&1
+    done
     [ -d "$QUECDECK_DIR" ] && result_files="REMOVED"
     rm -rf "$QUECDECK_DIR" "${QUECDECK_DIR}.old" "${QUECDECK_DIR}.new" /usrdata/quecdeck_last_update.log
 
