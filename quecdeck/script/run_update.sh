@@ -21,9 +21,10 @@ case "$TAG" in
 esac
 
 # The sudo entry point must verify credentials itself, even when the caller
-# bypasses the CGI. Read exactly two bounded lines; never put secrets in the
-# service file, environment or command arguments. Exit 3 means authentication
-# failed (2 is reserved for a busy dispatcher), and 75 means unavailable.
+# bypasses the CGI. Read exactly two bounded lines, and never put secrets in
+# the service file, environment or command arguments. Exit 3 means
+# authentication failed (2 is reserved for a busy dispatcher), and 75 means
+# unavailable.
 verify_service_credentials() {
     local payload admin developer extra admin_rc developer_rc
     payload=$(head -c 515; printf .)
@@ -260,10 +261,9 @@ UNIT
     chmod 644 "$SSHD_UNIT_FILE" || abort "FATAL: cannot secure the SSH action unit."
     systemctl daemon-reload || abort "FATAL: systemd rejected the SSH action unit."
     systemctl start --no-block install_quecdeck_sshd 2>>"$LOG" || abort "The SSH action unit was rejected by systemd."
-    sleep 1
-    if [ "$(systemctl is-active install_quecdeck_sshd 2>/dev/null)" = "failed" ]; then
-        abort "The SSH action unit failed to start."
-    fi
+    # Reply as soon as systemd accepts the job. The page now owns the running
+    # state and get_update_log turns an early unit failure into its result, so
+    # holding the credential dialog open for a second adds no protection.
     echo "Started."
     exit 0
 fi

@@ -20,8 +20,32 @@ umask 022
 # Do not search the legacy root bin until harden_root_home has quarantined it.
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin
 
+secure_opkg_installed_metadata() {
+    local db=/opt/lib/opkg info=/opt/lib/opkg/info status=/opt/lib/opkg/status
+    local entry dir mode
+    for dir in "$db" "$info"; do
+        [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
+        mode=$(stat -c %a "$dir" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$dir" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+        chown root:root "$dir" && chmod 755 "$dir" || return 1
+    done
+    [ -f "$status" ] && [ ! -L "$status" ] || return 1
+    mode=$(stat -c %a "$status" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$status" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    chown root:root "$status" && chmod 600 "$status" || return 1
+    # Info files have no single correct mode: control scripts are executable,
+    # file lists are not. An unsafe one is refused rather than forced.
+    for entry in "$info"/* "$info"/.[!.]* "$info"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        [ -f "$entry" ] && [ ! -L "$entry" ] || return 1
+        mode=$(stat -c %a "$entry" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$entry" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    done
+}
+
 secure_opkg_metadata() {
-    local config=/opt/etc/opkg.conf lists=/opt/var/opkg-lists entry mode
+    local config=/opt/etc/opkg.conf lists=/opt/var/opkg-lists
+    local entry mode
     [ -d /opt/etc ] && [ ! -L /opt/etc ] || return 1
     [ -f "$config" ] && [ ! -L "$config" ] || return 1
     mode=$(stat -c %a /opt/etc 2>/dev/null) || return 1
@@ -41,6 +65,7 @@ secure_opkg_metadata() {
         [ "$(stat -c %u "$entry" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
         chown root:root "$entry" && chmod 644 "$entry" || return 1
     done
+    secure_opkg_installed_metadata
 }
 
 require_https_opkg_feeds() {
@@ -574,7 +599,7 @@ stage_release() {
     _lighttpd_needs_install=0
     _lighttpd_index_fresh=1
     # Existing supported installs already have wget-ssl and CA certificates.
-    # Migrate their official feed before refreshing; never retry over HTTP.
+    # Migrate their official feed before refreshing, and never retry over HTTP.
     secure_opkg_metadata || return 1
     sed -i 's|http://bin\.entware\.net/|https://bin.entware.net/|g' /opt/etc/opkg.conf || return 1
     require_https_opkg_feeds || {
@@ -664,14 +689,17 @@ _restart_monitoring_workers() {
 }
 
 refresh_managed_sshd_unit() { # refresh_managed_sshd_unit <release dir>
-    local release_dir="$1" asset
+    local release_dir="$1" asset unit_tmp rc
     grep -Fqx 'Include /run/quecdeck/sshd-listen.conf' /opt/etc/ssh/sshd_config 2>/dev/null || return 0
     asset="$release_dir/optional/sshd/sshd.service"
     [ -x /opt/sbin/sshd ] && [ -f "$asset" ] && [ ! -L "$asset" ] || return 1
-    cp -f "$asset" /lib/systemd/system/sshd.service &&
-        chown root:root /lib/systemd/system/sshd.service &&
-        chmod 644 /lib/systemd/system/sshd.service &&
+    unit_tmp=/lib/systemd/system/.sshd.service.quecdeck.$$
+    cp "$asset" "$unit_tmp" && chown root:root "$unit_tmp" &&
+        chmod 644 "$unit_tmp" && mv -f "$unit_tmp" /lib/systemd/system/sshd.service &&
         ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service
+    rc=$?
+    rm -f "$unit_tmp"
+    return "$rc"
 }
 
 start_managed_sshd_if_needed() { # start_managed_sshd_if_needed <release dir>
@@ -899,6 +927,7 @@ swap_in_release() {
             return 1
         }
         PATH=/opt/bin:/opt/sbin:$PATH timeout 300 /opt/bin/opkg install $_lighttpd_pkgs || { echo -e "\e[1;31mFailed to install lighttpd packages (or it timed out).\e[0m"; result_lighttpd="FAILED"; return 1; }
+        secure_opkg_metadata || { echo -e "\e[1;31mEntware metadata permissions became unsafe after package installation.\e[0m"; result_lighttpd="FAILED"; return 1; }
         result_lighttpd="UPDATED"
     fi
 

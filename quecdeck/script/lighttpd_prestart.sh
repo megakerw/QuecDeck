@@ -29,13 +29,11 @@ fi
 . /usrdata/quecdeck/script/lan-ip-lib.sh || exit 1
 resolve_lan_ip
 
-# Publish the bind address to tmpfs instead of editing the configuration file.
-# lighttpd.conf is checksummed, so rewriting it in place moved the installed
-# copy away from its manifest hash on the first boot after every install and
-# made the file impossible to verify afterwards. Every failure here exits
-# non-zero, and this runs as ExecStartPre, so the server never starts against a
-# stale or missing fragment. That, not lighttpd's include behaviour, is what
-# keeps a bad read from reaching a listening socket.
+# Publish the bind address to tmpfs. lighttpd.conf is checksummed and must stay
+# byte-identical to its manifest hash, so no boot may write to it. Every failure
+# here exits non-zero, and this runs as ExecStartPre, so the server never starts
+# against a stale or missing fragment. That, not lighttpd's include behaviour,
+# is what keeps a bad read from reaching a listening socket.
 [ ! -L "$RUNTIME_DIR" ] || exit 1
 mkdir -p "$RUNTIME_DIR" || exit 1
 [ -d "$RUNTIME_DIR" ] && [ ! -L "$RUNTIME_DIR" ] || exit 1

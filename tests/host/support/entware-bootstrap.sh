@@ -1,12 +1,16 @@
 # Exercise bootstrap lifecycle and its embedded downloader without device writes.
 _eb_dir=$(mktemp -d)
 {
+    extract_fn installentware.sh secure_opkg_installed_metadata
     extract_fn installentware.sh secure_opkg_metadata
     extract_fn installentware.sh require_https_opkg_feeds
     extract_fn installentware.sh bootstrap_tls_packages
 } | sed -e "s|/run/quecdeck-entware.XXXXXX|$_eb_dir/wrapper.XXXXXX|g" \
         -e "s|/opt/var/opkg-lists|$_eb_dir/lists|g" \
         -e "s|/opt/etc/opkg.conf|$_eb_dir/opkg.conf|g" \
+        -e "s|/opt/lib/opkg/info|$_eb_dir/db/info|g" \
+        -e "s|/opt/lib/opkg/status|$_eb_dir/db/status|g" \
+        -e "s|/opt/lib/opkg|$_eb_dir/db|g" \
         -e "s|/opt/etc|$_eb_dir|g" \
         -e 's|chown root:root|chown_mock|g' \
         -e 's|/opt/bin/opkg|bootstrap_opkg|g' > "$_eb_dir/functions.sh"
@@ -27,6 +31,11 @@ stat() {
     fi
 }
 . "$_eb_dir/functions.sh"
+
+mkdir -p "$_eb_dir/db/info"
+: > "$_eb_dir/db/status"
+chmod 755 "$_eb_dir/db" "$_eb_dir/db/info"
+chmod 600 "$_eb_dir/db/status"
 
 printf '%s\n' 'src/gz entware https://bin.entware.net/armv7sf-k3.2' \
     'src/gz custom https://example.test/packages' > "$_eb_dir/opkg.conf"

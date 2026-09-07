@@ -24,6 +24,33 @@ PRE_OPKG_PATH=$(which opkg)
 # running as root.  Keep that trust state root-owned even when an outer caller
 # supplied a permissive umask.  Reject special files rather than following a
 # symlink planted during an interrupted or damaged installation.
+secure_opkg_installed_metadata() {
+    _opkg_db=/opt/lib/opkg
+    _opkg_info=/opt/lib/opkg/info
+    _opkg_status=/opt/lib/opkg/status
+    for _opkg_dir in "$_opkg_db" "$_opkg_info"; do
+        [ -d "$_opkg_dir" ] && [ ! -L "$_opkg_dir" ] || return 1
+        _opkg_mode=$(stat -c %a "$_opkg_dir" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$_opkg_dir" 2>/dev/null)" = 0 ] &&
+            [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+        chown root:root "$_opkg_dir" && chmod 755 "$_opkg_dir" || return 1
+    done
+    [ -f "$_opkg_status" ] && [ ! -L "$_opkg_status" ] || return 1
+    _opkg_mode=$(stat -c %a "$_opkg_status" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$_opkg_status" 2>/dev/null)" = 0 ] &&
+        [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    chown root:root "$_opkg_status" && chmod 600 "$_opkg_status" || return 1
+    # Info files have no single correct mode: control scripts are executable,
+    # file lists are not. An unsafe one is refused rather than forced.
+    for _opkg_entry in "$_opkg_info"/* "$_opkg_info"/.[!.]* "$_opkg_info"/..?*; do
+        [ -e "$_opkg_entry" ] || [ -L "$_opkg_entry" ] || continue
+        [ -f "$_opkg_entry" ] && [ ! -L "$_opkg_entry" ] || return 1
+        _opkg_mode=$(stat -c %a "$_opkg_entry" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$_opkg_entry" 2>/dev/null)" = 0 ] &&
+            [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    done
+}
+
 secure_opkg_metadata() {
     _opkg_config=/opt/etc/opkg.conf
     _opkg_lists=/opt/var/opkg-lists
@@ -52,6 +79,7 @@ secure_opkg_metadata() {
             [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
         chown root:root "$_opkg_entry" && chmod 644 "$_opkg_entry" || return 1
     done
+    secure_opkg_installed_metadata
 }
 
 # Package indexes are the trust root for every archive and maintainer script
@@ -90,7 +118,7 @@ trap 'mount -o remount,ro /' EXIT  # ensures RO is restored on any exit path
 # Write systemd units with their final ownership and mode before replacing the
 # live path. This avoids inheriting a permissive caller umask or retaining the
 # mode of an older unit while the root filesystem is writable.
-write_system_unit() { # write_system_unit <absolute path>; content on stdin
+write_system_unit() { # write_system_unit <absolute path>, content on stdin
     _unit_target=$1
     _unit_tmp=$(mktemp "${_unit_target}.XXXXXX") || return 1
     if ! cat > "$_unit_tmp" ||
@@ -161,6 +189,19 @@ do
   fi
 done
 
+# Initialize the installed-package trust store before the first opkg command.
+# A partial pre-existing tree must not redirect either path through a symlink.
+[ ! -L /opt/lib/opkg/info ] && [ ! -L /opt/lib/opkg/status ] || exit 1
+if [ ! -e /opt/lib/opkg/info ]; then
+    mkdir -m 755 /opt/lib/opkg/info || exit 1
+fi
+if [ ! -e /opt/lib/opkg/status ]; then
+    ( umask 077; : > /opt/lib/opkg/status ) || exit 1
+fi
+chown root:root /opt/lib/opkg /opt/lib/opkg/info /opt/lib/opkg/status || exit 1
+chmod 755 /opt/lib/opkg /opt/lib/opkg/info || exit 1
+chmod 600 /opt/lib/opkg/status || exit 1
+
 echo -e '\033[32mInfo: opkg package manager deployment...\033[0m'
 URL=https://bin.entware.net/${ARCH}/installer
 _opkg_bin_tmp=$(mktemp /opt/bin/.opkg.XXXXXX) || exit 1
@@ -223,6 +264,7 @@ CURL_WGET
         /opt/bin/opkg update || exit 1
         secure_opkg_metadata || exit 1
         /opt/bin/opkg install wget-ssl ca-certificates entware-opt || exit 1
+        secure_opkg_metadata || exit 1
     )
 }
 
@@ -275,6 +317,11 @@ After=opt.mount
 
 [Service]
 Type=oneshot
+# Entware package upgrades recreate their S* startup scripts. Remove the
+# unmanaged SSH and web-server launchers before rc.unslung can enumerate them;
+# cleaning them from their managed units is too late because the units may
+# start concurrently.
+ExecStartPre=/bin/sh -c 'rm -f /opt/etc/init.d/*sshd* /opt/etc/init.d/*lighttpd*'
 ExecStart=/opt/etc/init.d/rc.unslung start
 RemainAfterExit=yes
 

@@ -156,6 +156,7 @@ if [ "$rc" != 0 ]; then
         10) json_result false "The firewall could not apply the SSH setting. SSH was left stopped" ;;
         11) json_result false "The SSH setting was saved, but the server could not be started" ;;
         12) json_result false "The SSH port was changed but the enabled state was not. Reload the page and try again" ;;
+        15) json_result false "The SSH server could not be stopped, so the change stopped at that step. Reload the page to see the current state" ;;
         *) json_result false "The security change could not be completed" ;;
     esac
     exit 0

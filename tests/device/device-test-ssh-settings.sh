@@ -16,6 +16,36 @@ bad() { echo "  FAIL: $1"; fail=$((fail + 1)); }
     cmp -s /lib/systemd/system/sshd.service /usrdata/quecdeck/optional/sshd/sshd.service &&
     ok "installed SSH unit follows the QuecDeck release asset" ||
     bad "installed SSH unit is not a regular copy of the QuecDeck release asset"
+[ "$(stat -c '%u %a' /lib/systemd/system/sshd.service 2>/dev/null)" = "0 644" ] &&
+    ok "installed SSH unit is root-owned mode 644" ||
+    bad "installed SSH unit has the wrong owner or mode"
+[ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] &&
+    [ "$(stat -c '%u %a' "$CONFIG" 2>/dev/null)" = "0 600" ] &&
+    ok "SSH configuration is a root-only regular file" ||
+    bad "SSH configuration is not a root-owned regular file with mode 600"
+
+expected_sshd='sshd:x:106:65534:SSH privilege separation:/opt/var/empty:/bin/false'
+firmware_root=$(grep '^root:' /etc/passwd 2>/dev/null)
+entware_root=$(grep '^root:' /opt/etc/passwd 2>/dev/null)
+if [ -f /opt/etc/passwd ] && [ ! -L /opt/etc/passwd ] &&
+   [ "$(stat -c '%u %a' /opt/etc/passwd 2>/dev/null)" = "0 644" ] &&
+   [ "$(grep -c '^root:' /opt/etc/passwd 2>/dev/null)" = 1 ] &&
+   [ "$entware_root" = "$firmware_root" ] &&
+   [ "$(grep -c '^sshd:' /opt/etc/passwd 2>/dev/null)" = 1 ] &&
+   grep -qx "$expected_sshd" /opt/etc/passwd &&
+   [ "$(awk -F: '$3 == 106 {n++} END {print n + 0}' /opt/etc/passwd)" = 1 ]; then
+    ok "Entware passwd has one validated root and SSH service account"
+else
+    bad "Entware passwd does not match the managed SSH account contract"
+fi
+
+entware_sshd_init=0
+for f in /opt/etc/init.d/*sshd*; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    entware_sshd_init=1
+done
+[ "$entware_sshd_init" = 0 ] && ok "no unmanaged Entware sshd startup script remains" ||
+    bad "an unmanaged Entware sshd startup script remains"
 
 SSH_PORT=$(sed -n 's/^Port \([0-9][0-9]*\)$/\1/p' "$CONFIG")
 case "$SSH_PORT" in ''|*[!0-9]*) echo "FATAL: configured SSH port is invalid"; exit 1 ;; esac

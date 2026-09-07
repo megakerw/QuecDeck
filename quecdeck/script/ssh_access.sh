@@ -197,17 +197,37 @@ validate_sshd_config() { # validate_sshd_config <path> <port>
     printf '%s\n' "$effective" | grep -qx "port $2" || return 1
 }
 
+stop_sshd_safely() {
+    local state
+    state=$(systemctl is-active sshd 2>/dev/null)
+    case "$state" in
+        inactive|failed) return 0 ;;
+        active|activating|deactivating|reloading) ;;
+        *) return 1 ;;
+    esac
+    systemctl stop sshd >/dev/null 2>&1 || return 1
+    state=$(systemctl is-active sshd 2>/dev/null)
+    case "$state" in inactive|failed) return 0 ;; *) return 1 ;; esac
+}
+
 # Match sshd to the saved enabled state without changing the firewall.
 sync_daemon() { # sync_daemon <0|1>
     if [ "$1" = 0 ]; then
-        systemctl stop sshd >/dev/null 2>&1 || true
+        stop_sshd_safely || return 15
         return 0
     fi
-    if ! keys_ready; then
-        systemctl stop sshd >/dev/null 2>&1 || true
+    # A missing bind fragment is normal after boot: the unit publishes it in
+    # ExecStartPre before its full readiness check. Testing keys_ready here
+    # would wait for a file that only the start we are about to request creates.
+    if ! has_usable_key; then
+        stop_sshd_safely || return 15
         return 0
     fi
-    systemctl is-active --quiet sshd 2>/dev/null && return 0
+    if systemctl is-active --quiet sshd 2>/dev/null; then
+        keys_ready && return 0
+        stop_sshd_safely || return 15
+        return 11
+    fi
     systemctl reset-failed sshd >/dev/null 2>&1
     systemctl start sshd >/dev/null 2>&1 || return 11
 }
@@ -215,6 +235,8 @@ sync_daemon() { # sync_daemon <0|1>
 # Rebuild the firewall after a settings change, then match sshd to the saved
 # state. A firewall failure leaves sshd stopped.
 apply_network_policy() { # apply_network_policy <0|1>
+    # Close a disabled listener before rebuilding without its protected port.
+    [ "$1" != 0 ] || stop_sshd_safely || return 15
     if ! systemctl is-active --quiet firewall 2>/dev/null ||
        ! /bin/bash /usrdata/quecdeck/script/firewall.sh >/dev/null 2>&1; then
         systemctl stop sshd >/dev/null 2>&1 || true
@@ -251,7 +273,10 @@ apply_settings() { # apply_settings <0|1> <port>
         return 1
     }
 
-    systemctl stop sshd >/dev/null 2>&1 || true
+    stop_sshd_safely || {
+        rm -f "$tmp"
+        return 15
+    }
     mv -f "$tmp" "$SSHD_CONFIG" || {
         rm -f "$tmp"
         return 1

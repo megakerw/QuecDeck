@@ -177,6 +177,7 @@ function fetchSMS() {
           kind: kind,
           kindLabel: this.senderKindLabel(kind),
           initials: this.senderInitials(sender, kind),
+          color: this.senderColor(sender),
           // Every part's slot, so deleting the message deletes all of it.
           indices: group.map(part => part.index)
         });
@@ -391,6 +392,17 @@ function fetchSMS() {
       return (letters || '?').toUpperCase();
     },
 
+    // Stable across refreshes and independent of message order, so one sender
+    // keeps the same color as messages arrive or are deleted.
+    senderColor(sender) {
+      let hash = 2166136261;
+      for (const char of sender) {
+        hash ^= char.codePointAt(0);
+        hash = Math.imul(hash, 16777619) >>> 0;
+      }
+      return hash % 6;
+    },
+
     // Relative for the last week, absolute before that. The full stamp stays on
     // the element's title.
     formatDate(date) {
@@ -471,11 +483,9 @@ function fetchSMS() {
 
     // Whether the clamp actually hides anything, which decides if the card
     // offers a toggle. Measured rather than inferred from the character count,
-    // which cannot see the newlines in a message or how wide the card is: it
-    // offered the toggle on long text that already fit, and withheld it on
-    // short text broken over four lines, which was then clipped with no way to
-    // open it. The flag goes on the element for CSS to act on, so there is no
-    // second copy of it to keep in step.
+    // which cannot see the newlines in a message or how wide the card is. The
+    // flag goes on the element for CSS to act on, so there is no second copy of
+    // it to keep in step.
     // An expanded message measures as fitting, so measuring one would drop its
     // own toggle. The clamp class is the test for that, no extra state.
     measureClamp(el) {

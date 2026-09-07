@@ -42,6 +42,7 @@ function securityController(sshPage = false) {
     sshdDecoder: null,
     sshdReconnecting: false,
     sshdPollTimer: null,
+    sshdFinishTimer: null,
     sshdDoneTimer: null,
     sshdFetching: false,
     sshdInstallPort: 22,
@@ -65,21 +66,24 @@ function securityController(sshPage = false) {
     credentialLocked: false,
     credentialSubmit: null,
 
-    // Whether the daemon is running, and nothing else. The toggle says whether
-    // SSH is enabled and the alerts cover an unreadable state.
+    // Use the saved setting so an unsaved toggle does not change server status.
+    // A running daemon still takes precedence over a disabled setting.
     get sshBadge() {
-      if (!this.loaded) return serviceBadge(undefined);
-      if (!this.sshInstalled) return serviceBadge(null);
+      if (this.serverView === 'loading') return serviceBadge(undefined);
+      if (this.serverView === 'removing') return { label: 'Removing', cls: 'text-bg-primary' };
+      if (this.serverView !== 'manage') return serviceBadge(null);
+      if (!this.sshActive && this.sshSettingsReady && !this.savedSshEnabled) {
+        return { label: 'Disabled', cls: 'text-bg-secondary' };
+      }
       return serviceBadge(this.sshActive);
     },
 
-    // Words for the stood-down Authorized Keys card, which holds the column
-    // whenever there are no keys to manage. Ordered by precedence: an action in
-    // flight outranks the installed flag, so an uninstall that cleared it still
-    // reads Locked while it runs.
+    // Words for the stood-down Authorized Keys card. An action in flight
+    // outranks the installed flag, so an uninstall that cleared it still reads
+    // Locked while it runs.
     get keysStandDown() {
       if (!this.loaded) {
-        return { badge: 'Checking', message: 'Checking the SSH server.' };
+        return { badge: 'Checking', message: 'Waiting for the SSH server status.' };
       }
       if (this.sshdRunning) {
         return { badge: 'Locked', message: 'Key management is unavailable while the SSH server is being changed.' };
@@ -92,6 +96,70 @@ function securityController(sshPage = false) {
 
     get sshSettingsChanged() {
       return this.sshEnabled !== this.savedSshEnabled || Number(this.sshPort) !== this.savedSshPort;
+    },
+
+    get sshdRemovalInProgress() {
+      return this.sshdRunning && this.sshdAction === 'uninstall';
+    },
+
+    get sshdRemovalComplete() {
+      return !this.sshdRunning && this.sshdOutcome === 'done' &&
+        this.sshdAction === 'uninstall';
+    },
+
+    // The one predicate the server card branches on, so its layout and its
+    // contents cannot disagree. Order matters: a finished removal outranks
+    // sshInstalled, which stays true until the get_security refresh lands.
+    // Every state renders a body, so the card never paints as a bare header.
+    get serverView() {
+      if (!this.loaded) return 'loading';
+      if (this.sshdRemovalInProgress) return 'removing';
+      if (this.sshdRemovalComplete) return 'removed';
+      return this.sshInstalled ? 'manage' : 'install';
+    },
+
+    get sshdRemovalView() {
+      return this.serverView === 'removing' || this.serverView === 'removed';
+    },
+
+    // Keys belong to an installed server that nothing is currently changing.
+    get keysManageable() {
+      return this.serverView === 'manage' && !this.sshdRunning;
+    },
+
+    // The progress bar and the step line share one condition. A check has a
+    // single step and its button already names it.
+    get sshdProgressVisible() {
+      return this.sshdRunning && this.sshdAction !== 'check';
+    },
+
+    get sshdStepVisible() {
+      return this.sshdProgressVisible && !!this.sshdStep && !this.sshdReconnecting;
+    },
+
+    // Pending toggle first, then why an enabled server may not be running.
+    get enableHint() {
+      if (this.sshEnabled !== this.savedSshEnabled) {
+        return {
+          cls: 'text-muted',
+          text: this.sshEnabled
+            ? 'SSH will be enabled after you save settings.'
+            : 'SSH will be disabled after you save settings.',
+        };
+      }
+      if (!this.sshEnabled) return { cls: 'text-muted', text: 'Currently disabled.' };
+      if (this.sshActive) {
+        return {
+          cls: 'text-muted',
+          text: 'Accepting key-only connections on the configured port. Changing the port or disabling SSH ends active sessions.',
+        };
+      }
+      return {
+        cls: 'text-warning',
+        text: this.keys.length === 0
+          ? 'Enabled, but waiting for an authorized key before the server can start.'
+          : 'Enabled with a key, but the server is not running. Check the server status before connecting.',
+      };
     },
 
     flashSaved(message) {
@@ -291,7 +359,7 @@ function securityController(sshPage = false) {
         });
     },
 
-    promptCredentials({ title, message, detail, detailList, action, developerRequired = true, run, onSuccess }) {
+    promptCredentials({ title, message, detail, detailList, action, developerRequired = true, refreshOnSuccess = true, run, onSuccess }) {
       this.credentialTitle = title;
       this.credentialMessage = message;
       this.credentialDetail = detail || '';
@@ -311,6 +379,7 @@ function securityController(sshPage = false) {
             throw err;
           }
           if (onSuccess) onSuccess();
+          if (!refreshOnSuccess) return;
           return this.loadSecurity().then(() => {
             if (data.warning === 'ssh_key_activation') {
               this.$store.errorModal.open('The key was saved, but SSH could not be activated and remains stopped.');
@@ -418,22 +487,22 @@ function securityController(sshPage = false) {
 
 
     // Exit codes from install_sshd.sh. A code gets its own message only when
-    // the remedy differs. The rest leave the previous installation in place
-    // and are a plain retry.
+    // the remedy differs. The remaining failures are safe to inspect and retry.
     sshdFailureMessage() {
       switch (this.sshdCode) {
         case 10: return 'SSH is no longer installed. Reload the page.';
         case 11: return 'SSH is already installed. Reload the page.';
-        case 13: return 'Entware is missing. Re-run the QuecDeck installer.';
+        case 13: return 'Entware is unavailable or its package metadata is not trusted. Sshd was left stopped. Open the log for the check that declined.';
         case 14: return 'The bundled SSH files failed integrity verification. Update QuecDeck and try again.';
         case 20: return 'SSH was removed, but one or more packages could not be uninstalled. The daemon is stopped and your keys are already deleted. Check opkg before reinstalling.';
         case 21: return 'Another SSH change is already running. Wait for it to finish and try again.';
         case 22: return 'The packages were installed, but sshd could not be started. Check the SSH server panel.';
         case 24: return 'SSH was removed, but the firewall rules could not be reapplied. Check the firewall and the web server.';
+        case 25: return 'The SSH server could not be stopped, so the action stopped at that step. Open the log to see how far it got.';
         // Settings, account, packages, config, unit, firewall, index. Listed so
         // every code the installer can return is accounted for here.
         case 12: case 15: case 16: case 17: case 18: case 19: case 23:
-          return 'Nothing was changed. Open the log for the step that declined.';
+          return 'SSH was left stopped or unchanged. Open the log for the step that declined.';
         default: return 'The SSH action could not be completed.';
       }
     },
@@ -495,16 +564,17 @@ function securityController(sshPage = false) {
     },
 
     beginSshdView(action) {
-      // A pending dismissal from the previous run would otherwise fire mid-run
-      // and clear this one.
+      // A pending completion or dismissal from the previous run would
+      // otherwise fire mid-run and clear this one.
+      clearTimeout(this.sshdFinishTimer);
+      this.sshdFinishTimer = null;
       clearTimeout(this.sshdDoneTimer);
       this.sshdDoneTimer = null;
       this.sshdAction = action;
       this.sshdRunning = true;
       this.sshdOutcome = '';
       this.sshdCode = 0;
-      // Seeded, because the first poll is three seconds out and the runner has
-      // to start its unit before it marks a step.
+      // Seeded for the short window before the first immediate poll returns.
       this.sshdStep = 'Starting...';
       this.sshdLog = '';
       this.sshdLogOffset = 0;
@@ -524,17 +594,31 @@ function securityController(sshPage = false) {
 
     startSshdPolling() {
       clearInterval(this.sshdPollTimer);
-      this.sshdPollTimer = setInterval(() => {
+      const expectedAction = this.sshdAction;
+      const expectedKind = 'sshd:' + expectedAction;
+      const poll = () => {
         // Skip while the previous tick is in flight: it would read the same
         // not-yet-advanced offset and duplicate the chunk.
         if (this.sshdFetching) return;
         this.sshdFetching = true;
-        fetchWithTimeout(fetchJSON, '/cgi-bin/get_update_log?offset=' + this.sshdLogOffset, 8000)
+        const requestedOffset = this.sshdLogOffset;
+        fetchWithTimeout(fetchJSON, '/cgi-bin/get_update_log?offset=' + requestedOffset, 8000)
           .then((data) => {
+            if (this.sshdAction !== expectedAction) return;
+            // A late request from an earlier polling cycle may finish after a
+            // newer one has advanced the log. Its chunk starts at the old
+            // offset and must not be appended a second time.
+            if (requestedOffset !== this.sshdLogOffset) return;
             this.sshdReconnecting = false;
-            // A QuecDeck update owns the same log. Showing its progress here
-            // would attribute it to SSH.
-            if (data.kind && data.kind.indexOf('sshd:') !== 0) return;
+            // Another tab may acknowledge this result first, or a later action
+            // may replace it. Stop presenting this action as live and reconcile
+            // with the device instead of polling an absent status forever.
+            if (data.kind !== expectedKind) {
+              this.resetSshdView();
+              this.loadSshdCheck();
+              this.loadSecurity();
+              return;
+            }
             const finished = data.status === 'done' || data.status === 'failed';
             try {
               this.appendSshdLog(data.log, finished);
@@ -543,19 +627,29 @@ function securityController(sshPage = false) {
             }
             if (typeof data.offset === 'number') this.sshdLogOffset = data.offset;
             if (!finished) return;
-            this.sshdRunning = false;
-            this.sshdOutcome = data.status;
-            this.sshdCode = typeof data.code === 'number' ? data.code : 0;
             clearInterval(this.sshdPollTimer);
             this.sshdPollTimer = null;
-            fetch('/cgi-bin/get_update_log?ack=1').catch(() => {});
-            this.loadSshdCheck();
-            if (!this.sshdNeedsReload()) this.loadSecurity();
-            if (data.status === 'done') this.scheduleSshdDismiss();
+            // A quick action may finish before the first status request returns.
+            // Its final log still contains the real steps, so keep the progress
+            // view up long enough for the last one to be readable.
+            const finish = () => {
+              this.sshdFinishTimer = null;
+              this.sshdRunning = false;
+              this.sshdOutcome = data.status;
+              this.sshdCode = typeof data.code === 'number' ? data.code : 0;
+              fetch('/cgi-bin/get_update_log?ack=1').catch(() => {});
+              this.loadSshdCheck();
+              if (!this.sshdNeedsReload()) this.loadSecurity();
+              if (data.status === 'done') this.scheduleSshdDismiss();
+            };
+            this.sshdFinishTimer = setTimeout(finish, 750);
           })
           .catch(() => { this.sshdReconnecting = true; })
           .finally(() => { this.sshdFetching = false; });
-      }, 3000);
+      };
+      // Read once now, then frequently enough to expose short package actions.
+      poll();
+      this.sshdPollTimer = setInterval(poll, 1000);
     },
 
     triggerSshdAction(action, admin, developer) {
@@ -563,17 +657,20 @@ function securityController(sshPage = false) {
       if (action === 'install') params.port = this.sshdInstallPort;
       if (admin) params.admin_password = admin;
       if (developer) params.developer_password = developer;
-      // Busy on click, not on the reply. The trigger writes a unit, reloads
-      // systemd and waits a second to catch one that dies at once, so the reply
-      // is over a second away. Rolled back below if the start fails.
+      // Busy on click, then the credential dialog closes as soon as systemd
+      // accepts the background job. Progress and early unit failures both come
+      // from the status poll.
       this.beginSshdView(action);
       return fetchJSON('/cgi-bin/trigger_sshd_action', {
         method: 'POST',
         body: new URLSearchParams(params),
       })
         .then((data) => {
-          if (data.ok) this.startSshdPolling();
-          else this.resetSshdView();
+          if (data.ok) {
+            this.startSshdPolling();
+          } else {
+            this.resetSshdView();
+          }
           return data;
         })
         .catch((err) => {
@@ -616,6 +713,7 @@ function securityController(sshPage = false) {
         message: 'Installing SSH opens a root login path on this modem, so it needs both passwords.',
         detail: 'Port ' + port + ', key-only, idle until a key is added',
         action: 'Install',
+        refreshOnSuccess: false,
         run: (admin, developer) => this.triggerSshdAction('install', admin, developer),
       });
     },
@@ -626,6 +724,7 @@ function securityController(sshPage = false) {
         title: 'Update SSH server',
         message: 'The SSH server restarts, which ends active SSH sessions. Your port, keys and enabled state are kept.',
         action: 'Update',
+        refreshOnSuccess: false,
         run: (admin, developer) => this.triggerSshdAction('update', admin, developer),
       });
     },
@@ -641,6 +740,7 @@ function securityController(sshPage = false) {
           this.keys.length === 1 ? '1 authorized key' : this.keys.length + ' authorized keys',
         ],
         action: 'Uninstall',
+        refreshOnSuccess: false,
         run: (admin, developer) => this.triggerSshdAction('uninstall', admin, developer),
       });
     },
@@ -650,6 +750,8 @@ function securityController(sshPage = false) {
     resetSshdView() {
       clearInterval(this.sshdPollTimer);
       this.sshdPollTimer = null;
+      clearTimeout(this.sshdFinishTimer);
+      this.sshdFinishTimer = null;
       clearTimeout(this.sshdDoneTimer);
       this.sshdDoneTimer = null;
       this.sshdAction = '';

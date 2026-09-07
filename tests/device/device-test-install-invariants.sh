@@ -18,8 +18,8 @@
 #      the life of the install. Boot-time rewriting is the regression.
 #   4. PRIVILEGE. The sudo-reachable root helpers must stay root-only. One of
 #      them becoming group-writable is a direct root escalation for www-data.
-#   5. ENTWARE TRUST. opkg runs package scripts as root, so its feed config and
-#      cached indexes must never be writable by the web account.
+#   5. ENTWARE TRUST. opkg runs package scripts as root, so its feed config,
+#      cached indexes and installed-package database must stay root-controlled.
 #
 # Usage: sh device-test-install-invariants.sh
 
@@ -138,6 +138,13 @@ for s in install_sshd.sh ssh_access.sh change_password.sh check_password.sh \
     m=$(stat -c '%U:%G %a' "$QD/script/$s")
     [ "$m" = "root:root 700" ] && ok "script/$s $m" || bad "script/$s is $m, want root:root 700"
 done
+# CGI processes source these shared helpers as www-data. Making either one
+# root-only takes most API endpoints down even though lighttpd stays healthy.
+for s in cgi-lib.sh at-lib.sh; do
+    m=$(stat -c '%U:%G %a' "$QD/script/$s" 2>/dev/null)
+    [ -f "$QD/script/$s" ] && [ ! -L "$QD/script/$s" ] && [ "$m" = "root:root 755" ] &&
+        ok "script/$s $m" || bad "script/$s is ${m:-missing}, want regular root:root 755"
+done
 for f in /opt/etc/.htpasswd /opt/etc/.htpasswd_dev; do
     [ -f "$f" ] || { note "$f absent"; continue; }
     m=$(stat -c '%U:%G %a' "$f")
@@ -177,6 +184,26 @@ for f in /opt/var/opkg-lists/* /opt/var/opkg-lists/.[!.]* /opt/var/opkg-lists/..
     }
 done
 [ "$opkg_lists_ok" = 1 ] && ok "every cached opkg index is root:root 644"
+
+for d in /opt/lib/opkg /opt/lib/opkg/info; do
+    m=$(stat -c '%U:%G %a' "$d" 2>/dev/null)
+    [ -d "$d" ] && [ ! -L "$d" ] && [ "$m" = "root:root 755" ] &&
+        ok "$d is $m" || bad "$d is ${m:-missing}, want directory root:root 755"
+done
+m=$(stat -c '%U:%G %a' /opt/lib/opkg/status 2>/dev/null)
+[ -f /opt/lib/opkg/status ] && [ ! -L /opt/lib/opkg/status ] && [ "$m" = "root:root 600" ] &&
+    ok "opkg status is $m" || bad "opkg status is ${m:-missing}, want regular root:root 600"
+opkg_info_ok=1
+for f in /opt/lib/opkg/info/* /opt/lib/opkg/info/.[!.]* /opt/lib/opkg/info/..?*; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    mode=$(stat -c %a "$f" 2>/dev/null)
+    [ -f "$f" ] && [ ! -L "$f" ] && [ "$(stat -c %u "$f" 2>/dev/null)" = 0 ] &&
+        [ $((0$mode & 022)) -eq 0 ] || {
+        bad "$f is not a root-owned, non-writable regular metadata file"
+        opkg_info_ok=0
+    }
+done
+[ "$opkg_info_ok" = 1 ] && ok "every installed-package metadata entry is root-controlled"
 
 echo ""
 echo "Result: $pass passed, $fail failed, $skip skipped"

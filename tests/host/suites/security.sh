@@ -359,11 +359,13 @@ _ssh_settings_fixture() { # _ssh_settings_fixture <same|invalid|changed>
     (
         eval "$(extract_fn quecdeck/script/sshd-policy-lib.sh valid_ssh_port)"
         eval "$(extract_fn quecdeck/script/ssh_access.sh configured_port)"
+        eval "$(extract_fn quecdeck/script/ssh_access.sh stop_sshd_safely)"
         eval "$(extract_fn quecdeck/script/ssh_access.sh apply_settings)"
         _dir=$(mktemp -d)
         SSHD_CONFIG=$_dir/sshd_config
         ENABLED_MARKER=$_dir/enabled
         _calls=$_dir/calls
+        _active=1
         printf 'Port 22\nPasswordAuthentication no\n' > "$SSHD_CONFIG"
         chown() {
             return 0
@@ -375,7 +377,12 @@ _ssh_settings_fixture() { # _ssh_settings_fixture <same|invalid|changed>
             [ -f "$ENABLED_MARKER" ] && grep -qx enabled "$ENABLED_MARKER"
         }
         systemctl() {
+            if [ "$1 $2" = "is-active sshd" ]; then
+                [ "$_active" = 1 ] && printf active || printf inactive
+                return
+            fi
             printf 'systemctl %s\n' "$*" >> "$_calls"
+            [ "$1 $2" != "stop sshd" ] || _active=0
             return 0
         }
         apply_network_policy() {
@@ -409,6 +416,21 @@ _ssh_settings_fixture() { # _ssh_settings_fixture <same|invalid|changed>
                 _rc=$?
                 printf '%s:%s:%s:%s' "$_rc" "$(sed -n 's/^Port //p' "$SSHD_CONFIG")" "$(cat "$ENABLED_MARKER")" "$(tr '\n' ',' < "$_calls")"
                 ;;
+            stop_failed)
+                validate_sshd_config() {
+                    grep -qx 'Port 2222' "$1"
+                }
+                systemctl() {
+                    [ "$1 $2" != "is-active sshd" ] || { printf active; return 0; }
+                    printf 'systemctl %s\n' "$*" >> "$_calls"
+                    return 1
+                }
+                _before=$(sha256sum "$SSHD_CONFIG" | awk '{print $1}')
+                apply_settings 1 2222
+                _rc=$?
+                _after=$(sha256sum "$SSHD_CONFIG" | awk '{print $1}')
+                printf '%s:%s:%s' "$_rc" "$([ "$_before" = "$_after" ] && echo preserved || echo replaced)" "$([ -e "$ENABLED_MARKER" ] && echo enabled || echo disabled)"
+                ;;
         esac
         rm -rf "$_dir"
     )
@@ -419,26 +441,40 @@ t "invalid SSH configuration leaves persistent state untouched" \
   "1:preserved:0:quiet" "$(_ssh_settings_fixture invalid)"
 t "valid SSH settings commit the port and enabled state before policy" \
   "0:2222:enabled:systemctl stop sshd,policy 1," "$(_ssh_settings_fixture changed)"
+t "failed SSH stop leaves settings untouched" \
+  "15:preserved:disabled" "$(_ssh_settings_fixture stop_failed)"
 
 # The firewall command is an absolute device path and cannot be executed by the
 # host fixture. Keep one narrow ordering pin for this fail-closed boundary.
 t "SSH starts only after the firewall accepts the new port" "yes" \
   "$( _act=$(extract_fn quecdeck/script/ssh_access.sh apply_network_policy); _sync=$(extract_fn quecdeck/script/ssh_access.sh sync_daemon); _fw=$(printf '%s\n' "$_act" | grep -n 'firewall.sh' | head -1 | cut -d: -f1); _next=$(printf '%s\n' "$_act" | grep -n 'sync_daemon' | head -1 | cut -d: -f1); [ -n "$_fw" ] && [ -n "$_next" ] && [ "$_fw" -lt "$_next" ] && printf '%s\n' "$_sync" | grep -q 'systemctl start sshd' && ! printf '%s\n' "$_act" | grep -q 'systemctl restart firewall' && echo yes || echo no)"
-_ssh_sync_fixture() { # _ssh_sync_fixture <enabled> <ready> <active>
+t "SSH lets ExecStartPre publish a missing boot-time bind fragment" "yes" \
+  "$( _sync=$(extract_fn quecdeck/script/ssh_access.sh sync_daemon); printf '%s\n' "$_sync" | grep -q 'has_usable_key' && _ready=$(printf '%s\n' "$_sync" | grep -n '^[[:space:]]*keys_ready &&' | head -1 | cut -d: -f1); _active=$(printf '%s\n' "$_sync" | grep -n 'is-active --quiet sshd' | head -1 | cut -d: -f1); [ -n "$_ready" ] && [ -n "$_active" ] && [ "$_active" -lt "$_ready" ] && echo yes || echo no)"
+_ssh_sync_fixture() { # _ssh_sync_fixture <enabled> <usable-key> <ready> <active>
     (
+        eval "$(extract_fn quecdeck/script/ssh_access.sh stop_sshd_safely)"
         eval "$(extract_fn quecdeck/script/ssh_access.sh sync_daemon)"
         _calls=$(mktemp)
-        _ready=$2
-        _active=$3
+        _usable=$2
+        _ready=$3
+        _active=$4
+        has_usable_key() {
+            [ "$_usable" = 1 ]
+        }
         keys_ready() {
             [ "$_ready" = 1 ]
         }
         systemctl() {
+            if [ "$1 $2" = "is-active sshd" ]; then
+                [ "$_active" = 1 ] && printf active || printf inactive
+                return
+            fi
             if [ "$1 $2 ${3:-}" = "is-active --quiet sshd" ]; then
                 [ "$_active" = 1 ]
                 return
             fi
             printf '%s\n' "$*" >> "$_calls"
+            [ "$1 $2" != "stop sshd" ] || _active=0
             return 0
         }
         sync_daemon "$1"
@@ -447,10 +483,12 @@ _ssh_sync_fixture() { # _ssh_sync_fixture <enabled> <ready> <active>
         rm -f "$_calls"
     )
 }
-t "disabled SSH is stopped" "0:stop sshd," "$(_ssh_sync_fixture 0 1 1)"
-t "SSH readiness failure stops the daemon" "0:stop sshd," "$(_ssh_sync_fixture 1 0 1)"
+t "disabled SSH is stopped" "0:stop sshd," "$(_ssh_sync_fixture 0 1 1 1)"
+t "SSH readiness failure stops the active daemon" "11:stop sshd," "$(_ssh_sync_fixture 1 1 0 1)"
 t "ready inactive SSH is reset and started" \
-  "0:reset-failed sshd,start sshd," "$(_ssh_sync_fixture 1 1 0)"
+  "0:reset-failed sshd,start sshd," "$(_ssh_sync_fixture 1 1 1 0)"
+t "inactive SSH with a valid key starts before the bind fragment exists" \
+  "0:reset-failed sshd,start sshd," "$(_ssh_sync_fixture 1 1 0 0)"
 unset -f _ssh_settings_fixture _ssh_sync_fixture
 t "SSH enable marker is fixed, root-only, and shared with the unit" "yes" \
   "$(grep -q '^ENABLED_MARKER=/opt/etc/ssh/quecdeck_enabled$' quecdeck/script/ssh_access.sh && grep -q 'chmod 600 "\$ENABLED_MARKER"' quecdeck/script/ssh_access.sh && grep -q '^ConditionPathExists=/opt/etc/ssh/quecdeck_enabled$' quecdeck/optional/sshd/sshd.service && echo yes || echo no)"
@@ -493,7 +531,13 @@ t "SSH stops when the final key is removed" "yes" \
 t "explicit SSH stops terminate sessions" "yes" \
   "$(grep -q '^KillMode=control-group$' quecdeck/optional/sshd/sshd.service && grep -q '^TimeoutStopSec=10$' quecdeck/optional/sshd/sshd.service && grep -q 'systemctl restart sshd' quecdeck/script/ssh_access.sh && echo yes || echo no)"
 t "full uninstall removes SSH before firewall" "yes" \
-  "$(_uninstall=$(sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh); _ssh_stop=$(printf '%s\n' "$_uninstall" | grep -n 'systemctl stop sshd' | head -1 | cut -d: -f1); _fw_remove=$(printf '%s\n' "$_uninstall" | grep -n '# Uninstall firewall' | cut -d: -f1); [ -n "$_ssh_stop" ] && [ -n "$_fw_remove" ] && [ "$_ssh_stop" -lt "$_fw_remove" ] && echo yes || echo no)"
+  "$(_uninstall=$(sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh); _ssh_stop=$(printf '%s\n' "$_uninstall" | grep -n 'stop_sshd_safely' | head -1 | cut -d: -f1); _fw_remove=$(printf '%s\n' "$_uninstall" | grep -n '# Uninstall firewall' | cut -d: -f1); [ -n "$_ssh_stop" ] && [ -n "$_fw_remove" ] && [ "$_ssh_stop" -lt "$_fw_remove" ] && extract_fn quecdeck.sh stop_sshd_safely | grep -q 'systemctl stop sshd' && echo yes || echo no)"
+t "full uninstall aborts before teardown when SSH cannot stop" "yes" \
+  "$(_uninstall=$(sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh); _stop=$(printf '%s\n' "$_uninstall" | grep -n 'stop_sshd_safely' | head -1 | cut -d: -f1); _teardown=$(printf '%s\n' "$_uninstall" | grep -n 'systemctl stop lighttpd' | head -1 | cut -d: -f1); printf '%s\n' "$_uninstall" | grep -q 'Uninstall aborted before removing anything' && [ -n "$_stop" ] && [ "$_stop" -lt "$_teardown" ] && echo yes || echo no)"
+t "Entware uninstall stops SSH before touching its mount" "yes" \
+  "$(_uninstall=$(extract_fn quecdeck.sh uninstall_entware); _stop=$(printf '%s\n' "$_uninstall" | grep -n 'stop_sshd_safely' | head -1 | cut -d: -f1); _mount=$(printf '%s\n' "$_uninstall" | grep -n 'systemctl stop opt.mount' | head -1 | cut -d: -f1); printf '%s\n' "$_uninstall" | grep -q 'install_quecdeck_sshd' && [ -n "$_stop" ] && [ -n "$_mount" ] && [ "$_stop" -lt "$_mount" ] && echo yes || echo no)"
+t "full uninstall excludes an active SSH package action" "yes" \
+  "$(_uninstall=$(sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh); printf '%s\n' "$_uninstall" | grep -q 'for _update_unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd' && printf '%s\n' "$_uninstall" | grep -q 'install_quecdeck_sshd.service' && echo yes || echo no)"
 _security_lock=$(grep -n 'bf_lock "\$FAILURE_DIR"' quecdeck/www/cgi-bin/manage_security | cut -d: -f1)
 _security_sudo=$(grep -n '/opt/bin/sudo' quecdeck/www/cgi-bin/manage_security | head -1 | cut -d: -f1)
 t "security mutations lock authentication before sudo" "yes" \
@@ -673,7 +717,7 @@ t "SSH readiness avoids the per-key fingerprint fallback" "yes" \
 t "bind publisher runs from the verified release tree" "yes" \
   "$(grep -qx 'ExecStartPre=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh' quecdeck/optional/sshd/sshd.service && ! grep -q 'cp -f "\$ASSET_DIR/update_sshd_ip.sh"' quecdeck/script/install_sshd.sh && echo yes || echo no)"
 t "SSH unit is a boot-safe regular copy" "yes" \
-  "$( _u=$(extract_fn quecdeck/script/install_sshd.sh install_sshd_unit); printf '%s\n' "$_u" | grep -q 'cp -f "\$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service' && printf '%s\n' "$_u" | grep -q 'chmod 644' && ! printf '%s\n' "$_u" | grep -q 'ln -sf "\$ASSET_DIR/sshd.service"' && echo yes || echo no)"
+  "$( _u=$(extract_fn quecdeck/script/install_sshd.sh install_sshd_unit); printf '%s\n' "$_u" | grep -q 'cp "\$ASSET_DIR/sshd.service" "\$unit_tmp"' && printf '%s\n' "$_u" | grep -q 'chmod 644' && printf '%s\n' "$_u" | grep -q 'mv -f.* /lib/systemd/system/sshd.service' && ! printf '%s\n' "$_u" | grep -q 'ln -sf "\$ASSET_DIR/sshd.service"' && echo yes || echo no)"
 t "updater refreshes and rolls back the managed SSH unit" "yes" \
   "$( _u=$(extract_fn update_quecdeck.sh refresh_managed_sshd_unit); printf '%s\n' "$_u" | grep -q 'Include /run/quecdeck/sshd-listen.conf' && printf '%s\n' "$_u" | grep -q 'optional/sshd/sshd.service' && printf '%s\n' "$_u" | grep -q 'chmod 644' && [ "$(grep -c 'refresh_managed_sshd_unit "\$QUECDECK_DIR"' update_quecdeck.sh)" -eq 2 ] && echo yes || echo no)"
 for _d in 'AllowTcpForwarding no' 'AllowAgentForwarding no' 'AllowStreamLocalForwarding no' \

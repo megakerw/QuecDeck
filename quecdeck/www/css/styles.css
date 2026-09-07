@@ -606,6 +606,7 @@ html {
   .app-nav-panel .app-nav {
     flex: 1 1 auto;
   }
+
 }
 
 /* ---------- horizontal bar, 992px and up ---------- */
@@ -1063,6 +1064,7 @@ html {
 .input-w-port { width: 4.5rem; }
 .panel-fill { height: 100%; }
 .panel-relative { position: relative; }
+.panel-loading { min-height: 8rem; }
 .text-label { font-size: 0.875rem; }
 .setup-actions { margin-top: 2rem; }
 .log-scroll { max-height: 420px; overflow-y: auto; }
@@ -1167,6 +1169,14 @@ html {
 .sms-avatar.is-brand   { background: rgba(96, 165, 250, .16); color: #8fbcfb; }
 .sms-avatar.is-contact { background: rgba(25, 135, 84, .18);  color: #52c98f; }
 .sms-avatar.is-code    { background: rgba(255, 193, 7, .14);  color: #e0b13c; }
+/* A stable sender hash selects from this small palette. The semantic classes
+   above remain as a fallback if a message has no sender color. */
+.sms-avatar.sender-color-0 { background: rgba(96, 165, 250, .16); color: #8fbcfb; }
+.sms-avatar.sender-color-1 { background: rgba(25, 135, 84, .18);  color: #52c98f; }
+.sms-avatar.sender-color-2 { background: rgba(255, 193, 7, .14);  color: #e0b13c; }
+.sms-avatar.sender-color-3 { background: rgba(13, 202, 240, .15);  color: #65d6ee; }
+.sms-avatar.sender-color-4 { background: rgba(111, 66, 193, .20); color: #ad8ee6; }
+.sms-avatar.sender-color-5 { background: rgba(214, 51, 132, .18); color: #e584b4; }
 
 /* min-width on the grid child, or a long unbroken body widens the whole card. */
 .sms-main { min-width: 0; }

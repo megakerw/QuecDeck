@@ -46,9 +46,11 @@ t "uninstall clears root-home migration marker" "yes" \
 _ssh_installer=quecdeck/script/install_sshd.sh
 _ssh_accounts=$(sed -n '/^prepare_ssh_accounts() {/,/^}/p' "$_ssh_installer")
 t "SSH prepares only a private Entware service account" "yes" \
-  "$(printf '%s\n' "$_ssh_accounts" | grep -q 'cp /etc/passwd /opt/etc/passwd' && printf '%s\n' "$_ssh_accounts" | grep -q 'sshd:x:106:' && ! printf '%s\n' "$_ssh_accounts" | grep -qE 'shadow|/bin/login|/usr/bin/passwd|useradd' && echo yes || echo no)"
+  "$(printf '%s\n' "$_ssh_accounts" | grep -q 'passwd_source=/etc/passwd' && printf '%s\n' "$_ssh_accounts" | grep -q 'sshd:x:106:' && ! printf '%s\n' "$_ssh_accounts" | grep -qE 'shadow|/bin/login|/usr/bin/passwd|useradd' && echo yes || echo no)"
 t "SSH account preparation copies the firmware root line literally" "yes" \
-  "$(printf '%s\n' "$_ssh_accounts" | grep -q 'printf.*firmware_root' && printf '%s\n' "$_ssh_accounts" | grep -q "grep -v '\^root:'" && ! printf '%s\n' "$_ssh_accounts" | grep -q 'sed -i.*firmware_root' && echo yes || echo no)"
+  "$(printf '%s\n' "$_ssh_accounts" | grep -q 'printf.*firmware_root' && printf '%s\n' "$_ssh_accounts" | grep -q "grep -vE '\^(root|sshd):'" && ! printf '%s\n' "$_ssh_accounts" | grep -q 'sed -i.*firmware_root' && echo yes || echo no)"
+t "SSH account preparation rejects conflicting usernames before replacement" "yes" \
+  "$( _check=$(printf '%s\n' "$_ssh_accounts" | grep -n 'incompatible sshd account' | head -1 | cut -d: -f1); _replace=$(printf '%s\n' "$_ssh_accounts" | grep -n 'mv -f.*passwd' | head -1 | cut -d: -f1); [ -n "$_check" ] && [ -n "$_replace" ] && [ "$_check" -lt "$_replace" ] && echo yes || echo no)"
 
 # QuecDeck creates the Entware mount and init units, so their boot ordering and
 # filesystem permissions are part of our installer contract.
@@ -68,12 +70,16 @@ t "Entware uninstall removes direct and legacy mount enablement" "yes" \
 _opkg_hardened=0
 for _opkg_script in installentware.sh quecdeck.sh update_quecdeck.sh quecdeck/script/install_sshd.sh; do
     _opkg_guard=$(extract_fn "$_opkg_script" secure_opkg_metadata)
+    _opkg_local_guard=$(extract_fn "$_opkg_script" secure_opkg_installed_metadata)
     _opkg_https=$(extract_fn "$_opkg_script" require_https_opkg_feeds)
     if grep -q '^umask 022$' "$_opkg_script" &&
        printf '%s\n' "$_opkg_guard" | grep -q '\[ ! -L' &&
        printf '%s\n' "$_opkg_guard" | grep -q 'chown root:root' &&
        printf '%s\n' "$_opkg_guard" | grep -q 'chmod 644' &&
        printf '%s\n' "$_opkg_guard" | grep -q 'chmod 755' &&
+       printf '%s\n' "$_opkg_guard" | grep -q 'secure_opkg_installed_metadata' &&
+       printf '%s\n' "$_opkg_local_guard" | grep -q '/opt/lib/opkg/status' &&
+       printf '%s\n' "$_opkg_local_guard" | grep -q '/opt/lib/opkg/info' &&
        printf '%s\n' "$_opkg_https" | grep -q 'src|src/gz' &&
        printf '%s\n' "$_opkg_https" | grep -q 'https://\*' &&
        [ "$(grep -c 'require_https_opkg_feeds' "$_opkg_script")" -ge 2 ] &&
@@ -86,13 +92,15 @@ t "Entware installs opkg.conf atomically with an explicit mode" "yes" \
   "$(grep -q 'mktemp /opt/etc/.opkg.conf' installentware.sh && grep -q 'chmod 644.*_opkg_conf_tmp' installentware.sh && grep -q 'mv -f.*opkg.conf' installentware.sh && echo yes || echo no)"
 t "Entware installs the initial opkg binary atomically" "yes" \
   "$(grep -q 'mktemp /opt/bin/.opkg' installentware.sh && grep -q '\[ ! -s.*_opkg_bin_tmp' installentware.sh && grep -q 'chmod 755.*_opkg_bin_tmp' installentware.sh && grep -q '_opkg_bin_tmp.*--version' installentware.sh && grep -q 'mv -f.*_opkg_bin_tmp.* /opt/bin/opkg' installentware.sh && echo yes || echo no)"
+t "Entware initializes and protects the installed-package database" "yes" \
+  "$(grep -q '! -L /opt/lib/opkg/info.*! -L /opt/lib/opkg/status' installentware.sh && grep -q 'chmod 600 /opt/lib/opkg/status' installentware.sh && _bootstrap=$(extract_fn installentware.sh bootstrap_tls_packages); [ "$(printf '%s\n' "$_bootstrap" | grep -c 'secure_opkg_metadata')" -eq 2 ] && echo yes || echo no)"
 _tls_recovery=$(extract_fn quecdeck.sh install_entware_tls_packages)
 t "missing Entware TLS packages recover through stock curl" "yes" \
-  "$(printf '%s\n' "$_tls_recovery" | grep -q '/usr/bin/curl' && printf '%s\n' "$_tls_recovery" | grep -q -- "--proto '=https'" && printf '%s\n' "$_tls_recovery" | grep -q '/opt/bin/opkg update' && printf '%s\n' "$_tls_recovery" | grep -q '/opt/bin/opkg install wget-ssl ca-certificates' && echo yes || echo no)"
+  "$(printf '%s\n' "$_tls_recovery" | grep -q '/usr/bin/curl' && printf '%s\n' "$_tls_recovery" | grep -q -- "--proto '=https'" && printf '%s\n' "$_tls_recovery" | grep -q '/opt/bin/opkg update' && printf '%s\n' "$_tls_recovery" | grep -q '/opt/bin/opkg install wget-ssl ca-certificates' && [ "$(printf '%s\n' "$_tls_recovery" | grep -c 'secure_opkg_metadata')" -eq 2 ] && echo yes || echo no)"
 _ensure_entware=$(extract_fn quecdeck.sh ensure_entware_installed)
 t "Entware migration validates HTTPS before TLS recovery" "yes" \
   "$( _migrate=$(printf '%s\n' "$_ensure_entware" | grep -n "sed -i.*http://bin" | cut -d: -f1); _validate=$(printf '%s\n' "$_ensure_entware" | grep -n 'require_https_opkg_feeds' | head -1 | cut -d: -f1); _recover=$(printf '%s\n' "$_ensure_entware" | grep -n '^[[:space:]]*install_entware_tls_packages' | cut -d: -f1); [ -n "$_migrate" ] && [ "$_migrate" -lt "$_validate" ] && [ "$_validate" -lt "$_recover" ] && echo yes || echo no)"
-unset _opkg_hardened _opkg_script _opkg_guard _opkg_https _tls_recovery _ensure_entware _migrate _validate _recover
+unset _opkg_hardened _opkg_script _opkg_guard _opkg_local_guard _opkg_https _tls_recovery _ensure_entware _migrate _validate _recover
 unset _entware_writer _entware_mount _entware_rc
 
 t "SSH install uses the non-PAM server with key-only authentication" "yes" \
@@ -100,6 +108,38 @@ t "SSH install uses the non-PAM server with key-only authentication" "yes" \
 _sshd_menu=$(sed -n '/^sshd_service() {/,/^}/p' quecdeck.sh)
 t "SSH menu dispatches only to the installed root helper" "yes" \
   "$(printf '%s\n' "$_sshd_menu" | grep -q 'script/install_sshd.sh' && ! printf '%s\n' "$_sshd_menu" | grep -q 'wget\|GITROOT\|opkg install' && echo yes || echo no)"
+_sshd_server_view=$(sed -n '/get serverView() {/,/^    },$/p' quecdeck/www/js/security.js)
+# A finished removal must be tested before sshInstalled, which stays true until
+# the get_security refresh lands. Reversing them re-exposes the management panel
+# for a server that was just removed.
+t "SSH removal has one result view before installation returns" "yes" \
+  "$( _removed=$(printf '%s\n' "$_sshd_server_view" | grep -n "'removed'" | head -1 | cut -d: -f1); _installed=$(printf '%s\n' "$_sshd_server_view" | grep -n 'sshInstalled' | head -1 | cut -d: -f1); [ -n "$_removed" ] && [ -n "$_installed" ] && [ "$_removed" -lt "$_installed" ] && grep -q "x-if=\"serverView === 'removed'\"" quecdeck/www/ssh.html && grep -q '>Dismiss</button>' quecdeck/www/ssh.html && echo yes || echo no)"
+# Layout and contents both derive from serverView, so they cannot disagree.
+t "SSH server card branches on one exhaustive predicate" "yes" \
+  "$( _views=0; for _v in loading removing removed install manage; do grep -q "x-if=\"serverView === '$_v'\"" quecdeck/www/ssh.html && _views=$((_views + 1)); done; [ "$_views" = 5 ] && grep -q "serverView === 'removing' || this.serverView === 'removed'" quecdeck/www/js/security.js && ! grep -q 'x-if="loaded' quecdeck/www/ssh.html && echo yes || echo no)"
+t "enabled SSH distinguishes waiting for a key from a failed start" "yes" \
+  "$(grep -q 'keys.length === 0' quecdeck/www/js/security.js && grep -q 'waiting for an authorized key' quecdeck/www/js/security.js && grep -q 'Enabled with a key, but the server is not running' quecdeck/www/js/security.js && echo yes || echo no)"
+# The card paints a real body in every state, so no state collapses it to a bare
+# header. It must not depend on x-show: the CSP has no style-src-attr allowance.
+t "SSH panels render a body before initial status loads" "yes" \
+  "$(grep -q "if (!this.loaded) return 'loading';" quecdeck/www/js/security.js && grep -q 'Reading the SSH server status' quecdeck/www/ssh.html && grep -q 'panel-loading' quecdeck/www/ssh.html && ! grep -q 'ssh-panel-layout.*x-show' quecdeck/www/ssh.html && ! grep -q 'ssh-keys-column.*x-show' quecdeck/www/ssh.html && echo yes || echo no)"
+t "SSH panel order uses the same nested columns at every width" "yes" \
+  "$(! grep -qE 'ssh-(primary-column|server-slot|keys-column|software-slot).*(display: contents|order:)' quecdeck/www/css/styles.css && echo yes || echo no)"
+# The pending toggle is reported before any running-state wording, so an unsaved
+# change never reads as the server's current condition.
+t "unsaved SSH toggle describes its pending state" "yes" \
+  "$( _hint=$(sed -n '/get enableHint() {/,/^    },$/p' quecdeck/www/js/security.js); _pending=$(printf '%s\n' "$_hint" | grep -n 'sshEnabled !== this.savedSshEnabled' | head -1 | cut -d: -f1); _active=$(printf '%s\n' "$_hint" | grep -n 'this.sshActive' | head -1 | cut -d: -f1); [ -n "$_pending" ] && [ -n "$_active" ] && [ "$_pending" -lt "$_active" ] && printf '%s\n' "$_hint" | grep -q 'SSH will be enabled after you save settings' && printf '%s\n' "$_hint" | grep -q 'SSH will be disabled after you save settings' && echo yes || echo no)"
+t "SSH lifecycle actions wait for their completion poll before refreshing status" "yes" \
+  "$(grep -q 'refreshOnSuccess = true' quecdeck/www/js/security.js && [ "$(grep -c 'refreshOnSuccess: false' quecdeck/www/js/security.js)" -eq 3 ] && echo yes || echo no)"
+t "SSH progress polls immediately and keeps fast actions readable" "yes" \
+  "$(grep -q '^      poll();$' quecdeck/www/js/security.js && grep -q 'setInterval(poll, 1000)' quecdeck/www/js/security.js && grep -q 'setTimeout(finish, 750)' quecdeck/www/js/security.js && ! grep -q 'sshdProgressSince' quecdeck/www/js/security.js && echo yes || echo no)"
+t "SSH progress requires the exact action and recovers missing shared status" "yes" \
+  "$( _poll=$(sed -n '/^    startSshdPolling() {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_poll" | grep -q "expectedKind = 'sshd:' + expectedAction" && printf '%s\n' "$_poll" | grep -q 'data.kind !== expectedKind' && printf '%s\n' "$_poll" | grep -q 'resetSshdView' && echo yes || echo no)"
+_sshd_dispatch=$(sed -n '/systemctl start --no-block install_quecdeck_sshd/,/echo "Started\."/p' quecdeck/script/run_update.sh)
+t "SSH credential dialog is released as soon as systemd accepts the action" "yes" \
+  "$(printf '%s\n' "$_sshd_dispatch" | grep -q 'systemctl start --no-block' && ! printf '%s\n' "$_sshd_dispatch" | grep -q 'sleep\|is-active' && echo yes || echo no)"
+unset _sshd_dispatch
+unset _sshd_removal_view
 t "SSH bundled assets verify before package installation" "yes" \
   "$([ "$(grep -n 'verify_asset sshd.service' "$_ssh_installer" | cut -d: -f1)" -lt "$(grep -n 'opkg install --force-maintainer openssh-server' "$_ssh_installer" | cut -d: -f1)" ] && ! grep -q 'wget\|GITROOT' "$_ssh_installer" && echo yes || echo no)"
 t "SSH configuration scopes its restrictive umask" "yes" \
@@ -116,7 +156,13 @@ t "SSH installation refuses unreadable existing settings" "yes" \
 t "SSH installation identifies a missing bundled helper before reading state" "yes" \
   "$( _resolve=$(extract_fn "$_ssh_installer" resolve_saved_settings); _missing=$(printf '%s\n' "$_resolve" | grep -n 'bundled SSH access helper is missing' | head -1 | cut -d: -f1); _read=$(printf '%s\n' "$_resolve" | grep -n 'saved-state' | head -1 | cut -d: -f1); [ -n "$_missing" ] && [ -n "$_read" ] && [ "$_missing" -lt "$_read" ] && echo yes || echo no)"
 t "SSH installation reconciles a running daemon and fails closed with the firewall" "yes" \
-  "$( _install=$(extract_fn "$_ssh_installer" install_sshd); printf '%s\n' "$_install" | grep -q 'systemctl restart sshd ||' && _failure=$(printf '%s\n' "$_install" | sed -n '/if ! apply_firewall; then/,/RC_FIREWALL/p'); printf '%s\n' "$_failure" | grep -q 'systemctl stop sshd' && printf '%s\n' "$_failure" | grep -q 'Sshd was not started' && echo yes || echo no)"
+  "$( _install=$(extract_fn "$_ssh_installer" install_sshd); printf '%s\n' "$_install" | grep -q 'systemctl restart sshd ||' && _failure=$(printf '%s\n' "$_install" | sed -n '/if ! apply_firewall; then/,/RC_FIREWALL/p'); printf '%s\n' "$_failure" | grep -q 'stop_sshd_safely' && printf '%s\n' "$_failure" | grep -q 'Sshd was not started' && echo yes || echo no)"
+t "SSH update stops first and restores its hardened config after opkg" "yes" \
+  "$( _install=$(extract_fn "$_ssh_installer" install_sshd); _stop=$(printf '%s\n' "$_install" | grep -n 'stop_sshd_safely' | head -1 | cut -d: -f1); _opkg=$(printf '%s\n' "$_install" | grep -n 'opkg install' | head -1 | cut -d: -f1); _restore=$(printf '%s\n' "$_install" | grep -n 'previous_config.*sshd_config' | tail -1 | cut -d: -f1); [ -n "$_stop" ] && [ "$_stop" -lt "$_opkg" ] && [ -n "$_restore" ] && [ "$_opkg" -lt "$_restore" ] && echo yes || echo no)"
+t "SSH install and removal recheck local opkg metadata" "yes" \
+  "$( _install=$(extract_fn "$_ssh_installer" install_sshd); _remove=$(extract_fn "$_ssh_installer" uninstall_sshd); [ "$(printf '%s\n' "$_install" | grep -c 'secure_opkg_metadata')" -ge 1 ] && [ "$(printf '%s\n' "$_remove" | grep -c 'secure_opkg_installed_metadata')" -eq 2 ] && ! printf '%s\n' "$_remove" | grep -q 'require_https_opkg_feeds' && echo yes || echo no)"
+t "SSH unit replacement is atomic" "yes" \
+  "$( _unit=$(extract_fn "$_ssh_installer" install_sshd_unit); printf '%s\n' "$_unit" | grep -q 'unit_tmp=' && printf '%s\n' "$_unit" | grep -q 'mv -f.*sshd.service' && ! printf '%s\n' "$_unit" | grep -q 'cp -f.* /lib/systemd/system/sshd.service' && echo yes || echo no)"
 # A unit restart takes lighttpd with it (PartOf=), so the rules are rebuilt by
 # running firewall.sh directly whenever the unit is already up.
 t "SSH applies firewall rules without cycling the web server" "yes" \
@@ -226,6 +272,10 @@ t "lighttpd publisher reaps the Entware init script" "yes" \
   "$(grep -q 'rm -f /opt/etc/init\.d/\*lighttpd\*' quecdeck/script/lighttpd_prestart.sh && grep -q 'rm -f /opt/etc/init\.d/\*lighttpd\*.*||[[:space:]]*:' quecdeck/script/lighttpd_prestart.sh && echo yes || echo no)"
 t "sshd publisher reaps the Entware init script" "yes" \
   "$(grep -q 'rm -f /opt/etc/init\.d/\*sshd\*' quecdeck/optional/sshd/update_sshd_ip.sh && grep -q 'rm -f /opt/etc/init\.d/\*sshd\*.*||[[:space:]]*:' quecdeck/optional/sshd/update_sshd_ip.sh && echo yes || echo no)"
+t "rc.unslung reaps unmanaged sshd and lighttpd before dispatch" "yes" \
+  "$( _pre=$(grep -nF "ExecStartPre=/bin/sh -c 'rm -f /opt/etc/init.d/*sshd* /opt/etc/init.d/*lighttpd*'" installentware.sh | cut -d: -f1); _start=$(grep -nF 'ExecStart=/opt/etc/init.d/rc.unslung start' installentware.sh | cut -d: -f1); [ -n "$_pre" ] && [ -n "$_start" ] && [ "$_pre" -lt "$_start" ] && echo yes || echo no)"
+t "Entware removal deletes rc.unslung unit and boot link" "yes" \
+  "$( _uninstall=$(extract_fn quecdeck.sh uninstall_entware); printf '%s\n' "$_uninstall" | grep -q 'rm -f /lib/systemd/system/rc.unslung.service' && printf '%s\n' "$_uninstall" | grep -q 'rm -f /lib/systemd/system/multi-user.target.wants/rc.unslung.service' && echo yes || echo no)"
 t "lighttpd has exactly one opkg install site" "1" \
   "$(grep -rn 'opkg install' --include=*.sh . | grep -v '^\./tests/' | grep -v ':[[:space:]]*#' | grep -c lighttpd | tr -d ' ')"
 t "sshd has exactly one opkg install site" "1" \
@@ -268,9 +318,11 @@ t "root helper owns duplicate-key detection" "yes" \
 t "credential inputs are local and conditional" "yes" \
   "$(grep -q '<template x-if="credentialOpen">' quecdeck/www/ssh.html && [ "$(grep -c 'type="password"' quecdeck/www/ssh.html)" = 2 ] && ! grep -q 'credentialModal\|cred-admin\|cred-dev' quecdeck/www/js/utils.js && echo yes || echo no)"
 
-# Keep password inputs in their own form and clear them before removing them.
-t "credential dialog cannot be mistaken for a login form" "yes" \
-  "$( _c=$(sed -n '/^    closeCredentials() {/,/^    },/p' quecdeck/www/js/security.js); grep -q '<form autocomplete="off" @submit.prevent="submitCredentials()">' quecdeck/www/ssh.html && printf '%s\n' "$_c" | grep -q "el.value = ''" && [ "$(printf '%s\n' "$_c" | grep -n "el.value = ''" | cut -d: -f1)" -lt "$(printf '%s\n' "$_c" | grep -n 'credentialOpen = false' | cut -d: -f1)" ] && echo yes || echo no)"
+# A real form submission makes Chromium classify the disappearing password
+# fields as a successful credential update. Keep the inputs masked, but submit
+# through explicit keyboard/click handlers and clear them before removal.
+t "credential dialog does not submit a login-like form" "yes" \
+  "$( _c=$(sed -n '/^    closeCredentials() {/,/^    },/p' quecdeck/www/js/security.js); ! grep -q '<form\|type="submit"' quecdeck/www/ssh.html && grep -q '@keydown.enter.prevent="submitCredentials()"' quecdeck/www/ssh.html && grep -q '@click="submitCredentials()"' quecdeck/www/ssh.html && printf '%s\n' "$_c" | grep -q "el.value = ''" && [ "$(printf '%s\n' "$_c" | grep -n "el.value = ''" | cut -d: -f1)" -lt "$(printf '%s\n' "$_c" | grep -n 'credentialOpen = false' | cut -d: -f1)" ] && echo yes || echo no)"
 
 # The file picker fills the textarea and then clears itself, so a key lives in
 # exactly one place. Without the reset, editing or emptying the textarea leaves a

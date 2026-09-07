@@ -638,7 +638,7 @@ modem_stats_fetch() {
 }
 
 # Connection info: WWAN IP(s) and APN. May fail with no active bearer, and
-# callers fall back gracefully. Cached 2 s, 2 s AT timeout, under the same
+# callers fall back. Cached 2 s, 2 s AT timeout, under the same
 # dashboard-poll constraint as modem_stats_fetch.
 modem_conn_fetch() {
     cache_get_or_fetch "$_CACHE_MODEM_CONN" 2 'AT+QMAP="WWANIP";+CGCONTRDP' 2000

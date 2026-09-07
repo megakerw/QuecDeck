@@ -3,7 +3,7 @@
 # The legacy root bin may have been world-writable. Use only trusted command
 # directories. Installed login shells add root/bin after it has been hardened.
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/opt/bin:/opt/sbin
-# Stock ADB shells use 0000; package indexes must never inherit that mask.
+# Stock ADB shells use 0000. Package indexes must never inherit that mask.
 umask 022
 GITUSER="megakerw"
 REPONAME="QuecDeck"
@@ -15,6 +15,30 @@ GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 QUECDECK_DIR="/usrdata/quecdeck"
 INSTALL_GENERATION=2
 ENTWARE_BOOTSTRAP_MARKER="/usrdata/opt/.quecdeck-install-generation"
+
+secure_opkg_installed_metadata() {
+    _opkg_db=/opt/lib/opkg
+    _opkg_info=/opt/lib/opkg/info
+    _opkg_status=/opt/lib/opkg/status
+    for _opkg_dir in "$_opkg_db" "$_opkg_info"; do
+        [ -d "$_opkg_dir" ] && [ ! -L "$_opkg_dir" ] || return 1
+        _opkg_mode=$(stat -c %a "$_opkg_dir" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$_opkg_dir" 2>/dev/null)" = 0 ] && [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+        chown root:root "$_opkg_dir" && chmod 755 "$_opkg_dir" || return 1
+    done
+    [ -f "$_opkg_status" ] && [ ! -L "$_opkg_status" ] || return 1
+    _opkg_mode=$(stat -c %a "$_opkg_status" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$_opkg_status" 2>/dev/null)" = 0 ] && [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    chown root:root "$_opkg_status" && chmod 600 "$_opkg_status" || return 1
+    # Info files have no single correct mode: control scripts are executable,
+    # file lists are not. An unsafe one is refused rather than forced.
+    for _opkg_entry in "$_opkg_info"/* "$_opkg_info"/.[!.]* "$_opkg_info"/..?*; do
+        [ -e "$_opkg_entry" ] || [ -L "$_opkg_entry" ] || continue
+        [ -f "$_opkg_entry" ] && [ ! -L "$_opkg_entry" ] || return 1
+        _opkg_mode=$(stat -c %a "$_opkg_entry" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$_opkg_entry" 2>/dev/null)" = 0 ] && [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
+    done
+}
 
 secure_opkg_metadata() {
     _opkg_config=/opt/etc/opkg.conf
@@ -38,6 +62,7 @@ secure_opkg_metadata() {
         [ "$(stat -c %u "$_opkg_entry" 2>/dev/null)" = 0 ] && [ $((0$_opkg_mode & 022)) -eq 0 ] || return 1
         chown root:root "$_opkg_entry" && chmod 644 "$_opkg_entry" || return 1
     done
+    secure_opkg_installed_metadata
 }
 
 require_https_opkg_feeds() {
@@ -103,7 +128,8 @@ CURL_WGET
         secure_opkg_metadata || exit 1
         require_https_opkg_feeds || exit 1
         PATH="$_bootstrap_dir:/opt/bin:/opt/sbin:/usr/sbin:/usr/bin:/sbin:/bin" \
-            /opt/bin/opkg install wget-ssl ca-certificates
+            /opt/bin/opkg install wget-ssl ca-certificates || exit 1
+        secure_opkg_metadata
     )
 }
 remount_rw() {
@@ -112,6 +138,18 @@ remount_rw() {
 
 remount_ro() {
     mount -o remount,ro /
+}
+
+stop_sshd_safely() {
+    _sshd_state=$(systemctl is-active sshd 2>/dev/null)
+    case "$_sshd_state" in
+        inactive|failed) return 0 ;;
+        active|activating|deactivating|reloading) ;;
+        *) return 1 ;;
+    esac
+    systemctl stop sshd >/dev/null 2>&1 || return 1
+    _sshd_state=$(systemctl is-active sshd 2>/dev/null)
+    case "$_sshd_state" in inactive|failed) return 0 ;; *) return 1 ;; esac
 }
 
 # Root-owned runtime dir for everything root writes. /run is root-owned and not
@@ -198,7 +236,7 @@ ensure_entware_installed() {
         _ent=/run/quecdeck/installentware.sh
         rm -f "$_ent"
         /usr/bin/curl -q --proto '=https' --proto-redir '=https' --cacert /etc/ssl/certs/ca-certificates.crt -fsSL --connect-timeout 15 --max-time 30 --retry 1 -o "$_ent" "$GITROOT/installentware.sh" || { echo "HTTPS bootstrap download failed." >&2; exit 1; }
-        echo "315eff6501b1e901e71887570949c90b3cf5e248e6f221b68cd92c8ccf1e49ea  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
+        echo "89617dee60d207d0cba681e3076b20ea46ff9b1c3705a55544b737b22f50a137  $_ent" | sha256sum -c >/dev/null || { echo -e "\e[1;31mInstallentware integrity check failed.\e[0m"; rm -f "$_ent"; exit 1; } # installentware.sh pin
         echo -e "\e[1;32mIntegrity verified: installentware.sh\e[0m"
         # Run with the staging dir as CWD, matching the previous "cd /tmp" so a
         # relative write by the installer still lands in scratch tmpfs.
@@ -257,14 +295,29 @@ uninstall_entware() {
     result_login="SKIPPED"
     result_passwd="SKIPPED"
 
+    for _update_unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd; do
+        _update_state=$(systemctl is-active "$_update_unit" 2>/dev/null)
+        case "$_update_state" in
+            active|activating|deactivating|reloading)
+                echo -e "\e[1;31mA QuecDeck or SSH package action is running. Entware uninstall was not started.\e[0m"
+                return 1
+                ;;
+        esac
+    done
+    if [ -f /lib/systemd/system/sshd.service ] || [ -x /opt/sbin/sshd ]; then
+        stop_sshd_safely || {
+            echo -e "\e[1;31mSSH could not be stopped. Entware uninstall was not started.\e[0m"
+            return 1
+        }
+    fi
+
     # Stop services before touching the filesystem
     systemctl stop rc.unslung.service 2>/dev/null
     [ -f /opt/etc/init.d/rc.unslung ] && /opt/etc/init.d/rc.unslung stop
-    systemctl stop opt.mount 2>/dev/null
-
-    # sshd is an Entware package and will not survive Entware removal.
+    # sshd is an Entware package and will not survive Entware removal. It was
+    # confirmed stopped above, before opt.mount or its backing tree is touched.
     [ -f /lib/systemd/system/sshd.service ] && result_sshd="REMOVED"
-    systemctl stop sshd 2>/dev/null
+    systemctl stop opt.mount 2>/dev/null
 
     if mountpoint -q /opt; then
         umount /opt \
@@ -611,7 +664,7 @@ uninstall_quecdeck_components() {
     # An already-loaded transient unit keeps running after its file is removed.
     # Refuse the destructive teardown instead of deleting the release tree from
     # underneath an update that was started from the web UI.
-    for _update_unit in install_quecdeck install_quecdeck_fetch; do
+    for _update_unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd; do
         _update_state=$(systemctl is-active "$_update_unit" 2>/dev/null)
         case "$_update_state" in
             active|activating|deactivating|reloading)
@@ -620,6 +673,15 @@ uninstall_quecdeck_components() {
                 ;;
         esac
     done
+
+    # The firewall is the access boundary for the optional SSH listener. Abort
+    # before teardown if systemd cannot prove that listener stopped.
+    if [ -f /lib/systemd/system/sshd.service ] || [ -x /opt/sbin/sshd ]; then
+        stop_sshd_safely || {
+            echo -e "\e[1;31mSSH could not be stopped. Uninstall aborted before removing anything.\e[0m"
+            return 1
+        }
+    fi
 
     echo -e "\e[1;32mUninstalling QuecDeck...\e[0m"
 
@@ -646,6 +708,8 @@ uninstall_quecdeck_components() {
     result_runtime_state="SKIPPED"
     firewall_reboot_required=0
     monitoring_reboot_required=0
+    opkg_metadata_safe=0
+    opkg_inventory=""
 
     trap 'remount_ro' EXIT  # ensures RO is restored on any exit path
     if ! remount_rw; then
@@ -659,11 +723,22 @@ uninstall_quecdeck_components() {
     # teardown below.
     systemctl stop lighttpd > /dev/null 2>&1
 
+    # Removal does not contact a feed, but opkg still trusts its installed
+    # package database and maintainer scripts. If that local metadata is unsafe,
+    # remove QuecDeck's services and configuration without executing opkg.
+    if [ -x /opt/bin/opkg ] && secure_opkg_installed_metadata; then
+        opkg_inventory=$(/opt/bin/opkg list-installed 2>/dev/null) && opkg_metadata_safe=1
+    fi
+    if [ "$opkg_metadata_safe" -ne 1 ]; then
+        echo -e "\e[1;31mWARNING: Entware metadata is unsafe or unreadable. Package removal will be skipped.\e[0m"
+    fi
+
     # Remove any transient update unit. Newer installs write it to /run. Older
     # ones wrote it to /lib, where a failed update could strand it. Harmless if
     # absent.
     rm -f /run/systemd/system/install_quecdeck.service /lib/systemd/system/install_quecdeck.service
     rm -f /run/systemd/system/install_quecdeck_fetch.service
+    rm -f /run/systemd/system/install_quecdeck_sshd.service
 
     # Uninstall both the legacy opt-in units and the new always-installed,
     # idle-capable units. Failure to stop a worker never restores its files.
@@ -690,8 +765,19 @@ uninstall_quecdeck_components() {
     # firewall so the SSH port cannot remain exposed after its LAN-only rule is gone.
     if [ -f /lib/systemd/system/sshd.service ] || [ -x /opt/sbin/sshd ]; then
         result_sshd="REMOVED"
-        systemctl stop sshd > /dev/null 2>&1
-        opkg remove openssh-server openssh-server-pam openssh-keygen > /dev/null 2>&1
+        if [ "$opkg_metadata_safe" -eq 1 ]; then
+            for _package in openssh-server openssh-server-pam openssh-keygen; do
+                if printf '%s\n' "$opkg_inventory" | grep -q "^${_package} "; then
+                    /opt/bin/opkg remove "$_package" >/dev/null 2>&1 || result_sshd="PARTIAL"
+                fi
+            done
+            if ! secure_opkg_installed_metadata; then
+                result_sshd="PARTIAL"
+                opkg_metadata_safe=0
+            fi
+        else
+            result_sshd="PARTIAL"
+        fi
         cleanup_ssh_account
         rm -rf /opt/etc/ssh
         rm -f /lib/systemd/system/sshd.service
@@ -733,8 +819,14 @@ uninstall_quecdeck_components() {
         # the lighttpd-mod-* packages (they depend on it). Listing them explicitly
         # is redundant and prints harmless "Package ... is not installed" errors,
         # since the cascade has already removed them by the time opkg reaches them.
-        opkg --force-remove --force-removal-of-dependent-packages remove lighttpd \
-            && result_lighttpd="REMOVED" || result_lighttpd="FAILED"
+        if [ "$opkg_metadata_safe" -eq 1 ] &&
+           /opt/bin/opkg --force-remove --force-removal-of-dependent-packages remove lighttpd &&
+           secure_opkg_installed_metadata; then
+            result_lighttpd="REMOVED"
+        else
+            result_lighttpd="FAILED"
+            opkg_metadata_safe=0
+        fi
         rm -f /lib/systemd/system/lighttpd.service
         rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
     fi

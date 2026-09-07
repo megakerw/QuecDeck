@@ -65,7 +65,7 @@ unset -f grep
 t "firewall treats an uninstalled SSH as no exposure" "yes" \
   "$( _load=$(extract_fn quecdeck/script/firewall.sh load_ssh_state); printf '%s\n' "$_load" | grep -q '3)' && printf '%s\n' "$_load" | grep -q 'if managed_ssh_artifacts_exist' && echo yes || echo no)"
 t "SSH unit follows the checksummed release asset" "yes" \
-  "$(grep -q 'cp -f "\$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service' quecdeck/script/install_sshd.sh && [ "$(grep -c 'refresh_managed_sshd_unit "\$QUECDECK_DIR"' update_quecdeck.sh)" -eq 2 ] && echo yes || echo no)"
+  "$(grep -q 'cp "\$ASSET_DIR/sshd.service" "\$unit_tmp"' quecdeck/script/install_sshd.sh && grep -q 'mv -f "\$unit_tmp" /lib/systemd/system/sshd.service' quecdeck/script/install_sshd.sh && [ "$(grep -c 'refresh_managed_sshd_unit "\$QUECDECK_DIR"' update_quecdeck.sh)" -eq 2 ] && echo yes || echo no)"
 eval "$(extract_fn quecdeck/script/sshd-policy-lib.sh valid_ssh_port)"
 eval "$(extract_fn quecdeck/script/ssh_access.sh configured_port)"
 _ssh_port_fixture=$(mktemp)

@@ -23,7 +23,7 @@ const ACCESS_EVENTS = Object.freeze({
   security_password_changed: { label: 'Password Changed', cls: 'bg-success' },
   ssh_key_added:             { label: 'SSH Key Added',    cls: 'bg-success' },
   ssh_key_removed:           { label: 'SSH Key Removed',  cls: 'bg-secondary' },
-  ssh_settings_changed:      { label: 'SSH Settings Changed', cls: 'bg-info' },
+  ssh_settings_changed:      { label: 'SSH Settings Changed', cls: 'bg-success' },
 });
 
 function logsPage() {

@@ -193,7 +193,7 @@ check('a reserved alphabet is reported', reservedLog.some(m => /reserved alphabe
 // The address length field counts semi-octets, not characters, so it cannot
 // separate a 7-character name from an 8-character one: both pack into 7
 // octets. The 7-character case leaves a whole zero septet, which is "@" in
-// GSM-7 and used to be reported as the last character of the sender.
+// GSM-7 and must be dropped as fill rather than read as the last character.
 const namedDeliver = addr => `0004${addr}0000${SCTS}02C834`;
 
 [
@@ -244,6 +244,15 @@ check('a null rejection falls back',
 check('an empty message falls back',
   failureText(new Error('')) === 'The messages could not be deleted.',
   failureText(new Error('')));
+
+// Representative sender types get distinct identity cues, and every result
+// must correspond to one of the six CSS palette classes.
+const colorBox = makeSMS();
+const senderColors = ['Telekom', '+46701234567', '72500'].map(sender => colorBox.senderColor(sender));
+check('representative senders get different colors',
+  new Set(senderColors).size === senderColors.length, senderColors.join(', '));
+check('sender color uses the six-color palette',
+  senderColors.every(color => Number.isInteger(color) && color >= 0 && color < 6));
 
 console.log(`\nfailures: ${failures}`);
 process.exit(failures ? 1 : 0);

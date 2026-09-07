@@ -27,8 +27,32 @@ LOCK=/usrdata/root/.quecdeck-ssh.lock
 . $QUECDECK_DIR/script/sshd-policy-lib.sh || exit 1
 . $QUECDECK_DIR/script/lock-lib.sh || exit 1
 
+secure_opkg_installed_metadata() {
+    local db=/opt/lib/opkg info=/opt/lib/opkg/info status=/opt/lib/opkg/status
+    local entry dir mode
+    for dir in "$db" "$info"; do
+        [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
+        mode=$(stat -c %a "$dir" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$dir" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+        chown root:root "$dir" && chmod 755 "$dir" || return 1
+    done
+    [ -f "$status" ] && [ ! -L "$status" ] || return 1
+    mode=$(stat -c %a "$status" 2>/dev/null) || return 1
+    [ "$(stat -c %u "$status" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    chown root:root "$status" && chmod 600 "$status" || return 1
+    # Info files have no single correct mode: control scripts are executable,
+    # file lists are not. An unsafe one is refused rather than forced.
+    for entry in "$info"/* "$info"/.[!.]* "$info"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        [ -f "$entry" ] && [ ! -L "$entry" ] || return 1
+        mode=$(stat -c %a "$entry" 2>/dev/null) || return 1
+        [ "$(stat -c %u "$entry" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
+    done
+}
+
 secure_opkg_metadata() {
-    local config=/opt/etc/opkg.conf lists=/opt/var/opkg-lists entry mode
+    local config=/opt/etc/opkg.conf lists=/opt/var/opkg-lists
+    local entry mode
     [ -d /opt/etc ] && [ ! -L /opt/etc ] || return 1
     [ -f "$config" ] && [ ! -L "$config" ] || return 1
     mode=$(stat -c %a /opt/etc 2>/dev/null) || return 1
@@ -48,6 +72,7 @@ secure_opkg_metadata() {
         [ "$(stat -c %u "$entry" 2>/dev/null)" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || return 1
         chown root:root "$entry" && chmod 644 "$entry" || return 1
     done
+    secure_opkg_installed_metadata
 }
 
 require_https_opkg_feeds() {
@@ -92,6 +117,7 @@ RC_INDEX=23
 # gone and what is left behind is a stale firewall, which can also mean the web
 # server never came back.
 RC_REMOVAL_FIREWALL=24
+RC_SSHD_STOP=25
 
 ACTION=menu
 PORT=""
@@ -118,6 +144,22 @@ step() { # step <message>
 
 remount_rw() { mount -o remount,rw /; }
 remount_ro() { mount -o remount,ro /; }
+
+# Never change the saved port, enabled state, packages, or firewall while the
+# old listener may still be alive. systemctl normally waits for the unit's
+# stop timeout. The explicit state check also covers a misleading zero exit.
+stop_sshd_safely() {
+    local state
+    state=$(systemctl is-active sshd 2>/dev/null)
+    case "$state" in
+        inactive|failed) return 0 ;;
+        active|activating|deactivating|reloading) ;;
+        *) return 1 ;;
+    esac
+    systemctl stop sshd >/dev/null 2>&1 || return 1
+    state=$(systemctl is-active sshd 2>/dev/null)
+    case "$state" in inactive|failed) return 0 ;; *) return 1 ;; esac
+}
 
 # Rebuild the rules without cycling the unit. lighttpd.service is
 # PartOf=firewall.service, so restarting it takes the web UI down and back up
@@ -185,33 +227,49 @@ resolve_saved_settings() {
 }
 
 prepare_ssh_accounts() {
+    local passwd_source=/opt/etc/passwd passwd_tmp firmware_root sshd_line
+    local sshd_count managed_sshd
+    managed_sshd='sshd:x:106:65534:SSH privilege separation:/opt/var/empty:/bin/false'
     # OpenSSH needs its own privilege-separation account. Detach Entware's
-    # passwd symlink before adding it so the firmware account file is untouched.
+    # passwd symlink logically, then replace it once after validating the whole
+    # candidate. The firmware account file is never modified.
     if [ -L /opt/etc/passwd ] || [ ! -s /opt/etc/passwd ]; then
-        rm -f /opt/etc/passwd
-        cp /etc/passwd /opt/etc/passwd || return 1
+        passwd_source=/etc/passwd
+    else
+        [ -f /opt/etc/passwd ] && [ ! -L /opt/etc/passwd ] || return 1
     fi
-    [ -f /opt/etc/passwd ] && [ ! -L /opt/etc/passwd ] || return 1
-    grep -q '^root:' /opt/etc/passwd || return 1
-    firmware_root=$(grep '^root:' /etc/passwd 2>/dev/null)
-    [ -n "$firmware_root" ] || return 1
+    [ "$(grep -c '^root:' /etc/passwd 2>/dev/null)" = 1 ] || return 1
+    firmware_root=$(grep '^root:' /etc/passwd 2>/dev/null) || return 1
+    sshd_count=$(grep -c '^sshd:' "$passwd_source" 2>/dev/null)
+    case "$sshd_count" in
+        0) ;;
+        1)
+            sshd_line=$(grep '^sshd:' "$passwd_source") || return 1
+            [ "$sshd_line" = "$managed_sshd" ] || {
+                echo -e "\e[1;31mAn incompatible sshd account already exists.\e[0m"
+                return 1
+            }
+            ;;
+        *)
+            echo -e "\e[1;31mMultiple sshd accounts already exist.\e[0m"
+            return 1
+            ;;
+    esac
+    awk -F: '$3 == 106 && $1 != "sshd" {exit 1}' "$passwd_source" || {
+        echo -e "\e[1;31mUID 106 is already assigned. Cannot create the SSH service account.\e[0m"
+        return 1
+    }
     passwd_tmp=$(mktemp /opt/etc/passwd.quecdeck.XXXXXX) || return 1
     if ! {
         printf '%s\n' "$firmware_root"
-        grep -v '^root:' /opt/etc/passwd
+        grep -vE '^(root|sshd):' "$passwd_source"
+        printf '%s\n' "$managed_sshd"
     } > "$passwd_tmp" ||
        ! chown root:root "$passwd_tmp" || ! chmod 644 "$passwd_tmp" ||
        ! mv -f "$passwd_tmp" /opt/etc/passwd; then
         rm -f "$passwd_tmp"
         return 1
     fi
-    awk -F: '$3 == 106 && $1 != "sshd" {exit 1}' /opt/etc/passwd || {
-        echo -e "\e[1;31mUID 106 is already assigned. Cannot create the SSH service account.\e[0m"
-        return 1
-    }
-    grep -q '^sshd:x:106:' /opt/etc/passwd ||
-        printf '%s\n' 'sshd:x:106:65534:SSH privilege separation:/opt/var/empty:/bin/false' >> /opt/etc/passwd
-    chown root:root /opt/etc/passwd && chmod 644 /opt/etc/passwd || return 1
     mkdir -p /opt/var/empty || return 1
     chown root:root /opt/var/empty && chmod 755 /opt/var/empty
 }
@@ -232,10 +290,14 @@ remove_entware_sshd_init_scripts() {
 }
 
 install_sshd_unit() {
-    cp -f "$ASSET_DIR/sshd.service" /lib/systemd/system/sshd.service &&
-        chown root:root /lib/systemd/system/sshd.service &&
-        chmod 644 /lib/systemd/system/sshd.service &&
+    local unit_tmp=/lib/systemd/system/.sshd.service.quecdeck.$$ rc
+    cp "$ASSET_DIR/sshd.service" "$unit_tmp" &&
+        chown root:root "$unit_tmp" && chmod 644 "$unit_tmp" &&
+        mv -f "$unit_tmp" /lib/systemd/system/sshd.service &&
         ln -sf /lib/systemd/system/sshd.service /lib/systemd/system/multi-user.target.wants/sshd.service
+    rc=$?
+    rm -f "$unit_tmp"
+    return "$rc"
 }
 
 configure_key_only_ssh() (
@@ -314,11 +376,13 @@ EOF
 # install_sshd <port> <enabled>
 # Installs or reinstalls with the settings it is handed. It does not read the
 # saved state: the update path passes back what resolve_saved_settings found,
-# and a first installation passes the port the caller chose. Every failure
-# leaves the previous installation as it was.
+# and a first installation passes the port the caller chose. Package operations
+# are not reversible, but the daemon is stopped first and an update's hardened
+# configuration is restored immediately after opkg, so a later failure stays
+# fail-closed and can be retried safely.
 install_sshd() {
     local ssh_port="$1" ssh_enabled="$2"
-    local package_rc init_cleanup_rc
+    local package_rc metadata_rc init_cleanup_rc previous_config=""
 
     [ -x /opt/bin/opkg ] || {
         echo -e "\e[1;31mEntware is not installed. Install QuecDeck first.\e[0m"
@@ -336,16 +400,44 @@ install_sshd() {
         echo -e "\e[1;31mBundled SSH files failed integrity verification. Update QuecDeck and try again.\e[0m"
         return "$RC_ASSETS"
     }
+    if sshd_is_installed; then
+        step "Stopping sshd"
+        stop_sshd_safely || {
+            echo -e "\e[1;31mSshd could not be stopped. No package or firewall changes were made.\e[0m"
+            return "$RC_SSHD_STOP"
+        }
+    fi
     step "Preparing the SSH service account"
     prepare_ssh_accounts || {
         echo -e "\e[1;31mFailed to prepare the SSH service account.\e[0m"
         return "$RC_ACCOUNT"
     }
+    if [ -f /opt/etc/ssh/sshd_config ] && [ ! -L /opt/etc/ssh/sshd_config ]; then
+        # lighttpd's ExecStartPre owns this directory on every boot, but a
+        # console run can happen with the web server stopped.
+        [ ! -L /run/quecdeck ] && mkdir -p /run/quecdeck || return "$RC_CONFIG"
+        previous_config=/run/quecdeck/sshd_config.rollback.$$
+        cp -p /opt/etc/ssh/sshd_config "$previous_config" || return "$RC_CONFIG"
+    fi
     step "Installing packages"
     opkg install --force-maintainer openssh-server openssh-keygen
     package_rc=$?
+    metadata_rc=0
+    secure_opkg_metadata || metadata_rc=1
     init_cleanup_rc=0
     remove_entware_sshd_init_scripts || init_cleanup_rc=1
+    if [ -n "$previous_config" ]; then
+        cp -p "$previous_config" /opt/etc/ssh/sshd_config || {
+            rm -f "$previous_config"
+            echo -e "\e[1;31mThe previous hardened SSH configuration could not be restored. Sshd remains stopped.\e[0m"
+            return "$RC_CONFIG"
+        }
+        rm -f "$previous_config"
+    fi
+    if [ "$metadata_rc" -ne 0 ]; then
+        echo -e "\e[1;31mEntware's installed-package metadata became unsafe. Sshd remains stopped.\e[0m"
+        return "$RC_ENTWARE"
+    fi
     if [ "$package_rc" -ne 0 ]; then
         echo -e "\e[1;31mFailed to install OpenSSH.\e[0m"
         return "$RC_PACKAGES"
@@ -375,20 +467,20 @@ install_sshd() {
     install_sshd_unit || return "$RC_UNIT"
     remount_ro || return "$RC_UNIT"
     trap - EXIT
-    systemctl daemon-reload
+    systemctl daemon-reload || return "$RC_UNIT"
 
     # Reconcile the live chain on every install/update. Comparing only the
     # desired settings misses a stale chain left by an earlier boot-time race.
     step "Applying the firewall rules"
     if ! apply_firewall; then
-        systemctl stop sshd >/dev/null 2>&1 || true
+        stop_sshd_safely || return "$RC_SSHD_STOP"
         echo -e "\e[1;31mWARNING: the firewall rules could not be applied. Sshd was not started.\e[0m"
         echo -e "\e[1;31mCheck 'systemctl status firewall lighttpd', then start sshd after the firewall is active.\e[0m"
         return "$RC_FIREWALL"
     fi
 
     if [ "$ssh_enabled" = 0 ]; then
-        systemctl stop sshd >/dev/null 2>&1 || true
+        stop_sshd_safely || return "$RC_SSHD_STOP"
         echo -e "\e[1;33mSSH is installed and remains disabled.\e[0m"
     elif "$QUECDECK_DIR/script/ssh_access.sh" ready; then
         step "Starting sshd"
@@ -405,15 +497,29 @@ install_sshd() {
 
 uninstall_sshd() {
     step "Stopping sshd"
-    systemctl stop sshd 2>/dev/null
+    stop_sshd_safely || {
+        echo -e "\e[1;31mSshd could not be stopped. Nothing was removed and the firewall was left unchanged.\e[0m"
+        return "$RC_SSHD_STOP"
+    }
     package_failed=0
-    package_inventory=$(opkg list-installed 2>/dev/null) || package_failed=1
+    package_metadata_safe=1
+    package_inventory=""
+    if ! secure_opkg_installed_metadata; then
+        package_failed=1
+        package_metadata_safe=0
+        echo -e "\e[1;31mEntware metadata is unsafe. OpenSSH package removal was skipped.\e[0m"
+    else
+        package_inventory=$(opkg list-installed 2>/dev/null) || package_failed=1
+    fi
     step "Removing packages"
-    for package in openssh-server openssh-server-pam openssh-keygen; do
-        if printf '%s\n' "$package_inventory" | grep -q "^${package} "; then
-            opkg remove "$package" >/dev/null 2>&1 || package_failed=1
-        fi
-    done
+    if [ "$package_metadata_safe" -eq 1 ]; then
+        for package in openssh-server openssh-server-pam openssh-keygen; do
+            if printf '%s\n' "$package_inventory" | grep -q "^${package} "; then
+                opkg remove "$package" >/dev/null 2>&1 || package_failed=1
+            fi
+        done
+        secure_opkg_installed_metadata || package_failed=1
+    fi
     remove_entware_sshd_init_scripts || package_failed=1
     cleanup_ssh_account
     # Authorized keys sit inside /opt/etc/ssh, so the removal below takes them

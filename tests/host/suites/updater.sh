@@ -230,6 +230,8 @@ t "SSH action unit is the only entry to the privileged run mode" "yes" \
   "$(grep -q 'QD_SERVICE_UNIT:-}" != "1" \]; then' quecdeck/script/run_update.sh && grep -q '^Environment=QD_SERVICE_UNIT=1$' quecdeck/script/run_update.sh && _refuse=$(sed -n '/QD_SERVICE_UNIT:-}" != "1" \]; then/,/^    fi$/p' quecdeck/script/run_update.sh) && ! printf '%s\n' "$_refuse" | grep -q 'abort\|write_status' && echo yes || echo no)"
 t "SSH actions and QuecDeck updates exclude each other" "yes" \
   "$([ "$(grep -c 'for _unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd; do' quecdeck/script/run_update.sh)" -eq 2 ] && grep -q 'install_quecdeck_sshd 2>/dev/null)" = "failed"' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
+t "QuecDeck package install rechecks local opkg metadata" "yes" \
+  "$( _install=$(sed -n '/if \[ "\$_lighttpd_needs_install" = "1" \]; then/,/^    fi$/p' update_quecdeck.sh); _opkg=$(printf '%s\n' "$_install" | grep -n '/opt/bin/opkg install' | cut -d: -f1); _secure=$(printf '%s\n' "$_install" | grep -n 'secure_opkg_metadata' | tail -1 | cut -d: -f1); [ -n "$_opkg" ] && [ -n "$_secure" ] && [ "$_opkg" -lt "$_secure" ] && echo yes || echo no)"
 t "SSH action failure carries the installer exit code to the UI" "yes" \
   "$(grep -q 'write_status "failed:code:\$rc"' quecdeck/script/run_update.sh && grep -q 'failed:code:\*)' quecdeck/www/cgi-bin/get_update_log && grep -q '"code":%s' quecdeck/www/cgi-bin/get_update_log && grep -q 'case "\$code" in ..|\*\[!0-9\]\*) code=0' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
 t "a stale SSH check answer cannot outlive the action that changed it" "yes" \
