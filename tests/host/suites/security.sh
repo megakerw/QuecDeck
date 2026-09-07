@@ -209,8 +209,7 @@ _both_cred=0
 for _b in add_key remove_key; do
     sed -n "/^    $_b)/,/^        ;;/p" "$_ms" | grep -q 'developer_password' && _both_cred=$((_both_cred + 1))
 done
-t "SSH key operations still require both credentials" "2" "$_both_cred"
-t "SSH key operations verify both at the root boundary" "yes" \
+t "SSH key operations pass no separate developer password" "0" "$_both_cred"
   "$(grep -q 'verify_credentials' quecdeck/script/ssh_access.sh && echo yes || echo no)"
 unset _ms _pw_payloads _change_src _both_cred _b
 t "developer unlocks are bound to the credential generation" "yes" \
@@ -245,8 +244,10 @@ t "CGI lockout accounting does not duplicate root-side pacing" "yes" \
   "$(! extract_fn quecdeck/script/cgi-lib.sh bf_fail | grep -q '^ *sleep ' && echo yes || echo no)"
 t "password verifier accepts only fixed account pairs" "yes" \
   "$(grep -q 'admin).*USERNAME=admin' quecdeck/script/check_password.sh && grep -q 'dev).*USERNAME=devadmin' quecdeck/script/check_password.sh && grep -q '^if \[ "\${2:-}" != "\$USERNAME" \]; then$' quecdeck/script/check_password.sh && [ "$(grep -n '^flock_wait 9 5' quecdeck/script/check_password.sh | cut -d: -f1)" -lt "$(grep -n '^if \[ "\${2:-}" != "\$USERNAME" \]; then$' quecdeck/script/check_password.sh | cut -d: -f1)" ] && echo yes || echo no)"
-t "dual-credential SSH checks do not short-circuit" "yes" \
-  "$( _verify=$(extract_fn quecdeck/script/ssh_access.sh verify_credentials); [ "$(printf '%s\n' "$_verify" | grep -c 'check_password.sh')" = 2 ] && printf '%s\n' "$_verify" | grep -q 'admin_rc=' && printf '%s\n' "$_verify" | grep -q 'dev_rc=' && echo yes || echo no)"
+# Only the developer secret is checked, so a stolen administrator password does
+# not authorize an SSH change and there is no second credential to disambiguate.
+t "SSH checks verify the developer credential alone" "yes" \
+  "$( _verify=$(extract_fn quecdeck/script/ssh_access.sh verify_developer_credential); [ "$(printf '%s\n' "$_verify" | grep -c 'check_password.sh')" = 1 ] && printf '%s\n' "$_verify" | grep -q 'check_password.sh dev devadmin' && ! grep -q 'check_password.sh admin admin' quecdeck/script/ssh_access.sh && echo yes || echo no)"
 t "sudo credential helpers bound stdin before parsing" "yes" \
   "$( _bounded=yes; for _h in quecdeck/script/write_htpasswd.sh quecdeck/script/change_password.sh quecdeck/script/ssh_access.sh; do grep -q 'head -c ' "$_h" && grep -Fq 'PAYLOAD=${PAYLOAD%.}' "$_h" && grep -q '\${#PAYLOAD}.*-le' "$_h" || _bounded=no; done; printf '%s' "$_bounded")"
 t "initial credential helper exposes setup mode only" "yes" \
@@ -263,8 +264,8 @@ t "SSH key validation accepts an empty comment" "yes" \
   "$(eval "$(extract_fn quecdeck/script/ssh_access.sh valid_key_syntax)"; valid_key_syntax 'ssh-ed25519 AAAA' && echo yes || echo no)"
 t "SSH helper normalizes existing key line endings before append" "yes" \
   "$(grep -q 'while IFS= read -r existing || \[ -n "\$existing" \]' quecdeck/script/ssh_access.sh && ! grep -q 'cat "\$KEYS"; printf.*KEY_LINE' quecdeck/script/ssh_access.sh && echo yes || echo no)"
-t "SSH helper requires administrator and developer credentials" "yes" \
-  "$(grep -q 'check_password.sh admin admin' quecdeck/script/ssh_access.sh && grep -q 'check_password.sh dev devadmin' quecdeck/script/ssh_access.sh && grep_all 'developer_password' quecdeck/www/cgi-bin/manage_security quecdeck/www/js/security.js && echo yes || echo no)"
+t "SSH helper requires the developer credential" "yes" \
+  "$(grep -q 'check_password.sh dev devadmin' quecdeck/script/ssh_access.sh && ! grep -q 'check_password.sh admin admin' quecdeck/script/ssh_access.sh && grep -q 'developer_password' quecdeck/www/js/security.js && echo yes || echo no)"
 t "SSH key management requires a configured developer credential" "yes" \
   "$(grep -q '\[ -s /opt/etc/\.htpasswd_dev \] || exit 8' quecdeck/script/ssh_access.sh && grep -q '8) json_result false "Set a developer access password' quecdeck/www/cgi-bin/manage_security && grep_all 'developer_configured' quecdeck/www/cgi-bin/get_security quecdeck/www/js/security.js && echo yes || echo no)"
 t "missing developer credential does not count as password failure" "yes" \
@@ -317,9 +318,9 @@ unset _p
 # password holder could alternate a failed add_key guess with a successful
 # ssh_settings save and retry the developer password without limit.
 t "credential failures are counted per class" "yes" \
-  "$(grep -q 'auth_class=admin' quecdeck/www/cgi-bin/manage_security && grep -q 'auth_class=dev' quecdeck/www/cgi-bin/manage_security && grep -q 'auth_class=keys' quecdeck/www/cgi-bin/manage_security && grep -q 'security-auth-failures/\$auth_class' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
-t "key operations do not share a counter with administrator-only actions" "yes" \
-  "$(_c=$(sed -n '/^case "\$action" in$/,/^esac$/p' quecdeck/www/cgi-bin/manage_security | head -8); printf '%s\n' "$_c" | grep -q 'change_password)  *auth_class=admin' && printf '%s\n' "$_c" | grep -q 'change_developer_password)  *auth_class=dev' && printf '%s\n' "$_c" | grep -q 'add_key|remove_key|ssh_settings)  *auth_class=keys' && echo yes || echo no)"
+  "$(grep -q 'auth_class=admin' quecdeck/www/cgi-bin/manage_security && grep -q 'auth_class=dev' quecdeck/www/cgi-bin/manage_security && ! grep -q 'auth_class=keys' quecdeck/www/cgi-bin/manage_security && grep -q 'security-auth-failures/\$auth_class' quecdeck/www/cgi-bin/manage_security && echo yes || echo no)"
+t "SSH actions share the developer counter, not the administrator one" "yes" \
+  "$(_c=$(sed -n '/^case "\$action" in$/,/^esac$/p' quecdeck/www/cgi-bin/manage_security | head -8); printf '%s\n' "$_c" | grep -q 'change_password)  *auth_class=admin' && printf '%s\n' "$_c" | grep -qE 'change_developer_password\|add_key\|remove_key\|ssh_settings\)  *auth_class=dev' && grep -q 'install|uninstall|update) auth_class=dev' quecdeck/www/cgi-bin/trigger_sshd_action && echo yes || echo no)"
 # An absent listenaddress means every interface, so the gate must require a
 # positive result rather than only rejecting explicit wildcards.
 t "the SSH bind gate requires a listener, not just a non-wildcard one" "yes" \
@@ -333,23 +334,23 @@ unset _c _k
 t "SSH changes serialise on one lock across both helpers" "yes" \
   "$( _a=$(sed -n 's/^LOCK=\$ROOT_HOME\///p' quecdeck/script/ssh_access.sh); _b=$(sed -n 's/^LOCK=\/usrdata\/root\///p' quecdeck/script/install_sshd.sh); [ -n "$_a" ] && [ "$_a" = "$_b" ] && grep -q 'flock_wait 9 ' quecdeck/script/install_sshd.sh && [ "$(grep -c 'take_lock || exit' quecdeck/script/install_sshd.sh)" -eq 6 ] && ! sed -n '/^uninstall_sshd() {/,/^}/p' quecdeck/script/install_sshd.sh | grep -qF "$_a" && echo yes || echo no)"
 unset _a _b
-t "SSH settings require both credentials" "yes" \
-  "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_access.sh); printf '%s\n' "$_settings" | grep -q 'verify_credentials "\$ADMIN_PASSWORD" "\$DEV_PASSWORD"' && printf '%s\n' "$_settings" | grep -q 'IFS= read -r DEV_PASSWORD' && printf '%s\n' "$_settings" | grep -q 'htpasswd_dev \] || exit 8' && ! grep -q 'verify_admin_credential' quecdeck/script/ssh_access.sh && echo yes || echo no)"
+t "SSH settings require the developer credential" "yes" \
+  "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_access.sh); printf '%s\n' "$_settings" | grep -q 'verify_developer_credential "\$DEV_PASSWORD"' && printf '%s\n' "$_settings" | grep -q 'IFS= read -r DEV_PASSWORD' && ! printf '%s\n' "$_settings" | grep -q 'ADMIN_PASSWORD' && printf '%s\n' "$_settings" | grep -q 'htpasswd_dev \] || exit 8' && echo yes || echo no)"
 # One rule for the page: a reader should never have to work out which change
 # takes one password and which takes two. The read-only check is the exception,
 # since it refreshes the package index and alters nothing.
-t "every change on the SSH page asks for both passwords" "yes" \
-  "$( ! grep -q 'developerRequired: false' quecdeck/www/js/security.js && sed -n '/^    ssh_settings)/,/;;/p' quecdeck/www/cgi-bin/manage_security | grep -q 'developer_password' && grep -q 'install|uninstall|update) need_developer=1' quecdeck/www/cgi-bin/trigger_sshd_action && grep -q 'check)  *need_developer=0 ; auth_class=""' quecdeck/www/cgi-bin/trigger_sshd_action && echo yes || echo no)"
+t "every change on the SSH page asks for the developer password" "yes" \
+  "$( grep -q 'install|uninstall|update) auth_class=dev' quecdeck/www/cgi-bin/trigger_sshd_action && grep -q 'check)  *auth_class=""' quecdeck/www/cgi-bin/trigger_sshd_action && ! grep -q 'admin_password' quecdeck/www/cgi-bin/trigger_sshd_action quecdeck/www/js/security.js && echo yes || echo no)"
 # Anchored on the privileged call, not on a case statement: the classification
 # block above the dispatch is also a "case $action in".
 t "every security action requires a current password" "yes" \
   "$(! grep -q 'ssh_settings) ;;' quecdeck/www/cgi-bin/manage_security && [ "$(grep -n 'Current password is required' quecdeck/www/cgi-bin/manage_security | cut -d: -f1)" -lt "$(grep -n '/opt/bin/sudo' quecdeck/www/cgi-bin/manage_security | head -1 | cut -d: -f1)" ] && echo yes || echo no)"
 # The unused password field must leave the DOM, not just hide: that is what the
 # browser otherwise pairs with unrelated inputs and offers to save.
-t "the credential dialog removes the unused developer field" "yes" \
-  "$(grep -q 'x-if="credentialDeveloperRequired"' quecdeck/www/ssh.html && echo yes || echo no)"
-t "the key gate still requires both credentials" "2" \
-  "$( _n=0; for _a in add remove; do sed -n "/^    $_a)/,/^        ;;/p" quecdeck/script/ssh_access.sh | grep -q verify_credentials && _n=$((_n + 1)); done; echo "$_n")"
+t "the credential dialog carries a single password field" "yes" \
+  "$([ "$(grep -c 'type="password"' quecdeck/www/ssh.html)" = 1 ] && ! grep -q 'credentialAdmin\|credentialDeveloperRequired' quecdeck/www/ssh.html quecdeck/www/js/security.js && echo yes || echo no)"
+t "the key gate still requires the developer credential" "2" \
+  "$( _n=0; for _a in add remove; do sed -n "/^    $_a)/,/^        ;;/p" quecdeck/script/ssh_access.sh | grep -q verify_developer_credential && _n=$((_n + 1)); done; echo "$_n")"
 t "SSH settings accept only a Boolean and the reviewed port range" "yes" \
   "$( _settings=$(sed -n '/^    settings)/,/^        ;;/p' quecdeck/script/ssh_access.sh); _ports=$(extract_fn quecdeck/script/sshd-policy-lib.sh valid_ssh_port); printf '%s\n' "$_settings" | grep -q 'case "\$SSH_ENABLED" in 0|1)' && printf '%s\n' "$_settings" | grep -q 'valid_ssh_port "\$SSH_PORT"' && printf '%s\n' "$_ports" | grep -q '\$1.*= 22' && printf '%s\n' "$_ports" | grep -q '\$1.*-ge 1024' && echo yes || echo no)"
 # The settings functions can run against temporary files with their privileged
@@ -506,14 +507,14 @@ t "SSH panels do not gate each other" "yes" \
 # on either card.
 t "the SSH cards park no credentials" "yes" \
   "$(! grep -q 'settingsPassword\|keyPassword\|keyDeveloperPassword' quecdeck/www/ssh.html quecdeck/www/js/security.js && grep -q '<template x-if="credentialOpen">' quecdeck/www/ssh.html && echo yes || echo no)"
-t "both key actions prompt for both credentials" "2" \
+t "both key actions prompt for the developer credential" "2" \
   "$( _n=0; for _m in addKey confirmRemove; do sed -n "/^    $_m(/,/^    },/p" quecdeck/www/js/security.js | grep -q 'promptCredentials' && _n=$((_n + 1)); done; echo "$_n")"
 # The dialog owns the attempt: a wrong password must not close it and stack an
 # error modal, and a lockout must stop offering a retry that cannot succeed.
 t "credential dialog survives a failed attempt" "yes" \
   "$( _s=$(sed -n '/^    submitCredentials() {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_s" | grep -q 'credentialError = err.message' && printf '%s\n' "$_s" | grep -q 'credentialLocked = err.locked === true' && printf '%s\n' "$_s" | grep -q 'credentialBusy || this.credentialLocked' && echo yes || echo no)"
-t "credential dialog zeroes both fields when it closes" "yes" \
-  "$( _c=$(sed -n '/^    closeCredentials() {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_c" | grep -q "credentialAdmin = ''" && printf '%s\n' "$_c" | grep -q "credentialDeveloper = ''" && echo yes || echo no)"
+t "credential dialog zeroes its field when it closes" "yes" \
+  "$( _c=$(sed -n '/^    closeCredentials() {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_c" | grep -q "credentialDeveloper = ''" && printf '%s\n' "$_c" | grep -q "el.value = ''" && echo yes || echo no)"
 t "SSH page presents server and keys as separate panels" "2" \
   "$(grep -c 'class="panel-section"' quecdeck/www/ssh.html)"
 # Three hops: the CGI reports the failure, the controller turns it into a query

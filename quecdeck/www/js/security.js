@@ -58,9 +58,7 @@ function securityController(sshPage = false) {
     // that takes several things away at once.
     credentialDetailList: [],
     credentialAction: 'Confirm',
-    credentialAdmin: '',
     credentialDeveloper: '',
-    credentialDeveloperRequired: true,
     credentialError: '',
     credentialBusy: false,
     credentialLocked: false,
@@ -324,11 +322,11 @@ function securityController(sshPage = false) {
 
     closeCredentials() {
       if (this.credentialBusy) return;
-      ['cred-admin', 'cred-dev'].forEach((id) => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-      });
-      this.credentialAdmin = '';
+      // Cleared before the node is removed: Chromium reads a filled password
+      // field disappearing as a successful credential update and offers to
+      // save it.
+      const el = document.getElementById('cred-dev');
+      if (el) el.value = '';
       this.credentialDeveloper = '';
       this.credentialOpen = false;
       this.credentialError = '';
@@ -339,15 +337,13 @@ function securityController(sshPage = false) {
 
     submitCredentials() {
       if (this.credentialBusy || this.credentialLocked) return;
-      if (!this.credentialAdmin || (this.credentialDeveloperRequired && !this.credentialDeveloper)) {
-        this.credentialError = this.credentialDeveloperRequired
-          ? 'Enter both passwords.'
-          : 'Enter your administrator password.';
+      if (!this.credentialDeveloper) {
+        this.credentialError = 'Enter your developer password.';
         return;
       }
       this.credentialBusy = true;
       this.credentialError = '';
-      Promise.resolve(this.credentialSubmit(this.credentialAdmin, this.credentialDeveloper))
+      Promise.resolve(this.credentialSubmit(this.credentialDeveloper))
         .then(() => {
           this.credentialBusy = false;
           this.closeCredentials();
@@ -359,20 +355,18 @@ function securityController(sshPage = false) {
         });
     },
 
-    promptCredentials({ title, message, detail, detailList, action, developerRequired = true, refreshOnSuccess = true, run, onSuccess }) {
+    promptCredentials({ title, message, detail, detailList, action, refreshOnSuccess = true, run, onSuccess }) {
       this.credentialTitle = title;
       this.credentialMessage = message;
       this.credentialDetail = detail || '';
       this.credentialDetailList = detailList || [];
       this.credentialAction = action;
-      this.credentialDeveloperRequired = developerRequired;
-      this.credentialAdmin = '';
       this.credentialDeveloper = '';
       this.credentialError = '';
       this.credentialBusy = false;
       this.credentialLocked = false;
-      this.credentialSubmit = (admin, developer) =>
-        run(admin, developer).then((data) => {
+      this.credentialSubmit = (developer) =>
+        run(developer).then((data) => {
           if (!data.ok) {
             const err = new Error(data.error || 'The change could not be completed.');
             err.locked = /Too many failed attempts/i.test(data.error || '');
@@ -387,7 +381,7 @@ function securityController(sshPage = false) {
           });
         });
       this.credentialOpen = true;
-      setTimeout(() => document.getElementById('cred-admin')?.focus(), 0);
+      setTimeout(() => document.getElementById('cred-dev')?.focus(), 0);
     },
 
     keyActionBlocked() {
@@ -410,21 +404,20 @@ function securityController(sshPage = false) {
         return;
       }
       // The button is already disabled at the limit. This catches the action
-      // reached any other way, before it costs two passwords and a round trip.
+      // reached any other way, before it costs a password and a round trip.
       if (this.keys.length >= 5) {
         this.$store.errorModal.open('The maximum of 5 SSH keys has been reached. Remove one first.');
         return;
       }
       this.promptCredentials({
         title: 'Add this key?',
-        message: 'A key grants root access over SSH, so both passwords are required.',
+        message: 'A key grants root access over SSH, so it needs your developer password.',
         detail: publicKey.length > 90 ? publicKey.slice(0, 90) + '…' : publicKey,
         action: 'Add key',
-        run: (admin, developer) =>
+        run: (developer) =>
           this.securityAction({
             action: 'add_key',
-            current_password: admin,
-            developer_password: developer,
+            current_password: developer,
             public_key: publicKey,
           }).then((data) => {
             if (data.ok) {
@@ -455,12 +448,11 @@ function securityController(sshPage = false) {
       clearTimeout(this.saveTimer);
       this.promptCredentials({
         title: 'Confirm SSH settings',
-        message: 'Every change on this page asks for both passwords.',
+        message: 'Every change on this page asks for your developer password.',
         action: 'Save settings',
-        run: (admin, developer) => this.securityAction({
+        run: (developer) => this.securityAction({
           action: 'ssh_settings',
-          current_password: admin,
-          developer_password: developer,
+          current_password: developer,
           ssh_enabled: this.sshEnabled ? '1' : '0',
           ssh_port: String(port),
         }),
@@ -475,11 +467,10 @@ function securityController(sshPage = false) {
         message: 'This public key will no longer be accepted for SSH login.',
         detail: key.comment ? key.comment + '  ' + key.fingerprint : key.fingerprint,
         action: 'Remove key',
-        run: (admin, developer) =>
+        run: (developer) =>
           this.securityAction({
             action: 'remove_key',
-            current_password: admin,
-            developer_password: developer,
+            current_password: developer,
             fingerprint: key.fingerprint,
           }),
       });
@@ -652,10 +643,9 @@ function securityController(sshPage = false) {
       this.sshdPollTimer = setInterval(poll, 1000);
     },
 
-    triggerSshdAction(action, admin, developer) {
+    triggerSshdAction(action, developer) {
       const params = { action };
       if (action === 'install') params.port = this.sshdInstallPort;
-      if (admin) params.admin_password = admin;
       if (developer) params.developer_password = developer;
       // Busy on click, then the credential dialog closes as soon as systemd
       // accepts the background job. Progress and early unit failures both come
@@ -710,11 +700,11 @@ function securityController(sshPage = false) {
       }
       this.promptCredentials({
         title: 'Install SSH server',
-        message: 'Installing SSH opens a root login path on this modem, so it needs both passwords.',
+        message: 'Installing SSH opens a root login path on this modem, so it needs your developer password.',
         detail: 'Port ' + port + ', key-only, idle until a key is added',
         action: 'Install',
         refreshOnSuccess: false,
-        run: (admin, developer) => this.triggerSshdAction('install', admin, developer),
+        run: (developer) => this.triggerSshdAction('install', developer),
       });
     },
 
@@ -725,7 +715,7 @@ function securityController(sshPage = false) {
         message: 'The SSH server restarts, which ends active SSH sessions. Your port, keys and enabled state are kept.',
         action: 'Update',
         refreshOnSuccess: false,
-        run: (admin, developer) => this.triggerSshdAction('update', admin, developer),
+        run: (developer) => this.triggerSshdAction('update', developer),
       });
     },
 
@@ -741,7 +731,7 @@ function securityController(sshPage = false) {
         ],
         action: 'Uninstall',
         refreshOnSuccess: false,
-        run: (admin, developer) => this.triggerSshdAction('uninstall', admin, developer),
+        run: (developer) => this.triggerSshdAction('uninstall', developer),
       });
     },
 

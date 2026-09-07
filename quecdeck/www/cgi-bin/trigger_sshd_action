@@ -21,18 +21,17 @@ json_result() { # json_result <true|false> [error]
 client_ip=$(cgi_client_ip)
 action=$(get_post_param action)
 port=$(get_post_param port)
-admin=$(get_post_param admin_password)
 developer=$(get_post_param developer_password)
 
-# One rule for the whole SSH page: every change takes both passwords. The check
-# is exempt because it changes nothing about SSH, though it is not free: it
-# fetches package lists and writes them, so it takes the same lock and the same
-# single-dispatch slot as the rest. Sharing the "keys" failure class with the
-# other dual-credential actions is deliberate: the class tracks the credentials
-# an action exercises, so a success clears only the counter for that pair.
+# One rule for the whole SSH page: every change takes the developer password.
+# The check is exempt because it changes nothing about SSH, though it is not
+# free: it fetches package lists and writes them, so it takes the same lock and
+# the same single-dispatch slot as the rest. The failure class tracks the
+# credential an action exercises, so these share the "dev" class with every
+# other developer-password action and a success clears only that counter.
 case "$action" in
-    install|uninstall|update) need_developer=1 ; auth_class=keys ;;
-    check)                    need_developer=0 ; auth_class="" ;;
+    install|uninstall|update) auth_class=dev ;;
+    check)                    auth_class="" ;;
     *) json_result false "Unknown SSH action" ; exit 0 ;;
 esac
 
@@ -47,10 +46,10 @@ fi
 
 start_action() {
     if [ "$action" = install ]; then
-        printf '%s\n%s\n' "$admin" "$developer" |
+        printf '%s\n' "$developer" |
             /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service install "$port" >/dev/null
     else
-        printf '%s\n%s\n' "$admin" "$developer" |
+        printf '%s\n' "$developer" |
             /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service "$action" >/dev/null
     fi
     rc=${PIPESTATUS[1]}
@@ -74,11 +73,7 @@ if [ -z "$auth_class" ]; then
     exit 0
 fi
 
-if [ -z "$admin" ] || [ "${#admin}" -gt 256 ]; then
-    json_result false "Administrator password is required"
-    exit 0
-fi
-if [ "$need_developer" = 1 ] && { [ -z "$developer" ] || [ "${#developer}" -gt 256 ]; }; then
+if [ -z "$developer" ] || [ "${#developer}" -gt 256 ]; then
     json_result false "Developer password is required"
     exit 0
 fi
@@ -106,10 +101,8 @@ if [ "$rc" = 3 ]; then
     bf_unlock
     if [ "$result" = locked ]; then
         json_result false "Too many failed attempts. Try again later"
-    elif [ "$need_developer" = 1 ]; then
-        json_result false "Administrator or developer password is incorrect"
     else
-        json_result false "Administrator password is incorrect"
+        json_result false "Developer password is incorrect"
     fi
     exit 0
 fi

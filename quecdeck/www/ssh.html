@@ -6,18 +6,18 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=79bb56c5" />
-    <link rel="stylesheet" href="css/styles.css?v=79bb56c5" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=0b94a277" />
+    <link rel="stylesheet" href="css/styles.css?v=0b94a277" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=79bb56c5"></script>
-    <script src="js/utils.js?v=79bb56c5"></script>
-    <script src="js/alpinejs.min.js?v=79bb56c5" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=0b94a277"></script>
+    <script src="js/utils.js?v=0b94a277"></script>
+    <script src="js/alpinejs.min.js?v=0b94a277" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="securityController(true)">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=79bb56c5"></script>
+        <script src="js/nav.js?v=0b94a277"></script>
 
         <!-- Always rendered. Every serverView state below paints a real card
              body, so the row needs no visibility binding and the layout is
@@ -42,9 +42,11 @@
                    does not collapse to its header while get_security is in
                    flight. The badge above already reads Loading. -->
               <template x-if="serverView === 'loading'">
-                <div class="panel-loading d-flex align-items-center gap-2">
-                  <span class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
-                  <span class="text-muted small">Reading the SSH server status.</span>
+                <div class="panel-loading">
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
+                    <span class="text-muted small">Reading the SSH server status.</span>
+                  </div>
                 </div>
               </template>
 
@@ -74,7 +76,7 @@
 
               <template x-if="serverView === 'install'">
                 <div>
-                  <p class="text-muted small">OpenSSH is not part of QuecDeck. Installing it fetches the server from Entware after confirming your administrator and developer passwords, and configures it for key-only root access.</p>
+                  <p class="text-muted small">OpenSSH is not part of QuecDeck. Installing it fetches the server from Entware after confirming your developer password, and configures it for key-only root access.</p>
 
                   <div class="mb-4">
                     <div class="fw-semibold mb-2 text-label">Installing does the following:</div>
@@ -135,7 +137,7 @@
                 <div>
                   <div class="alert alert-danger" x-show="!rootHomeReady">The root home permissions are incompatible. Re-run the QuecDeck installer before managing SSH access.</div>
                   <div class="alert alert-danger" x-show="!sshSettingsReady" x-cloak>The SSH port or enabled state could not be read. Check <code>/opt/etc/ssh/sshd_config</code> and the QuecDeck enable marker.</div>
-                  <p class="text-muted small">Every change on this page asks for your administrator and developer passwords.</p>
+                  <p class="text-muted small">Every change on this page asks for your developer password.</p>
 
                   <!-- Enable / Disable -->
                   <div class="d-flex justify-content-between align-items-start mb-1">
@@ -308,7 +310,7 @@
                 </div>
 
                 <div class="alert alert-warning" x-show="!developerConfigured">Set a developer password on the Security page before managing SSH keys.</div>
-                <p class="text-muted small">Public keys are the only SSH login method. Adding or removing one asks for your administrator and developer passwords, because a key grants root access.</p>
+                <p class="text-muted small">Public keys are the only SSH login method. Adding or removing one asks for your developer password, because a key grants root access.</p>
 
                 <div class="list-group list-group-flush mb-2" x-show="keys.length > 0" x-cloak>
                   <template x-for="(key, index) in keys" :key="key.fingerprint">
@@ -397,32 +399,19 @@
               <div x-show="credentialError" x-cloak class="alert alert-danger py-2 px-3 small mb-3" x-text="credentialError"></div>
               <div role="group" aria-label="Confirm credentials"
                    @keydown.enter.prevent="submitCredentials()">
-                <!-- Two password inputs with no username read as a new-password
-                     form, so Chrome offers to save one. autocomplete="off" is
-                     ignored on password fields by design, so name the account
-                     these belong to and mark both as the current password.
-                     Rendered rather than display:none, which password managers
-                     skip, and aria-hidden because it is a hint for them, not a
-                     reader. There is deliberately no form element here: see the
-                     Chromium note on the test that pins it. That leaves iOS
-                     Safari with no form to classify, and it still offers to
-                     generate a password (2026-09-07, unfixed). -->
-                <input type="text" name="username" value="admin" autocomplete="username"
-                       class="visually-hidden" tabindex="-1" aria-hidden="true" readonly />
-                <div :class="credentialDeveloperRequired ? 'mb-2' : 'mb-4'">
-                  <label class="form-label fw-semibold" for="cred-admin">Administrator Password</label>
-                  <input id="cred-admin" type="password" class="form-control" maxlength="256"
-                         autocomplete="current-password" x-model="credentialAdmin"
+                <!-- One password field, deliberately. A pair with no username
+                     reads as new-password plus confirm, which is what made
+                     Chrome offer to save one and iOS Safari offer to generate
+                     one. autocomplete="off" is ignored on password fields by
+                     design, so the shape of the dialog is the only lever.
+                     There is also no form element here: see the Chromium note
+                     on the test that pins it. -->
+                <div class="mb-4">
+                  <label class="form-label fw-semibold" for="cred-dev">Developer Password</label>
+                  <input id="cred-dev" type="password" class="form-control" maxlength="256"
+                         autocomplete="current-password" x-model="credentialDeveloper"
                          :disabled="credentialBusy || credentialLocked">
                 </div>
-                <template x-if="credentialDeveloperRequired">
-                  <div class="mb-4">
-                    <label class="form-label fw-semibold" for="cred-dev">Developer Password</label>
-                    <input id="cred-dev" type="password" class="form-control" maxlength="256"
-                           autocomplete="current-password" x-model="credentialDeveloper"
-                           :disabled="credentialBusy || credentialLocked">
-                  </div>
-                </template>
                 <div class="d-flex justify-content-end gap-2">
                   <button type="button" class="btn btn-secondary btn-sm"
                           :disabled="credentialBusy" @click="closeCredentials()"
@@ -438,8 +427,8 @@
         </div>
       </div>
     </main>
-    <script src="js/capslock.js?v=79bb56c5"></script>
-    <script src="js/password-toggle.js?v=79bb56c5"></script>
-    <script src="js/security.js?v=79bb56c5"></script>
+    <script src="js/capslock.js?v=0b94a277"></script>
+    <script src="js/password-toggle.js?v=0b94a277"></script>
+    <script src="js/security.js?v=0b94a277"></script>
   </body>
 </html>

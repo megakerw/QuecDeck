@@ -21,30 +21,25 @@ case "$TAG" in
 esac
 
 # The sudo entry point must verify credentials itself, even when the caller
-# bypasses the CGI. Read exactly two bounded lines, and never put secrets in
-# the service file, environment or command arguments. Exit 3 means
-# authentication failed (2 is reserved for a busy dispatcher), and 75 means
-# unavailable.
+# bypasses the CGI. Read exactly one bounded line, the developer password, and
+# never put secrets in the service file, environment or command arguments.
+# Exit 3 means authentication failed (2 is reserved for a busy dispatcher),
+# and 75 means unavailable.
 verify_service_credentials() {
-    local payload admin developer extra admin_rc developer_rc
-    payload=$(head -c 515; printf .)
+    local payload developer extra developer_rc
+    payload=$(head -c 258; printf .)
     payload=${payload%.}
-    [ "${#payload}" -le 514 ] || return 3
+    [ "${#payload}" -le 257 ] || return 3
     payload=${payload%$'\n'}
     {
-        IFS= read -r admin || return 3
         IFS= read -r developer || return 3
         IFS= read -r extra && return 3
     } <<< "$payload"
-    [ -n "$admin" ] && [ "${#admin}" -le 256 ] || return 3
     [ -n "$developer" ] && [ "${#developer}" -le 256 ] || return 3
-    # Always check both so failure timing does not identify the wrong secret.
-    printf '%s\n' "$admin" | /usrdata/quecdeck/script/check_password.sh admin admin
-    admin_rc=${PIPESTATUS[1]}
     printf '%s\n' "$developer" | /usrdata/quecdeck/script/check_password.sh dev devadmin
     developer_rc=${PIPESTATUS[1]}
-    [ "$admin_rc" != 75 ] && [ "$developer_rc" != 75 ] || return 75
-    [ "$admin_rc" = 0 ] && [ "$developer_rc" = 0 ] || return 3
+    [ "$developer_rc" != 75 ] || return 75
+    [ "$developer_rc" = 0 ] || return 3
 }
 # Root-owned runtime state lives in /run/quecdeck, never in /tmp: www-data
 # cannot plant a name there, so these writes need no symlink ceremony.

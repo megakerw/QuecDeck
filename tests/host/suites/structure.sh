@@ -316,7 +316,7 @@ t "root helper owns duplicate-key detection" "yes" \
   "$(grep -q 'exit 6' quecdeck/script/ssh_access.sh && grep -q '6) json_result false \"This SSH key has already been added\"' quecdeck/www/cgi-bin/manage_security && ! grep -q 'crypto.subtle\|fingerprintOf' quecdeck/www/js/security.js && echo yes || echo no)"
 
 t "credential inputs are local and conditional" "yes" \
-  "$(grep -q '<template x-if="credentialOpen">' quecdeck/www/ssh.html && [ "$(grep -c 'type="password"' quecdeck/www/ssh.html)" = 2 ] && ! grep -q 'credentialModal\|cred-admin\|cred-dev' quecdeck/www/js/utils.js && echo yes || echo no)"
+  "$(grep -q '<template x-if="credentialOpen">' quecdeck/www/ssh.html && [ "$(grep -c 'type="password"' quecdeck/www/ssh.html)" = 1 ] && ! grep -q 'credentialModal\|cred-admin\|cred-dev' quecdeck/www/js/utils.js && echo yes || echo no)"
 
 # A real form submission makes Chromium classify the disappearing password
 # fields as a successful credential update. Keep the inputs masked, but submit

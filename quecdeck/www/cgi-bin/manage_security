@@ -19,19 +19,19 @@ action=$(get_post_param action)
 current=$(get_post_param current_password)
 
 # Credentials of different privilege must not share one failure counter: a
-# success clears the counter, so a single shared one lets anyone holding the
-# administrator password wipe developer-password guesses made through add_key
-# and retry without limit. Key the accounting on the credential class each
-# action exercises so a success only ever clears its own class.
+# success clears the counter, so a single shared one would let anyone holding
+# the administrator password wipe developer-password guesses by changing their
+# own password, then retry without limit. Key the accounting on the credential
+# class each action exercises so a success only ever clears its own class.
 #
-# The class, not the individual credential: verify_credentials checks both and
-# reports a generic failure on purpose, so a failed key operation cannot be
-# attributed to one side without turning it back into an oracle.
+# The SSH actions verify the developer password and nothing else, so they share
+# its counter rather than holding a second budget against the same secret.
+# "current" carries whichever credential the action proves, so for these it is
+# the developer password.
 case "$action" in
-    change_password)                        auth_class=admin ;;
-    change_developer_password)              auth_class=dev ;;
-    add_key|remove_key|ssh_settings)        auth_class=keys ;;
-    *)                                      auth_class=other ;;
+    change_password)                                                   auth_class=admin ;;
+    change_developer_password|add_key|remove_key|ssh_settings)         auth_class=dev ;;
+    *)                                                                 auth_class=other ;;
 esac
 FAILURE_DIR=/run/quecdeck-web/security-auth-failures/$auth_class
 
@@ -81,29 +81,21 @@ case "$action" in
         ;;
     add_key)
         public_key=$(get_post_param public_key)
-        developer=$(get_post_param developer_password)
-        printf '%s\n%s\n%s\n' "$current" "$developer" "$public_key" |
+        printf '%s\n%s\n' "$current" "$public_key" |
             /opt/bin/sudo /usrdata/quecdeck/script/ssh_access.sh add
         rc=${PIPESTATUS[1]}
         ;;
     remove_key)
         fingerprint=$(get_post_param fingerprint)
-        developer=$(get_post_param developer_password)
-        printf '%s\n%s\n' "$current" "$developer" |
+        printf '%s\n' "$current" |
             /opt/bin/sudo /usrdata/quecdeck/script/ssh_access.sh remove "$fingerprint"
         rc=${PIPESTATUS[1]}
         ;;
     ssh_settings)
         enabled=$(get_post_param ssh_enabled)
         port=$(get_post_param ssh_port)
-        developer=$(get_post_param developer_password)
-        if [ -z "$developer" ] || [ "${#developer}" -gt 256 ]; then
-            bf_unlock
-            json_result false "Developer password is required"
-            exit 0
-        fi
         # Both are validated by the helper before they reach a config file.
-        printf '%s\n%s\n' "$current" "$developer" |
+        printf '%s\n' "$current" |
             /opt/bin/sudo /usrdata/quecdeck/script/ssh_access.sh settings "$enabled" "$port"
         rc=${PIPESTATUS[1]}
         ;;
@@ -133,7 +125,8 @@ if [ "$rc" = 2 ] || [ "$rc" = 13 ]; then
         json_result false "Administrator and developer passwords must be different"
     else
         case "$action" in
-            change_password|change_developer_password|add_key|remove_key|ssh_settings) json_result false "Administrator or developer password is incorrect" ;;
+            change_password) json_result false "Administrator password is incorrect" ;;
+            change_developer_password|add_key|remove_key|ssh_settings) json_result false "Developer password is incorrect" ;;
             *) json_result false "Current password is incorrect" ;;
         esac
     fi

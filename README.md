@@ -86,7 +86,7 @@ Reboot is in the System menu in the navigation bar, reachable from any page.
 - Install, update, and uninstall the OpenSSH server from the page itself. The installer menu offers the same actions
 - Enable or disable the server and choose its LAN-only port. The firewall opens that port only while SSH is enabled
 - Manage up to 5 root public keys. QuecDeck accepts Ed25519, ECDSA, and RSA keys without key options. Private keys are rejected
-- Every change on this page requires both the administrator and the developer password, because SSH access grants root. The service does not start without a key or while disabled
+- Every change on this page requires the developer password, because SSH access grants root. The service does not start without a key or while disabled
 
 ### Watchcat and Scheduled Restart
 - **Watchcat:** ping-based watchdog that reboots the modem when connectivity is lost, with ping statistics, failure tracking, and a persistent reboot log. A reboot takes at least three rounds in which every configured target failed, and repeated failed reboots back off rather than looping
@@ -168,7 +168,7 @@ QuecDeck is intended for an owner-operated modem on a trusted local network. Its
 - **First-time setup assumes a trusted LAN.** The setup wizard is available without credentials until the administrator password is created, and the first client to complete it becomes the administrator. Do it immediately, with no untrusted clients on the network.
 - **A compromised web process can forge application sessions.** Session and developer-unlock state belongs to `www-data`, so code running as that account can mint an administrator session and reach developer AT commands. The developer password is a feature gate against an ordinary admin session, not containment of a compromised web tier.
 - **Password throttling is pacing, not a lockout.** The per-IP lockout guards the HTTP login path, but `www-data` can call the root password-check helper directly. That helper serializes checks and delays failures, which bounds the rate without stopping it. Use strong, unrelated admin and developer passwords rather than relying on throttling. The shared per-credential lock also means sustained failed checks can briefly make legitimate logins return unavailable, which is an accepted trade.
-- **SSH changes always require both passwords.** Installing, enabling, changing the port, and adding or removing a key all ask for the administrator and developer passwords, because SSH access grants root. A forged session carries no credential, so it cannot turn a key back on.
+- **SSH changes always require the developer password.** Installing, enabling, changing the port, and adding or removing a key all ask for it, because SSH access grants root. A forged session carries no credential, so it cannot turn a key back on, and the developer password is a credential the web account never holds and that a stolen administrator password does not yield.
 - **Release checksums detect corruption, not publisher compromise.** The release and its manifest come from the same repository, so verification cannot protect against a compromised publishing account.
 - **HTTPS uses a self-signed device certificate.** Verify the expected certificate rather than dismissing an unexpected change, especially on an untrusted LAN.
 - **Clean installation boundary.** Releases from before the current installation generation are not updated in place, so legacy login, SSH, and package configuration cannot be carried forward.

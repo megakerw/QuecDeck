@@ -46,23 +46,23 @@ for _action in install update uninstall; do
     _args=(--service "$_action")
     [ "$_action" != install ] || _args+=(2222)
     t "direct $_action rejects absent credentials" "3::no" "$(_dispatch_case '' "${_args[@]}")"
-    t "direct $_action checks developer even when admin fails" "3:admin,dev,:no" \
-        "$(_dispatch_case $'wrong\ndeveloper-secret' "${_args[@]}")"
-    t "direct $_action rejects incorrect developer" "3:admin,dev,:no" \
-        "$(_dispatch_case $'admin-secret\nwrong' "${_args[@]}")"
-    t "direct $_action reports unavailable verifier" "75:admin,dev,:no" \
-        "$(_dispatch_case $'unavailable\ndeveloper-secret' "${_args[@]}")"
+    t "direct $_action rejects incorrect developer" "3:dev,:no" \
+        "$(_dispatch_case 'wrong' "${_args[@]}")"
+    t "direct $_action reports unavailable verifier" "75:dev,:no" \
+        "$(_dispatch_case 'unavailable' "${_args[@]}")"
+    t "direct $_action never checks the administrator credential" "3:dev,:no" \
+        "$(_dispatch_case 'admin-secret' "${_args[@]}")"
     t "direct $_action rejects extra credential lines" "3::no" \
-        "$(_dispatch_case $'admin-secret\ndeveloper-secret\nextra' "${_args[@]}")"
-    t "direct $_action accepts both credentials" "0:admin,dev,:yes" \
-        "$(_dispatch_case $'admin-secret\ndeveloper-secret' "${_args[@]}")"
+        "$(_dispatch_case $'developer-secret\nextra' "${_args[@]}")"
+    t "direct $_action accepts the developer credential" "0:dev,:yes" \
+        "$(_dispatch_case 'developer-secret' "${_args[@]}")"
     t "$_action unit and output contain no credentials" "yes" \
         "$([ -f "$_update_auth_fixture/units/install_quecdeck_sshd.service" ] && ! grep -qE 'admin-secret|developer-secret' "$_update_auth_fixture/units/"* "$_update_auth_fixture/output" && echo yes || echo no)"
 done
 t "package check does not require passwords" "0::yes" "$(_dispatch_case '' --service check)"
 t "direct worker entry cannot bypass credentials" "1::no" "$(_dispatch_case '' --service-run uninstall)"
 t "oversized credential rejected before dispatch" "3::no" \
-    "$(_dispatch_case "$(printf '%0257d' 0)"$'\ndeveloper-secret' --service uninstall)"
+    "$(_dispatch_case "$(printf '%0257d' 0)" --service uninstall)"
 for _tag in $'v1.2.3\nExecStartPre=/bin/true' $'junk\nv1.2.3' $'v1.2.3\n' $'v1.2.3\r' 'v1.2.3 extra' ''; do
     t "root rejects malformed tag $(printf %q "$_tag")" "1::no" "$(_dispatch_case '' "$_tag")"
     t "fetch rejects malformed tag $(printf %q "$_tag")" "1::no" "$(_dispatch_case '' --fetch "$_tag")"
@@ -104,12 +104,12 @@ for _tag in 'v1.2.3%0AExecStartPre=/bin/true' 'junk%0Av1.2.3' 'v1.2.3%0D' 'v1.2.
 done
 t "CGI accepts valid version tag" '{"ok":true,"tag":"v1.2.3"}' \
     "$(_update_cgi_case trigger_update 'tag=v1.2.3' 0)"
-_ssh_form='action=install&port=2222&admin_password=admin-secret&developer_password=developer-secret'
+_ssh_form='action=install&port=2222&developer_password=developer-secret'
 t "SSH CGI forwards accepted dispatch" '{"ok":true}' "$(_update_cgi_case trigger_sshd_action "$_ssh_form" 0)"
-t "SSH CGI passes both passwords only on stdin" $'admin-secret\ndeveloper-secret' "$(cat "$_update_auth_fixture/sudo-body")"
+t "SSH CGI passes the developer password only on stdin" developer-secret "$(cat "$_update_auth_fixture/sudo-body")"
 t "SSH CGI argv contains no passwords" "yes" \
     "$(! grep -qE 'admin-secret|developer-secret' "$_update_auth_fixture/sudo-args" && echo yes || echo no)"
-t "SSH CGI counts root authentication failures" '{"ok":false,"error":"Administrator or developer password is incorrect"}' \
+t "SSH CGI counts root authentication failures" '{"ok":false,"error":"Developer password is incorrect"}' \
     "$(_update_cgi_case trigger_sshd_action "$_ssh_form" 3)"
 t "SSH CGI records failure without clearing it" fail "$(cat "$_update_auth_fixture/bf")"
 t "SSH CGI reports unavailable verification" '{"ok":false,"error":"Password verification is temporarily unavailable"}' \

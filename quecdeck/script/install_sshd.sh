@@ -529,7 +529,7 @@ uninstall_sshd() {
     # and unlinking it would leave a waiter holding a lock on an unnamed inode
     # while the next caller locks a freshly created one.
     if [ -s /opt/etc/ssh/authorized_keys ]; then
-        echo -e "\e[1;33mRemoving authorized SSH keys. Re-adding one needs the administrator and developer passwords.\e[0m"
+        echo -e "\e[1;33mRemoving authorized SSH keys. Re-adding one needs the developer password.\e[0m"
     fi
     rm -rf /opt/etc/ssh
     trap 'remount_ro' EXIT

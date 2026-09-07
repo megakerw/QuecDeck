@@ -307,16 +307,18 @@ list_keys() {
     done
 }
 
-verify_credentials() {
-    local admin_rc dev_rc
-    # Always check both credentials so timing and the generic error do not
-    # reveal which one failed. A successful check has no pacing delay.
-    printf '%s\n' "$1" | /usrdata/quecdeck/script/check_password.sh admin admin
-    admin_rc=${PIPESTATUS[1]}
-    printf '%s\n' "$2" | /usrdata/quecdeck/script/check_password.sh dev devadmin
+# The developer password alone authorizes every SSH change. The session already
+# stands for an administrator login, so re-entering that password mostly
+# re-proves what the session claims; its real value was against a forged
+# session, which this defeats equally while also surviving a stolen
+# administrator password. Only one secret is checked here, so there is no
+# failure to disambiguate and no timing to equalize.
+verify_developer_credential() {
+    local dev_rc
+    printf '%s\n' "$1" | /usrdata/quecdeck/script/check_password.sh dev devadmin
     dev_rc=${PIPESTATUS[1]}
-    [ "$admin_rc" != 75 ] && [ "$dev_rc" != 75 ] || return 75
-    [ "$admin_rc" = 0 ] && [ "$dev_rc" = 0 ]
+    [ "$dev_rc" != 75 ] || return 75
+    [ "$dev_rc" = 0 ]
 }
 
 print_saved_state() {
@@ -350,18 +352,16 @@ case "${1:-}" in
         [ "$#" -eq 1 ] || exit 1
         print_saved_state
         ;;
-    # Gated on BOTH credentials, like every other change the SSH page makes. The
-    # administrator password alone would be defensible (a settings change grants
-    # no access on its own, since keys_ready and the unit's ConditionPathExists
-    # both refuse the start without a key), but one rule for the page beats a
-    # smaller ask per action. Requiring a credential at all is what stops a
-    # forged www-data session from switching an existing key back on.
+    # Gated on the developer password, like every other change the SSH page
+    # makes. Requiring a credential at all is what stops a forged www-data
+    # session from switching an existing key back on; requiring this one means a
+    # stolen administrator password cannot do it either.
     #
     # An unset developer password is exit 8, as in the key arms: a missing
     # precondition, not a wrong password.
     #
     # The enabled state and port stay in argv because neither is a secret. The
-    # passwords arrive on stdin. Both values are validated before they reach a
+    # password arrives on stdin. Both values are validated before they reach a
     # configuration file.
     settings)
         [ "$#" -eq 3 ] || exit 1
@@ -371,24 +371,22 @@ case "${1:-}" in
         case "$SSH_ENABLED" in 0|1) ;; *) exit 1 ;; esac
         valid_ssh_port "$SSH_PORT" || exit 1
         PAYLOAD=$(
-            head -c 1025
+            head -c 258
             printf .
         )
         PAYLOAD=${PAYLOAD%.}
-        [ "${#PAYLOAD}" -le 1024 ] || exit 1
+        [ "${#PAYLOAD}" -le 257 ] || exit 1
         PAYLOAD=${PAYLOAD%$'\n'}
         [ -s /opt/etc/.htpasswd_dev ] || exit 8
         {
-            IFS= read -r ADMIN_PASSWORD || exit 1
             IFS= read -r DEV_PASSWORD || exit 1
             IFS= read -r EXTRA && exit 1
         } <<< "$PAYLOAD"
-        [ -n "$ADMIN_PASSWORD" ] && [ "${#ADMIN_PASSWORD}" -le 256 ] || exit 2
         [ -n "$DEV_PASSWORD" ] && [ "${#DEV_PASSWORD}" -le 256 ] || exit 2
         exec 9>>"$LOCK" || exit 1
         chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
         flock_wait 9 5 || exit 75
-        verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
+        verify_developer_credential "$DEV_PASSWORD"
         credential_rc=$?
         [ "$credential_rc" != 75 ] || exit 75
         [ "$credential_rc" = 0 ] || exit 2
@@ -424,19 +422,17 @@ case "${1:-}" in
         [ "${#PAYLOAD}" -le 9000 ] || exit 1
         PAYLOAD=${PAYLOAD%$'\n'}
         {
-            IFS= read -r ADMIN_PASSWORD || exit 1
             IFS= read -r DEV_PASSWORD || exit 1
             IFS= read -r KEY_LINE || exit 1
             IFS= read -r EXTRA && exit 1
         } <<< "$PAYLOAD"
-        [ -n "$ADMIN_PASSWORD" ] && [ "${#ADMIN_PASSWORD}" -le 256 ] || exit 2
         [ -n "$DEV_PASSWORD" ] && [ "${#DEV_PASSWORD}" -le 256 ] || exit 2
         valid_key_syntax "$KEY_LINE" || exit 4
         fingerprint_line "$KEY_LINE" >/dev/null || exit 4
         exec 9>>"$LOCK" || exit 1
         chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
         flock_wait 9 5 || exit 75
-        verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
+        verify_developer_credential "$DEV_PASSWORD"
         credential_rc=$?
         [ "$credential_rc" != 75 ] || exit 75
         [ "$credential_rc" = 0 ] || exit 2
@@ -496,23 +492,21 @@ case "${1:-}" in
         [ "${#fp_body}" -ge 20 ] && [ "${#fp_body}" -le 64 ] || exit 4
         case "$fp_body" in *[!A-Za-z0-9+/]*) exit 4 ;; esac
         PAYLOAD=$(
-            head -c 1025
+            head -c 258
             printf .
         )
         PAYLOAD=${PAYLOAD%.}
-        [ "${#PAYLOAD}" -le 1024 ] || exit 1
+        [ "${#PAYLOAD}" -le 257 ] || exit 1
         PAYLOAD=${PAYLOAD%$'\n'}
         {
-            IFS= read -r ADMIN_PASSWORD || exit 1
             IFS= read -r DEV_PASSWORD || exit 1
             IFS= read -r EXTRA && exit 1
         } <<< "$PAYLOAD"
-        [ -n "$ADMIN_PASSWORD" ] && [ "${#ADMIN_PASSWORD}" -le 256 ] || exit 2
         [ -n "$DEV_PASSWORD" ] && [ "${#DEV_PASSWORD}" -le 256 ] || exit 2
         exec 9>>"$LOCK" || exit 1
         chown root:root "$LOCK" && chmod 600 "$LOCK" || exit 1
         flock_wait 9 5 || exit 75
-        verify_credentials "$ADMIN_PASSWORD" "$DEV_PASSWORD"
+        verify_developer_credential "$DEV_PASSWORD"
         credential_rc=$?
         [ "$credential_rc" != 75 ] || exit 75
         [ "$credential_rc" = 0 ] || exit 2
