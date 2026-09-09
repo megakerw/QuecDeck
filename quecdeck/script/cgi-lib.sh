@@ -2,9 +2,7 @@
 # Shared CGI helpers. Source this at the top of each CGI script:
 #   . /usrdata/quecdeck/script/cgi-lib.sh
 #
-# bash only. BusyBox ash accepts ${var//x/y} and $(<file) here, so a non-bash
-# caller looks fine until printf -v, which ash prints to stdout instead of
-# assigning: corrupt output rather than an error. Refuse up front.
+# BusyBox ash prints printf -v output and corrupts CGI responses.
 if [ -z "$BASH_VERSION" ]; then
     echo "cgi-lib.sh requires bash. It was sourced by a non-bash shell." >&2
     return 1 2>/dev/null || exit 1
@@ -87,10 +85,17 @@ cgi_output_text() {
     _cgi_headers_sent=1
 }
 
-# Emit an application/json Content-Type header. Call once before any output.
+# Dynamic JSON may expose authenticated device state and must not be cached.
 cgi_output_json() {
-    printf 'Content-type: application/json\r\n\r\n'
+    printf 'Content-type: application/json\r\nCache-Control: no-store\r\n\r\n'
     _cgi_headers_sent=1
+}
+
+cgi_new_operation_id() {
+    local id
+    id=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')
+    [[ "$id" =~ ^[a-f0-9]{32}$ ]] || return 1
+    printf '%s\n' "$id"
 }
 
 # Print an error message and exit 1. Before cgi_output_text/json: sends a

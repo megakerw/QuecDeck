@@ -11,8 +11,10 @@ t "monitoring controllers call only their own endpoints" "yes" \
 t "navigation exposes both monitoring pages" "yes" \
   "$(grep -q "href: '/watchcat.html', label: 'Watchcat'" quecdeck/www/js/nav.js && grep -q "href: '/scheduled-restart.html', label: 'Scheduled Restart'" quecdeck/www/js/nav.js && grep -q 'href="/watchcat.html"' quecdeck/www/deviceinfo.html && grep -q 'href="/scheduled-restart.html"' quecdeck/www/deviceinfo.html && ! grep -q '/monitoring.html' quecdeck/www/js/nav.js quecdeck/www/deviceinfo.html && echo yes || echo no)"
 
-t "Security and SSH pages are wired to their controller and navigation" "yes" \
-  "$(grep -q 'x-data="securityController()"' quecdeck/www/security.html && grep -q 'x-data="securityController(true)"' quecdeck/www/ssh.html && grep_all 'js/security.js' quecdeck/www/security.html quecdeck/www/ssh.html && grep -q "href: '/security.html', label: 'Security'" quecdeck/www/js/nav.js && grep -q "href: '/ssh.html', label: 'SSH'" quecdeck/www/js/nav.js && grep -q 'href="/ssh.html"' quecdeck/www/deviceinfo.html && echo yes || echo no)"
+t "Security and SSH pages use focused controllers and one shared action client" "yes" \
+  "$(grep -q 'x-data="securityController()"' quecdeck/www/security.html && grep -q 'x-data="sshController()"' quecdeck/www/ssh.html && grep -q 'js/security.js' quecdeck/www/security.html && ! grep -q 'js/ssh.js' quecdeck/www/security.html && grep -q 'js/ssh.js' quecdeck/www/ssh.html && ! grep -q 'js/security.js' quecdeck/www/ssh.html && grep_all 'js/security-api.js' quecdeck/www/security.html quecdeck/www/ssh.html && grep -q "href: '/security.html', label: 'Security'" quecdeck/www/js/nav.js && grep -q "href: '/ssh.html', label: 'SSH'" quecdeck/www/js/nav.js && grep -q 'href="/ssh.html"' quecdeck/www/deviceinfo.html && echo yes || echo no)"
+t "SSH and QuecDeck updates share the operation monitor" "yes" \
+  "$(grep_all 'js/operation-monitor.js' quecdeck/www/ssh.html quecdeck/www/update.html && grep_all 'createOperationMonitor' quecdeck/www/js/ssh.js quecdeck/www/js/update.js && echo yes || echo no)"
 t "SSH page supports public-key upload and multiple key rows" "yes" \
   "$(grep -q 'id="public-key-file"' quecdeck/www/ssh.html && grep -q 'accept=".pub,text/plain"' quecdeck/www/ssh.html && grep -q 'x-for="(key, index) in keys"' quecdeck/www/ssh.html && grep -q 'keys.length >= 5' quecdeck/www/ssh.html && echo yes || echo no)"
 t "Password change returns to a clear login state" "yes" \
@@ -105,10 +107,9 @@ unset _entware_writer _entware_mount _entware_rc
 
 t "SSH install uses the non-PAM server with key-only authentication" "yes" \
   "$(grep -q 'openssh-server openssh-keygen' "$_ssh_installer" && grep -q '^AuthenticationMethods publickey$' "$_ssh_installer" && ! grep -q 'UsePAM' "$_ssh_installer" && echo yes || echo no)"
-_sshd_menu=$(sed -n '/^sshd_service() {/,/^}/p' quecdeck.sh)
-t "SSH menu dispatches only to the installed root helper" "yes" \
-  "$(printf '%s\n' "$_sshd_menu" | grep -q 'script/install_sshd.sh' && ! printf '%s\n' "$_sshd_menu" | grep -q 'wget\|GITROOT\|opkg install' && echo yes || echo no)"
-_sshd_server_view=$(sed -n '/get serverView() {/,/^    },$/p' quecdeck/www/js/security.js)
+t "SSH lifecycle has one supported web orchestration path" "yes" \
+  "$(! grep -q 'sshd_service\|SSH server (install/uninstall)' quecdeck.sh && ! grep -q 'read -r -p' "$_ssh_installer" && grep -q -- '--install <port>' "$_ssh_installer" && echo yes || echo no)"
+_sshd_server_view=$(sed -n '/get serverView() {/,/^    },$/p' quecdeck/www/js/ssh.js)
 # A finished removal must be tested before sshInstalled, which stays true until
 # the get_security refresh lands. Reversing them re-exposes the management panel
 # for a server that was just removed.
@@ -116,25 +117,25 @@ t "SSH removal has one result view before installation returns" "yes" \
   "$( _removed=$(printf '%s\n' "$_sshd_server_view" | grep -n "'removed'" | head -1 | cut -d: -f1); _installed=$(printf '%s\n' "$_sshd_server_view" | grep -n 'sshInstalled' | head -1 | cut -d: -f1); [ -n "$_removed" ] && [ -n "$_installed" ] && [ "$_removed" -lt "$_installed" ] && grep -q "x-if=\"serverView === 'removed'\"" quecdeck/www/ssh.html && grep -q '>Dismiss</button>' quecdeck/www/ssh.html && echo yes || echo no)"
 # Layout and contents both derive from serverView, so they cannot disagree.
 t "SSH server card branches on one exhaustive predicate" "yes" \
-  "$( _views=0; for _v in loading removing removed install manage; do grep -q "x-if=\"serverView === '$_v'\"" quecdeck/www/ssh.html && _views=$((_views + 1)); done; [ "$_views" = 5 ] && grep -q "serverView === 'removing' || this.serverView === 'removed'" quecdeck/www/js/security.js && ! grep -q 'x-if="loaded' quecdeck/www/ssh.html && echo yes || echo no)"
+  "$( _views=0; for _v in loading removing removed install manage; do grep -q "x-if=\"serverView === '$_v'\"" quecdeck/www/ssh.html && _views=$((_views + 1)); done; [ "$_views" = 5 ] && grep -q "serverView === 'removing' || this.serverView === 'removed'" quecdeck/www/js/ssh.js && ! grep -q 'x-if="loaded' quecdeck/www/ssh.html && echo yes || echo no)"
 t "enabled SSH distinguishes waiting for a key from a failed start" "yes" \
-  "$(grep -q 'keys.length === 0' quecdeck/www/js/security.js && grep -q 'waiting for an authorized key' quecdeck/www/js/security.js && grep -q 'Enabled with a key, but the server is not running' quecdeck/www/js/security.js && echo yes || echo no)"
+  "$(grep -q 'keys.length === 0' quecdeck/www/js/ssh.js && grep -q 'waiting for an authorized key' quecdeck/www/js/ssh.js && grep -q 'Enabled with a key, but the server is not running' quecdeck/www/js/ssh.js && echo yes || echo no)"
 # The card paints a real body in every state, so no state collapses it to a bare
 # header. It must not depend on x-show: the CSP has no style-src-attr allowance.
 t "SSH panels render a body before initial status loads" "yes" \
-  "$(grep -q "if (!this.loaded) return 'loading';" quecdeck/www/js/security.js && grep -q 'Reading the SSH server status' quecdeck/www/ssh.html && grep -q 'panel-loading' quecdeck/www/ssh.html && ! grep -q 'ssh-panel-layout.*x-show' quecdeck/www/ssh.html && ! grep -q 'ssh-keys-column.*x-show' quecdeck/www/ssh.html && echo yes || echo no)"
+  "$(grep -q "if (!this.loaded) return 'loading';" quecdeck/www/js/ssh.js && grep -q 'Reading the SSH server status' quecdeck/www/ssh.html && grep -q 'panel-loading' quecdeck/www/ssh.html && ! grep -q 'ssh-panel-layout.*x-show' quecdeck/www/ssh.html && ! grep -q 'ssh-keys-column.*x-show' quecdeck/www/ssh.html && echo yes || echo no)"
 t "SSH panel order uses the same nested columns at every width" "yes" \
   "$(! grep -qE 'ssh-(primary-column|server-slot|keys-column|software-slot).*(display: contents|order:)' quecdeck/www/css/styles.css && echo yes || echo no)"
 # The pending toggle is reported before any running-state wording, so an unsaved
 # change never reads as the server's current condition.
 t "unsaved SSH toggle describes its pending state" "yes" \
-  "$( _hint=$(sed -n '/get enableHint() {/,/^    },$/p' quecdeck/www/js/security.js); _pending=$(printf '%s\n' "$_hint" | grep -n 'sshEnabled !== this.savedSshEnabled' | head -1 | cut -d: -f1); _active=$(printf '%s\n' "$_hint" | grep -n 'this.sshActive' | head -1 | cut -d: -f1); [ -n "$_pending" ] && [ -n "$_active" ] && [ "$_pending" -lt "$_active" ] && printf '%s\n' "$_hint" | grep -q 'SSH will be enabled after you save settings' && printf '%s\n' "$_hint" | grep -q 'SSH will be disabled after you save settings' && echo yes || echo no)"
+  "$( _hint=$(sed -n '/get enableHint() {/,/^    },$/p' quecdeck/www/js/ssh.js); _pending=$(printf '%s\n' "$_hint" | grep -n 'sshEnabled !== this.savedSshEnabled' | head -1 | cut -d: -f1); _active=$(printf '%s\n' "$_hint" | grep -n 'this.sshActive' | head -1 | cut -d: -f1); [ -n "$_pending" ] && [ -n "$_active" ] && [ "$_pending" -lt "$_active" ] && printf '%s\n' "$_hint" | grep -q 'SSH will be enabled after you save settings' && printf '%s\n' "$_hint" | grep -q 'SSH will be disabled after you save settings' && echo yes || echo no)"
 t "SSH lifecycle actions wait for their completion poll before refreshing status" "yes" \
-  "$(grep -q 'refreshOnSuccess = true' quecdeck/www/js/security.js && [ "$(grep -c 'refreshOnSuccess: false' quecdeck/www/js/security.js)" -eq 3 ] && echo yes || echo no)"
+  "$(grep -q 'refreshOnSuccess = true' quecdeck/www/js/ssh.js && [ "$(grep -c 'refreshOnSuccess: false' quecdeck/www/js/ssh.js)" -eq 3 ] && echo yes || echo no)"
 t "SSH progress polls immediately and keeps fast actions readable" "yes" \
-  "$(grep -q '^      poll();$' quecdeck/www/js/security.js && grep -q 'setInterval(poll, 1000)' quecdeck/www/js/security.js && grep -q 'setTimeout(finish, 750)' quecdeck/www/js/security.js && ! grep -q 'sshdProgressSince' quecdeck/www/js/security.js && echo yes || echo no)"
+  "$(grep -q 'intervalMs: 1000' quecdeck/www/js/ssh.js && grep -q 'immediate = true' quecdeck/www/js/operation-monitor.js && grep -q 'setTimeout(finish, 750)' quecdeck/www/js/ssh.js && ! grep -q 'sshdProgressSince' quecdeck/www/js/ssh.js && echo yes || echo no)"
 t "SSH progress requires the exact action and recovers missing shared status" "yes" \
-  "$( _poll=$(sed -n '/^    startSshdPolling() {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_poll" | grep -q "expectedKind = 'sshd:' + expectedAction" && printf '%s\n' "$_poll" | grep -q 'data.kind !== expectedKind' && printf '%s\n' "$_poll" | grep -q 'resetSshdView' && echo yes || echo no)"
+  "$(grep -q "expectedKind = 'sshd:' + expectedAction" quecdeck/www/js/ssh.js && grep -q 'data.operation_id !== operationId || data.kind !== kind' quecdeck/www/js/operation-monitor.js && sed -n '/onMismatch:/,/},/p' quecdeck/www/js/ssh.js | grep -q 'resetSshdView' && echo yes || echo no)"
 _sshd_dispatch=$(sed -n '/systemctl start --no-block install_quecdeck_sshd/,/echo "Started\."/p' quecdeck/script/run_update.sh)
 t "SSH credential dialog is released as soon as systemd accepts the action" "yes" \
   "$(printf '%s\n' "$_sshd_dispatch" | grep -q 'systemctl start --no-block' && ! printf '%s\n' "$_sshd_dispatch" | grep -q 'sleep\|is-active' && echo yes || echo no)"
@@ -173,14 +174,14 @@ t "SSH removal reports reaching its commit point distinctly" "yes" \
   "$( _uninstall=$(extract_fn "$_ssh_installer" uninstall_sshd); _install=$(extract_fn "$_ssh_installer" install_sshd); printf '%s\n' "$_uninstall" | grep -q 'return "\$RC_PARTIAL_REMOVAL"' && ! printf '%s\n' "$_install" | grep -q 'RC_PARTIAL_REMOVAL' && [ "$(grep -c '^RC_[A-Z_]*=' "$_ssh_installer")" -ge 12 ] && [ "$(grep -oE '^RC_[A-Z_]*=[0-9]+' "$_ssh_installer" | cut -d= -f2 | sort | uniq -d | grep -c .)" -eq 0 ] && echo yes || echo no)"
 t "SSH index refresh is separate from every mutating action" "yes" \
   "$( _check=$(extract_fn "$_ssh_installer" check_packages); _install=$(extract_fn "$_ssh_installer" install_sshd); printf '%s\n' "$_check" | grep -q 'opkg update' && ! printf '%s\n' "$_check" | grep -qE 'opkg (install|remove)' && ! printf '%s\n' "$_install" | grep -q 'opkg update' && echo yes || echo no)"
-t "SSH console menu refuses a stdin that is not a terminal" "yes" \
-  "$( _tty=$(grep -n '\[ -t 0 \] || exit' "$_ssh_installer" | head -1 | cut -d: -f1); _read=$(grep -n 'read -r -p' "$_ssh_installer" | head -1 | cut -d: -f1); [ -n "$_tty" ] && [ -n "$_read" ] && [ "$_tty" -lt "$_read" ] && echo yes || echo no)"
+t "SSH worker rejects a missing explicit action" "yes" \
+  "$(tail -5 "$_ssh_installer" | grep -q 'exit "\$RC_USAGE"' && ! grep -q 'interactive console menu' "$_ssh_installer" && echo yes || echo no)"
 _ssh_prepare_line=$(grep -n 'prepare_ssh_accounts ||' "$_ssh_installer" | cut -d: -f1)
 _ssh_install_line=$(grep -n 'opkg install --force-maintainer openssh-server openssh-keygen' "$_ssh_installer" | cut -d: -f1)
 _ssh_start_line=$(grep -n 'systemctl restart sshd ||' "$_ssh_installer" | cut -d: -f1)
 t "SSH service account is ready before daemon installation and start" "yes" \
   "$([ -n "$_ssh_prepare_line" ] && [ "$_ssh_prepare_line" -lt "$_ssh_install_line" ] && [ "$_ssh_install_line" -lt "$_ssh_start_line" ] && echo yes || echo no)"
-unset _ssh_installer _ssh_accounts _sshd_menu _ssh_config _ssh_prepare_line _ssh_install_line _ssh_start_line _install _failure _read _abort _packages _managed _missing
+unset _ssh_installer _ssh_accounts _ssh_config _ssh_prepare_line _ssh_install_line _ssh_start_line _install _failure _read _abort _packages _managed _missing
 
 # Branch installs must pin one ref for the manifest, the installer, and the
 # archive. Leaving the tag empty falls back to the updater's own default, which
@@ -307,13 +308,13 @@ t "panel action rows use one class" "yes" \
 # Add key is inert until there is something to add. readKeyFile writes the file
 # contents into the same publicKey model, so one check covers paste and upload.
 t "add key is gated on a usable key" "yes" \
-  "$(grep -q 'keys.length >= 5 || !keyReady"' quecdeck/www/ssh.html && grep -q '@input="validateKey()"' quecdeck/www/ssh.html && grep -q 'this.publicKey = text.trim()' quecdeck/www/js/security.js && echo yes || echo no)"
+  "$(grep -q 'keys.length >= 5 || !keyReady"' quecdeck/www/ssh.html && grep -q '@input="validateKey()"' quecdeck/www/ssh.html && grep -q 'this.publicKey = text.trim()' quecdeck/www/js/ssh.js && echo yes || echo no)"
 # The browser catches only cheap mistakes. Public-key parsing and duplicate
 # detection stay at the root helper, so there is one authoritative rule set.
 t "client key check stays preliminary" "yes" \
-  "$( _v=$(sed -n '/^    validateKey() {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_v" | grep -q '8192' && printf '%s\n' "$_v" | grep -q 'PRIVATE KEY' && ! printf '%s\n' "$_v" | grep -q 'ssh-ed25519\|crypto.subtle' && echo yes || echo no)"
+  "$( _v=$(sed -n '/^    validateKey() {/,/^    },/p' quecdeck/www/js/ssh.js); printf '%s\n' "$_v" | grep -q '8192' && printf '%s\n' "$_v" | grep -q 'PRIVATE KEY' && ! printf '%s\n' "$_v" | grep -q 'ssh-ed25519\|crypto.subtle' && echo yes || echo no)"
 t "root helper owns duplicate-key detection" "yes" \
-  "$(grep -q 'exit 6' quecdeck/script/ssh_access.sh && grep -q '6) json_result false \"This SSH key has already been added\"' quecdeck/www/cgi-bin/manage_security && ! grep -q 'crypto.subtle\|fingerprintOf' quecdeck/www/js/security.js && echo yes || echo no)"
+  "$(grep -q 'exit 6' quecdeck/script/ssh_access.sh && grep -q '6) json_result false \"This SSH key has already been added\"' quecdeck/www/cgi-bin/manage_security && ! grep -q 'crypto.subtle\|fingerprintOf' quecdeck/www/js/ssh.js && echo yes || echo no)"
 
 t "credential inputs are local and conditional" "yes" \
   "$(grep -q '<template x-if="credentialOpen">' quecdeck/www/ssh.html && [ "$(grep -c 'type="password"' quecdeck/www/ssh.html)" = 1 ] && ! grep -q 'credentialModal\|cred-admin\|cred-dev' quecdeck/www/js/utils.js && echo yes || echo no)"
@@ -322,20 +323,25 @@ t "credential inputs are local and conditional" "yes" \
 # fields as a successful credential update. Keep the inputs masked, but submit
 # through explicit keyboard/click handlers and clear them before removal.
 t "credential dialog does not submit a login-like form" "yes" \
-  "$( _c=$(sed -n '/^    closeCredentials() {/,/^    },/p' quecdeck/www/js/security.js); ! grep -q '<form\|type="submit"' quecdeck/www/ssh.html && grep -q '@keydown.enter.prevent="submitCredentials()"' quecdeck/www/ssh.html && grep -q '@click="submitCredentials()"' quecdeck/www/ssh.html && printf '%s\n' "$_c" | grep -q "el.value = ''" && [ "$(printf '%s\n' "$_c" | grep -n "el.value = ''" | cut -d: -f1)" -lt "$(printf '%s\n' "$_c" | grep -n 'credentialOpen = false' | cut -d: -f1)" ] && echo yes || echo no)"
+  "$( _c=$(sed -n '/^    closeCredentials() {/,/^    },/p' quecdeck/www/js/ssh.js); ! grep -q '<form\|type="submit"' quecdeck/www/ssh.html && grep -q '@keydown.enter.prevent="submitCredentials()"' quecdeck/www/ssh.html && grep -q '@click="submitCredentials()"' quecdeck/www/ssh.html && printf '%s\n' "$_c" | grep -q "el.value = ''" && [ "$(printf '%s\n' "$_c" | grep -n "el.value = ''" | cut -d: -f1)" -lt "$(printf '%s\n' "$_c" | grep -n 'credentialOpen = false' | cut -d: -f1)" ] && echo yes || echo no)"
 
 # The file picker fills the textarea and then clears itself, so a key lives in
 # exactly one place. Without the reset, editing or emptying the textarea leaves a
 # filename on display that does not match what would be submitted.
 t "the key file picker resets after loading" "yes" \
-  "$( _r=$(sed -n '/^    readKeyFile(event) {/,/^    },/p' quecdeck/www/js/security.js); printf '%s\n' "$_r" | grep -q 'finally' && printf '%s\n' "$_r" | grep -q "input.value = ''" && printf '%s\n' "$_r" | grep -q 'this.validateKey()' && echo yes || echo no)"
+  "$( _r=$(sed -n '/^    readKeyFile(event) {/,/^    },/p' quecdeck/www/js/ssh.js); printf '%s\n' "$_r" | grep -q 'finally' && printf '%s\n' "$_r" | grep -q "input.value = ''" && printf '%s\n' "$_r" | grep -q 'this.validateKey()' && echo yes || echo no)"
 
 # Assert every plain click handler resolves to a controller method.
 _handler_missing=0
-for _page in quecdeck/www/ssh.html quecdeck/www/security.html; do
+for _binding in \
+    quecdeck/www/ssh.html:quecdeck/www/js/ssh.js \
+    quecdeck/www/security.html:quecdeck/www/js/security.js; do
+    _page=${_binding%%:*}
+    _controller=${_binding#*:}
     for _fn in $(grep -o '@click="[a-zA-Z_][a-zA-Z0-9_]*(' "$_page" | sed 's/@click="//; s/($//' | sort -u); do
-        grep -q "^    $_fn(" quecdeck/www/js/security.js || _handler_missing=1
+        [ "$_fn" = location ] && continue
+        grep -q "^    $_fn(" "$_controller" || _handler_missing=1
     done
 done
 t "every SSH and Security click handler is defined" "0" "$_handler_missing"
-unset _handler_missing _page _fn
+unset _handler_missing _binding _page _controller _fn

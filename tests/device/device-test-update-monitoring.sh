@@ -15,7 +15,7 @@
 # read-only root remount.
 
 STATE_DIR=/usrdata/quecdeck-update-monitoring-test
-STATUS=/run/quecdeck/update.status
+STATUS=/run/quecdeck/update.operation
 QUECDECK=/usrdata/quecdeck
 WATCHCAT_CONFIG=$QUECDECK/var/watchcat.json
 SCHEDULED_CONFIG=$QUECDECK/var/scheduled_restart.json
@@ -52,7 +52,7 @@ watch_update() { # internal: watch_update <state-dir>
             : > "$dir/transaction-seen"
         fi
         if [ "$transaction_seen" = "1" ]; then
-            status=$(cat "$STATUS" 2>/dev/null)
+            status=$(awk 'NR==1 { print $3 }' "$STATUS" 2>/dev/null)
             case "$status" in
                 done|failed|failed:rollback_ok|failed:rollback_failed)
                     if [ "$(root_mode)" = ro ] && [ ! -e "$TRANSIENT_UNIT" ]; then
@@ -135,7 +135,7 @@ case "$1" in
         [ "$(cat /proc/sys/kernel/random/boot_id)" = "$(cat "$STATE_DIR/boot-id")" ] \
             && ok "the modem did not reboot during the update" \
             || bad "the boot ID changed during the update"
-        [ "$(cat "$STATUS" 2>/dev/null)" = done ] \
+        [ "$(awk 'NR==1 { print $3 }' "$STATUS" 2>/dev/null)" = done ] \
             && ok "the updater published done" || bad "update status is not done"
         [ -e "$STATE_DIR/transaction-seen" ] \
             && ok "the observer saw the release transaction" \

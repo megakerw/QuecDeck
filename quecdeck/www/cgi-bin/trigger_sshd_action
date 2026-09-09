@@ -1,8 +1,4 @@
 #!/bin/bash
-# Starts an SSH component action. The work runs detached in a systemd unit, so
-# this validates, accounts for authentication failures, and relays the result.
-# The privileged dispatcher verifies credentials before starting any work.
-# Progress and the outcome come from get_update_log.
 
 . /usrdata/quecdeck/script/cgi-lib.sh
 
@@ -22,22 +18,19 @@ client_ip=$(cgi_client_ip)
 action=$(get_post_param action)
 port=$(get_post_param port)
 developer=$(get_post_param developer_password)
+operation_id=$(cgi_new_operation_id) || {
+    json_result false "Could not create operation ID"
+    exit 0
+}
 
-# One rule for the whole SSH page: every change takes the developer password.
-# The check is exempt because it changes nothing about SSH, though it is not
-# free: it fetches package lists and writes them, so it takes the same lock and
-# the same single-dispatch slot as the rest. The failure class tracks the
-# credential an action exercises, so these share the "dev" class with every
-# other developer-password action and a success clears only that counter.
+# Package checks use session auth. Mutations use developer-password auth.
 case "$action" in
     install|uninstall|update) auth_class=dev ;;
     check)                    auth_class="" ;;
     *) json_result false "Unknown SSH action" ; exit 0 ;;
 esac
 
-# Shape only. The range lives in valid_ssh_port, which install_sshd.sh applies,
-# and the page checks it before submitting. This is here to keep anything but
-# digits out of the argv of a sudo call.
+# Keep nonnumeric input out of privileged arguments.
 if [ "$action" = install ]; then
     case "$port" in
         ''|*[!0-9]*) json_result false "Use port 22, or a port between 1024 and 65535" ; exit 0 ;;
@@ -47,10 +40,10 @@ fi
 start_action() {
     if [ "$action" = install ]; then
         printf '%s\n' "$developer" |
-            /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service install "$port" >/dev/null
+            /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service install "$operation_id" "$port" >/dev/null
     else
         printf '%s\n' "$developer" |
-            /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service "$action" >/dev/null
+            /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service "$action" "$operation_id" >/dev/null
     fi
     rc=${PIPESTATUS[1]}
 }
@@ -61,12 +54,10 @@ report_action() {
     elif [ "$rc" -ne 0 ]; then
         json_result false "Failed to start the SSH action"
     else
-        json_result true
+        printf '{"ok":true,"operation_id":"%s"}\n' "$operation_id"
     fi
 }
 
-# Refreshing the package index changes nothing and reveals nothing, so it rides
-# on the session alone. Every other action verifies a credential first.
 if [ -z "$auth_class" ]; then
     start_action
     report_action

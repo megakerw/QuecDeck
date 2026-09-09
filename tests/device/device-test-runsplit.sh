@@ -9,8 +9,8 @@
 #   /usrdata/root     root:root  root's private home
 #
 # The guard cannot check any of this: a mode is a runtime fact, not a source
-# pattern. Every mode bug in this codebase came from the same cause -- relying
-# on the ambient umask for a security-relevant mode -- and none of them were
+# pattern. Every mode bug in this codebase came from the same cause, relying
+# on the ambient umask for a security-relevant mode, and none of them were
 # visible to a source scan. Hence this file.
 #
 # Run as ROOT on a CONFIGURED device (setup complete):
@@ -45,11 +45,8 @@ cleanup() {
     for _d in "$RUNDIR" "$WEBDIR" /usrdata/root /usrdata/root/bin; do
         rm -f "$_d/$PROBE" 2>/dev/null
     done
-    "$SUDO" "$RUN_UPDATE" --clear-status >/dev/null 2>&1
-    # Clear BOTH layouts unconditionally. "running" is not a terminal state, so
-    # --clear-status will not remove it. A half-cleaned status leaves the UI
-    # stuck on an update banner it can never dismiss.
-    rm -f "$RUNDIR/update.status" "$OLD_STATUS" 2>/dev/null
+    # Test cleanup is root and may remove even a non-terminal fixture record.
+    rm -f "$RUNDIR/update.operation" "$OLD_STATUS" 2>/dev/null
     systemctl reset-failed install_quecdeck_fetch >/dev/null 2>&1
     systemctl reset-failed install_quecdeck >/dev/null 2>&1
     rm -rf "$HARDEN_FIXTURE" "$HARDEN_OUTSIDE" "$MODE_FIXTURE" 2>/dev/null
@@ -60,7 +57,7 @@ echo "=================================================================="
 echo " QuecDeck ownership-rule check"
 echo "=================================================================="
 [ "$(id -u)" = "0" ] || { echo "FATAL: run as root."; exit 1; }
-[ -x "$SUDO" ] || { echo "FATAL: $SUDO missing -- is QuecDeck installed?"; exit 1; }
+[ -x "$SUDO" ] || { echo "FATAL: $SUDO missing. Is QuecDeck installed?"; exit 1; }
 id www-data >/dev/null 2>&1 || { echo "FATAL: www-data user missing."; exit 1; }
 
 # The mutating sections assume the split is DEPLOYED. Against an older install
@@ -280,7 +277,7 @@ done
 
 # ---- C: pre-split paths are unused ---------------------------------------
 echo ""
-echo "[C] pre-split paths are no longer used"
+echo "[C] pre-split paths remain unused"
 if [ "$DEPLOYED" = "0" ]; then
     note "skipped: split not deployed on this device"
 else
@@ -302,7 +299,7 @@ rm -f /tmp/qdsplit-out
 sleep 2
 [ -f "$RUNDIR/install.log" ] \
     && ok "the run wrote $RUNDIR/install.log, not the squatted /tmp path" \
-    || bad "no $RUNDIR/install.log after a trigger -- is the update still using /tmp?"
+    || bad "no $RUNDIR/install.log after a trigger. Is the update still using /tmp?"
 [ "$(cat "$OLD_LOG" 2>/dev/null)" = "SQUATTED" ] \
     && ok "the squatted $OLD_LOG was left untouched" \
     || bad "$OLD_LOG changed: something still writes the pre-split path"
@@ -313,7 +310,7 @@ sleep 2
 # with NO unit alive to finish it", so test that, not the bare string.
 _st=""; _i=0
 while [ "$_i" -lt 45 ]; do
-    _st=$(cat "$RUNDIR/update.status" 2>/dev/null)
+    _st=$(awk 'NR==1 { print $3 }' "$RUNDIR/update.operation" 2>/dev/null)
     case "$_st" in failed*|done) break ;; esac
     _fetch=$(systemctl is-active install_quecdeck_fetch 2>/dev/null)
     _inst=$(systemctl is-active install_quecdeck 2>/dev/null)
@@ -327,7 +324,7 @@ case "$_st" in
             *activating*|*active*) note "still 'running' with a live unit: a slow or offline fetch, not a wedge" ;;
             *) bad "status 'running' with NO unit alive: the wedge is back" ;;
         esac ;;
-    "") bad "no status file written -- run_update.sh could not write $RUNDIR" ;;
+    "") bad "no operation record written. run_update.sh could not write $RUNDIR" ;;
     *)  note "unexpected status '$_st'" ;;
 esac
 fi
@@ -341,7 +338,7 @@ for f in "$RUNDIR/atcmd.log" "$RUNDIR/install.log"; do
     if [ -f "$f" ]; then
         $SUDO -u www-data sh -c "cat $f" >/dev/null 2>&1 \
             && ok "www-data reads $(basename "$f") ($(ls -l "$f" | awk '{print $1, $3}'))" \
-            || bad "www-data CANNOT read $f -- the UI log view will be empty"
+            || bad "www-data CANNOT read $f. The UI log view will be empty"
     else
         note "$f not present yet"
     fi

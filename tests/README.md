@@ -11,8 +11,10 @@ Tests are grouped by the environment they require:
   `structure`. The SMS suite automatically includes its `libraries`
   prerequisite.
 - `host/integration/` contains environment-backed host tests. `host/js/`
-  contains JavaScript unit tests. `host/guards/` contains definitions shared
-  by the pre-commit hook and CI, while `host/support/` contains test utilities.
+  contains JavaScript unit tests, run by `host/ci-checks.sh` where node is
+  available and skipped where it is not. `host/guards/` contains definitions
+  shared by the pre-commit hook and CI, while `host/support/` contains test
+  utilities.
 - `host/ci-checks.sh` contains repository-integrity checks. CI also runs the
   Linux-only auth.lua integration harness.
 - `device/` contains tests that must run on a Quectel modem. Read each script's
@@ -65,6 +67,10 @@ terminal update status, and verification checks the boot ID, status, exact
 configuration hashes, final enabled/disabled states, boot links and read-only
 root filesystem. Repeat once with both features enabled and once with both
 disabled.
+
+Candidate updater commits can be installed directly from a root shell without
+publishing a release. The workflow and restore steps are documented in
+`tools/release-gate-updater.md`.
 
 Operational monitors, diagnostics, performance probes, and release notes remain
 in `tools/`. They are not part of the pass/fail test suites.

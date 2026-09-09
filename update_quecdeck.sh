@@ -1,8 +1,7 @@
 #!/bin/bash
 # QuecDeck self-updater. One committed file, two phases:
-#   update_quecdeck.sh <tag>            bootstrap: register + start the install
-#                                        service (this same file, --install)
-#   update_quecdeck.sh --install <tag>  install: stage, verify, swap, roll back
+#   update_quecdeck.sh <ref> [operation-id]
+#   update_quecdeck.sh --install <ref> <operation-id>
 # The install phase runs as the install_quecdeck systemd oneshot from /run
 # (tmpfs) so it survives the web connection dropping when lighttpd restarts
 # mid-update.
@@ -13,7 +12,7 @@ DIR_NAME="quecdeck"
 SERVICE_FILE="/run/systemd/system/install_quecdeck.service"
 SERVICE_NAME="install_quecdeck"
 LOG_FILE="/run/quecdeck/install.log"
-STATUS_FILE="/run/quecdeck/update.status"
+OPERATION_FILE="/run/quecdeck/update.operation"
 QUECDECK_DIR="/usrdata/quecdeck"
 INSTALL_GENERATION=2
 umask 022
@@ -87,18 +86,23 @@ EOF
     [ "$source_count" -gt 0 ]
 }
 
-# All root-owned runtime state lives here. Root-owned and not world-writable,
-# so www-data can read the log but cannot plant a name for root to follow.
-# Reachable both from run_update.sh and a direct interactive run.
+# www-data can read this directory but cannot create names for root to follow.
 if [ -L /run/quecdeck ] || ! mkdir -p /run/quecdeck ||
    ! chown root:root /run/quecdeck || ! chmod 755 /run/quecdeck; then
     echo "FATAL: cannot create the root-owned update runtime directory." >&2
     exit 1
 fi
 
-# Convert the installer's persisted outcome into the bootstrap's user-facing
-# result. The status file is authoritative. systemctl is only the synchronous
-# wait, and its return code counts only when no terminal status was committed.
+write_operation() { # write_operation <status> [code] [rollback]
+    printf '%s quecdeck %s %s %s\n' "$OPERATION_ID" "$1" "${2:-0}" "${3:-none}" > "${OPERATION_FILE}.tmp" &&
+        chmod 644 "${OPERATION_FILE}.tmp" &&
+        mv "${OPERATION_FILE}.tmp" "$OPERATION_FILE" || {
+            rm -f "${OPERATION_FILE}.tmp"
+            return 1
+        }
+}
+
+# The operation record is authoritative when systemctl and the worker disagree.
 report_install_outcome() { # report_install_outcome <status> <systemctl-rc>
     case "$1" in
         done)
@@ -130,6 +134,8 @@ report_install_outcome() { # report_install_outcome <status> <systemctl-rc>
 if [ "$1" = "--install" ]; then
 # GITUSER/REPONAME/QUECDECK_DIR/PATH come from the shared header above.
 GITTREE="${2:-main}"
+OPERATION_ID="${3:-}"
+[[ "$OPERATION_ID" =~ ^[a-f0-9]{32}$ ]] || { echo "FATAL: invalid operation ID." >&2; exit 1; }
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 
 STAGE_DIR="${QUECDECK_DIR}.new"
@@ -201,20 +207,22 @@ normalize_stage_modes() {
 # Mutual exclusion and liveness are owned by systemd: this runs as the
 # install_quecdeck oneshot, so a concurrent start coalesces and get_update_log
 # reads state via 'systemctl is-active'. No lock or PID file needed.
-if ! echo "running" > "${STATUS_FILE}.tmp" || ! chmod 644 "${STATUS_FILE}.tmp" || ! mv "${STATUS_FILE}.tmp" "$STATUS_FILE"; then
-    rm -f "${STATUS_FILE}.tmp"
+if ! write_operation running; then
     echo "FATAL: cannot record update status. Refusing to install." >&2
     exit 1
 fi
 
 _update_status="failed"
 
-# Atomically write the update status (temp file + rename). Called explicitly at
-# the end of the main flow -- before the self-unit-removal/daemon-reload, which
-# can make systemd cut this process short and skip the EXIT trap -- and again
-# from the EXIT trap.
+# Persist before daemon-reload, which can terminate the transient unit early.
 _write_status() {
-    echo "$1" > "${STATUS_FILE}.tmp" && chmod 644 "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || rm -f "${STATUS_FILE}.tmp"
+    local _status=failed _rollback=none
+    case "$1" in
+        done) _status=done ;;
+        failed:rollback_ok) _rollback=ok ;;
+        failed:rollback_failed) _rollback=failed ;;
+    esac
+    write_operation "$_status" 0 "$_rollback"
 }
 # Copy the install log off tmpfs so it survives the reboot a user reaches for
 # when an update goes wrong. /usrdata is its own writable partition, so this
@@ -340,11 +348,7 @@ preflight_check() {
         return 1
     fi
 
-    # The download and extraction live in /run/quecdeck (tmpfs), a separate
-    # filesystem from /usrdata AND from /tmp: the archive and the extracted
-    # repo tree coexist briefly, so require ~2x the install size there as well.
-    # Must track RELEASE_TARBALL/RELEASE_EXTRACT_DIR: measuring /tmp here would
-    # check a filesystem the update no longer stages into.
+    # Archive and extraction coexist under /run, so reserve twice the install size.
     _pf_run_needed=$(du -sk "$QUECDECK_DIR" 2>/dev/null | awk '{print int($1*2)}')
     _pf_run_needed=${_pf_run_needed:-4000}
     # Keep 1 MiB available for systemd and other runtime state while staging.
@@ -864,8 +868,7 @@ swap_in_release() {
     # release's CGIs.
     _sudoers_prev=$(cat /opt/etc/sudoers.d/www-data 2>/dev/null)
 
-    # No start/stop watchcat here: modem operations pause it with a marker file
-    # instead of stopping the unit, so the web tier never needs that privilege.
+    # Marker files pause modem operations without granting service stop privileges.
     # reset-failed is paired with each restart: five saves inside systemd's start
     # limit window park the unit in failed, where plain restart keeps refusing
     # until the failed state is cleared. It only clears that state, so it cannot
@@ -1265,14 +1268,19 @@ fi
 # It starts the install service and relays its log. This phase writes only under
 # /run and never touches or remounts the read-only root filesystem.
 GITTREE="${1:-main}"
+OPERATION_ID="${2:-}"
+if ! [[ "$OPERATION_ID" =~ ^[a-f0-9]{32}$ ]]; then
+    OPERATION_ID=$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')
+fi
+[[ "$OPERATION_ID" =~ ^[a-f0-9]{32}$ ]] || { echo "Cannot create operation ID." >&2; exit 1; }
 GITROOT="https://raw.githubusercontent.com/$GITUSER/$REPONAME/$GITTREE"
 # Resolve this file to an absolute path because the install service invokes it
 # again with --install.
 # It lives under /run (tmpfs, not swapped), so it survives the swap it drives.
 SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
 
-# Mutual exclusion via systemd: don't clobber an install already running (the
-# web path also fast-fails earlier in run_update.sh).
+# Console callers must not overlap a web SSH package action.
+# Systemd rejects a second QuecDeck install.
 _state=$(systemctl is-active "$SERVICE_NAME" 2>/dev/null)
 if [ "$_state" = "activating" ] || [ "$_state" = "active" ]; then
     echo "An update is already in progress."
@@ -1285,7 +1293,7 @@ systemctl reset-failed "$SERVICE_NAME" 2>/dev/null
 # prior run (can't fail on the read-only rootfs, unlike a /lib file).
 _bootstrap_abort() {
     echo -e "\e[1;31m$1\e[0m" >&2
-    echo "failed" > "${STATUS_FILE}.tmp" && chmod 644 "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "$STATUS_FILE" || rm -f "${STATUS_FILE}.tmp"
+    write_operation failed || :
     exit 1
 }
 
@@ -1303,7 +1311,7 @@ Type=oneshot
 # "activating" forever (which would wedge the UI and block retries).
 TimeoutStartSec=900
 $([ "${QUECDECK_ALLOW_DOWNGRADE:-0}" = "1" ] && echo "Environment=QUECDECK_ALLOW_DOWNGRADE=1")
-ExecStart=/bin/bash $SELF --install $GITTREE
+ExecStart=/bin/bash $SELF --install $GITTREE $OPERATION_ID
 StandardOutput=append:$LOG_FILE
 StandardError=append:$LOG_FILE
 UNIT
@@ -1316,11 +1324,8 @@ systemctl daemon-reload || _bootstrap_abort "systemd rejected the install unit."
 rm -f "$LOG_FILE" || _bootstrap_abort "Cannot replace the install log."
 touch "$LOG_FILE" && chmod 644 "$LOG_FILE" || _bootstrap_abort "Cannot prepare the install log."
 
-# Replace any terminal status from an earlier run before starting systemd. If
-# the service cannot exec the installer, the stale outcome can never be read as
-# this run's result.
-if ! echo "running" > "${STATUS_FILE}.tmp" || ! chmod 644 "${STATUS_FILE}.tmp" || ! mv "${STATUS_FILE}.tmp" "$STATUS_FILE"; then
-    rm -f "${STATUS_FILE}.tmp"
+# Publish this operation before systemd starts the worker.
+if ! write_operation running; then
     echo -e "\e[1;31mCannot record update status. Refusing to start the install service.\e[0m"
     exit 1
 fi
@@ -1340,7 +1345,7 @@ _start_rc=$?
 [ -n "$_tail_pid" ] && sleep 2
 [ -n "$_tail_pid" ] && { kill "$_tail_pid" 2>/dev/null; wait "$_tail_pid" 2>/dev/null; }
 # The summary is diagnostic output only. Outcome comes exclusively from the
-# root-owned status file below, including when systemctl itself returns an
+# root-owned operation record below, including when systemctl itself returns an
 # unexpected code after the transient unit removes its own file.
 if [ -f "$LOG_FILE" ]; then
     # Non-terminal callers did not see the streamed log. Replay any summary
@@ -1352,13 +1357,21 @@ if [ -f "$LOG_FILE" ]; then
     fi
 fi
 
-_final_status=$(cat "$STATUS_FILE" 2>/dev/null)
+read -r _final_id _final_kind _final_state _final_code _final_rollback < "$OPERATION_FILE" 2>/dev/null
+if [ "$_final_id" != "$OPERATION_ID" ] || [ "$_final_kind" != quecdeck ]; then
+    _final_status=""
+elif [ "$_final_state" = done ]; then
+    _final_status=done
+elif [ "$_final_state" = failed ]; then
+    case "$_final_rollback" in ok) _final_status=failed:rollback_ok ;; failed) _final_status=failed:rollback_failed ;; *) _final_status=failed ;; esac
+else
+    _final_status=""
+fi
 case "$_final_status" in
     done|failed|failed:rollback_ok|failed:rollback_failed) ;;
     *)
         _invalid_status=$_final_status
-        if ! echo "failed" > "${STATUS_FILE}.tmp" || ! chmod 644 "${STATUS_FILE}.tmp" || ! mv "${STATUS_FILE}.tmp" "$STATUS_FILE"; then
-            rm -f "${STATUS_FILE}.tmp"
+        if ! write_operation failed; then
             echo -e "\e[1;31mWARNING: could not replace the invalid update status with 'failed'.\e[0m" >&2
         fi
         report_install_outcome "$_invalid_status" "$_start_rc"

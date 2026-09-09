@@ -666,9 +666,7 @@ uninstall_quecdeck_components() {
         *) echo -e "\e[1;33mUninstallation cancelled.\e[0m"; return ;;
     esac
 
-    # An already-loaded transient unit keeps running after its file is removed.
-    # Refuse the destructive teardown instead of deleting the release tree from
-    # underneath an update that was started from the web UI.
+    # A loaded transient unit can keep running after its file is removed.
     for _update_unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd; do
         _update_state=$(systemctl is-active "$_update_unit" 2>/dev/null)
         case "$_update_state" in
@@ -836,14 +834,7 @@ uninstall_quecdeck_components() {
         rm -f /lib/systemd/system/multi-user.target.wants/lighttpd.service
     fi
 
-    # Safety net for units this uninstaller no longer names. A release can drop a
-    # unit and delete its removal line in the same commit, leaving the file
-    # installed and enabled forever with nothing left that remembers it. Every
-    # unit we ship executes something out of /usrdata/quecdeck, so the file on
-    # disk identifies itself no matter what any list remembers. Match Exec*
-    # directives only: a path mentioned in a comment is not ownership evidence.
-    # The named blocks above have already taken current units, so this catches
-    # leftovers. Marker presence is asserted by tests/host/ci-checks.sh.
+    # Exec paths identify shipped units that are absent from explicit teardown blocks.
     for _f in /lib/systemd/system/*.service; do
         [ -f "$_f" ] || continue
         grep -qE '^Exec(Start|StartPre|StartPost|Reload|Stop|StopPost)=.*/usrdata/quecdeck(/|[[:space:]]|$)' "$_f" 2>/dev/null || continue
@@ -991,16 +982,6 @@ cleanup_ssh_account() {
     rmdir /opt/var/empty 2>/dev/null || true
 }
 
-sshd_service() {
-    _helper="$QUECDECK_DIR/script/install_sshd.sh"
-    if [ ! -f "$_helper" ] || [ -L "$_helper" ] ||
-       [ "$(stat -c '%u %a' "$_helper" 2>/dev/null)" != "0 700" ]; then
-        echo -e "\e[1;31mInstall or update QuecDeck before managing SSH.\e[0m"
-        return 1
-    fi
-    "$_helper"
-}
-
 disable_monitoring_services() {
     echo -e "\e[1;32mDisabling monitoring services...\e[0m"
     local disable_failed=0
@@ -1050,14 +1031,13 @@ while true; do
     echo -e "\e[93m1) Install/Update QuecDeck (latest release)\e[0m"
     echo -e "\e[93m2) Install/Update QuecDeck (main branch)\e[0m"
     echo -e "\e[93m3) Install/Update QuecDeck (development branch)\e[0m"
-    echo -e "\e[93m4) SSH server (install/uninstall)\e[0m"
-    echo -e "\e[91m5) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m"
-    echo -e "\e[91m6) Uninstall QuecDeck\e[0m"
-    echo -e "\e[91m7) Uninstall Entware/OPKG\e[0m"
-    echo -e "\e[95m8) Set QuecDeck (admin) password\e[0m"
-    echo -e "\e[95m9) Set Developer access (devadmin) password\e[0m"
-    echo -e "\e[91m10) Reboot\e[0m"
-    echo -e "\e[93m11) Exit\e[0m"
+    echo -e "\e[91m4) Disable monitoring services (Watchcat & Scheduled Restart)\e[0m"
+    echo -e "\e[91m5) Uninstall QuecDeck\e[0m"
+    echo -e "\e[91m6) Uninstall Entware/OPKG\e[0m"
+    echo -e "\e[95m7) Set QuecDeck (admin) password\e[0m"
+    echo -e "\e[95m8) Set Developer access (devadmin) password\e[0m"
+    echo -e "\e[91m9) Reboot\e[0m"
+    echo -e "\e[93m10) Exit\e[0m"
     read -p "Enter your choice: " choice
 
     case $choice in
@@ -1077,9 +1057,6 @@ while true; do
             read -p "Press Enter to return to menu..."
             ;;
         4)
-            sshd_service
-            ;;
-        5)
             echo -e "\e[1;31mThis will disable Watchcat and Scheduled Restart.\e[0m"
             read -p "Are you sure? (y/n): " confirm
             case "$confirm" in
@@ -1087,14 +1064,14 @@ while true; do
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        6)
+        5)
             uninstall_quecdeck_components
             ;;
-        7)
+        6)
             if [ -d "$QUECDECK_DIR/www" ]; then
                 echo -e "\e[1;31mWARNING: QuecDeck is still installed.\e[0m"
                 echo -e "\e[1;31mUninstalling Entware will break QuecDeck and all its services.\e[0m"
-                echo -e "\e[1;31mRun option 6 to uninstall QuecDeck first.\e[0m"
+                echo -e "\e[1;31mRun option 5 to uninstall QuecDeck first.\e[0m"
                 read -p "Continue anyway? (y/n): " quecdeck_warn_confirm
                 case "$quecdeck_warn_confirm" in
                     y|Y) ;;
@@ -1112,21 +1089,21 @@ while true; do
                     ;;
             esac
             ;;
-        8)
+        7)
             read -p "Set QuecDeck (admin) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_adminpasswd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        9)
+        8)
             read -p "Set Developer access (devadmin) password? (y/n): " pw_confirm
             case "$pw_confirm" in
                 y|Y) set_devpasswd ;;
                 *) echo -e "\e[1;33mCancelled.\e[0m" ;;
             esac
             ;;
-        10)
+        9)
             read -p "Reboot the modem? (y/n): " reboot_confirm
             case "$reboot_confirm" in
                 y|Y)
@@ -1139,7 +1116,7 @@ while true; do
                 *) echo -e "\e[1;33mReboot cancelled.\e[0m" ;;
             esac
             ;;
-        11)
+        10)
             echo -e "\e[1;32mGoodbye!\e[0m"
             break
             ;;

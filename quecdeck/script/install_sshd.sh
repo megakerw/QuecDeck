@@ -3,16 +3,14 @@
 # It uses only bundled, checksummed assets so installation does not depend on
 # the branch or release selected by a separately downloaded console script.
 #
-# Actions, so the console menu and the web UI drive one implementation:
+# Actions used by the web dispatcher and available to a root recovery shell:
 #   --check             refresh the package index and report an available update
 #   --install <port>    first installation on the given port
 #   --update            reinstall the packages, keeping the current settings
 #   --uninstall         remove the packages, configuration and authorized keys
-#   (no argument)       interactive console menu
 #
-# Exit codes are the interface between this script and its front ends. Neither
-# parses the log: the console maps a code to a message, the web UI maps the same
-# code to its own copy. Add a code rather than overloading one.
+# Exit codes are the interface with the web UI. Add a code rather than
+# overloading one.
 
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 022
@@ -354,10 +352,7 @@ EOF
         rm -f "$config_tmp"
         return 1
     }
-    # One shared definition of the posture, enforced again by ssh_access.sh on
-    # every daemon start. Failing here gives a clear install-time message
-    # instead of a later refusal to start. AllowUsers is checked separately:
-    # it is an install-time choice, not part of the runtime policy.
+    # AllowUsers is an install choice outside the shared runtime policy.
     sshd_policy_ok "$effective" &&
     printf '%s\n' "$effective" | grep -qx 'allowusers root' || {
         rm -f "$config_tmp"
@@ -539,8 +534,7 @@ uninstall_sshd() {
     remount_ro || return "$RC_PARTIAL_REMOVAL"
     trap - EXIT
     systemctl daemon-reload
-    # Always: the port has to close, and the rules are rebuilt from a state that
-    # no longer reports SSH.
+    # The firewall must close the port after managed SSH state is removed.
     step "Applying the firewall rules"
     firewall_failed=0
     apply_firewall || firewall_failed=1
@@ -602,9 +596,8 @@ take_lock() {
     return "$RC_OK"
 }
 
-# Reinstalls with whatever is currently configured. Shared by --update and by
-# the console menu, which also uses it for a first installation: with nothing
-# managed yet, resolve_saved_settings hands back the defaults.
+# Reinstalls with the saved settings. An absent configuration resolves to the
+# first-install defaults.
 update_sshd() {
     resolve_saved_settings || return $?
     install_sshd "$saved_ssh_port" "$saved_ssh_enabled"
@@ -639,24 +632,4 @@ case "$ACTION" in
         exit $?
         ;;
 esac
-
-# Console menu. Without a TTY, stdin could carry the selection itself: a CGI's
-# stdin is the request body, and option 2 removes SSH and every authorized key.
-[ -t 0 ] || exit "$RC_USAGE"
-
-if sshd_is_installed; then
-    echo -e "\e[1;32msshd is currently: INSTALLED\e[0m"
-else
-    echo -e "\e[1;31msshd is currently: NOT INSTALLED\e[0m"
-fi
-echo "OpenSSH Server: allows SSH login to the modem."
-echo -e "\e[1;32m1) Install/Update sshd\e[0m"
-echo -e "\e[1;31m2) Uninstall sshd (also removes authorized keys)\e[0m"
-echo -e "\e[1;33m3) Cancel\e[0m"
-read -r -p "Enter your choice (1-3): " choice
-case "$choice" in
-    1) take_lock || exit $? ; update_sshd ;;
-    2) take_lock || exit $? ; uninstall_sshd ;;
-    3) ;;
-    *) echo -e "\e[1;31mInvalid option\e[0m" ;;
-esac
+exit "$RC_USAGE"

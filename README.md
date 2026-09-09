@@ -83,7 +83,7 @@ Reboot is in the System menu in the navigation bar, reachable from any page.
 - Change the developer access password after confirming the current developer password. Any active developer unlock is revoked
 
 ### SSH
-- Install, update, and uninstall the OpenSSH server from the page itself. The installer menu offers the same actions
+- Install, update, and uninstall the OpenSSH server from the page itself
 - Enable or disable the server and choose its LAN-only port. The firewall opens that port only while SSH is enabled
 - Manage up to 5 root public keys. QuecDeck accepts Ed25519, ECDSA, and RSA keys without key options. Private keys are rejected
 - Every change on this page requires the developer password, because SSH access grants root. The service does not start without a key or while disabled
@@ -142,7 +142,7 @@ All modem communication goes through [atcli](https://github.com/megakerw/atcli_r
 
 Shell code never calls atcli directly. Every caller goes through `script/at-lib.sh`, enforced by a pre-commit check. There is no silent fallback to the port: if the daemon is down, every caller gets empty output until systemd restarts it seconds later, and the UI tolerates the gap. A root operator can still reach the modem for recovery by passing `--direct`.
 
-Because a reply cut short by a timeout looks exactly like a shorter complete one, the exit status rather than the output is what says whether the modem finished. Callers that must not parse a truncated record check it: `get_sms` refuses a short listing instead of serving it as a complete inbox, and the cell scan marks its results `PARTIAL`.
+Because a reply cut short by a timeout looks exactly like a shorter complete one, the exit status says whether the modem finished. `get_sms` rejects a short listing, and the cell scan marks its results `PARTIAL`.
 
 Responses are cached per endpoint, from 2 seconds for signal stats up to 1 hour for firmware version and build time, and several AT commands are batched into one request where possible.
 
@@ -185,7 +185,7 @@ Updates run from the Update page or by re-running `quecdeck.sh`. Both use the sa
 Watchcat and Scheduled Restart settings survive updates between releases that share the current monitoring implementation. A release that changes that contract starts those features unconfigured rather than loading incompatible state.
 
 ### Optional Components
-- **SSH:** OpenSSH server with public-key-only root login, bound to the LAN. The installer and unit files ship inside the QuecDeck release, so installing SSH always uses assets from the installed release. Install and manage it from the SSH page, or from the installer menu. QuecDeck does not replace the firmware's own login or password commands.
+- **SSH:** OpenSSH server with public-key-only root login, bound to the LAN. The installer and unit files ship inside the QuecDeck release, so installing SSH always uses assets from the installed release. Install and manage it from the SSH page. The privileged worker retains explicit command-line actions for recovery. QuecDeck does not replace the firmware's own login or password commands.
 
 ## Development
 
@@ -193,7 +193,7 @@ The repository includes the following host and device checks. The applicable hos
 
 - **Test suite** (`tests/host/run-tests.sh`): host-side tests are grouped by domain under `tests/host/suites/` and share the small `tests/host/testlib.sh` harness. Run every suite or name selected suites such as `monitoring` or `sms`. Pass `--slow` to include timing-dependent cases such as login lockout. The fast set also runs from the pre-commit hook.
 - **Integration tests** (`tests/host/integration/`): the auth.lua harness runs against a stubbed lighttpd request environment. It uses disposable root paths, so it runs only on Linux and skips itself elsewhere. The AT layer's integration tests live in the [atcli repo](https://github.com/megakerw/atcli_rust), where the daemon and client run end to end against a fake modem on a pty.
-- **Repository integrity checks** (`tests/host/ci-checks.sh`): shell and JS syntax, the atcli access guard and its socket path, the runtime-path and dev-gate guards, unit self-identity, www-data file modes, shell dialect, checksum manifests and pinned bootstrap hashes, and asset version tokens. These mirror the pre-commit hook, so CI catches commits made without the hook configured. Assumes an LF checkout, so on Windows run the test suite instead.
+- **Repository integrity checks** (`tests/host/ci-checks.sh`): shell and JS syntax, the JavaScript unit tests in `tests/host/js/` (skipped where node is unavailable), the atcli access guard and its socket path, the runtime-path and dev-gate guards, unit self-identity, www-data file modes, shell dialect, checksum manifests and pinned bootstrap hashes, and asset version tokens. These mirror the pre-commit hook, so CI catches commits made without the hook configured. Assumes an LF checkout, so on Windows run the test suite instead.
 - **On-device scripts** (`tests/device/device-test-*.sh`): copied to the device manually for behavior that host tests cannot verify, such as firmware networking, privilege dropping, and real modem timing. Run the relevant ones before tagging a release. Individual headers identify disruptive cases.
 
 The pre-commit hook is enabled with `git config core.hooksPath .githooks`.

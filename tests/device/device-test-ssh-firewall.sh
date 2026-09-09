@@ -18,7 +18,7 @@
 #   sh device-test-ssh-firewall.sh     # 1) BEFORE install -> saves a baseline
 #   ... Install SSH: the SSH page, or sh quecdeck.sh -> 4 -> install ...
 #   sh device-test-ssh-firewall.sh     # 2) AFTER install  -> checks the add
-#   ... Uninstall SSH: the SSH page, or sh quecdeck.sh -> 4 -> uninstall ...
+#   ... Uninstall SSH from the SSH page ...
 #   sh device-test-ssh-firewall.sh     # 3) AFTER uninstall -> checks the removal
 #
 # Run as root on a device where QuecDeck (lighttpd + firewall) is up. It only
@@ -88,7 +88,7 @@ check_lighttpd() { # check_lighttpd <before-snapshot> <after-snapshot> <label>
         if [ "$_bp" = "$_ap" ]; then
             ok "lighttpd untouched by $3 (MainPID $_ap unchanged, rules rebuilt in place)"
         else
-            bad "lighttpd was CYCLED by $3 (MainPID $_bp -> $_ap) although the firewall unit was already active -- apply_firewall should have run firewall.sh directly instead of restarting the unit"
+            bad "lighttpd was CYCLED by $3 (MainPID $_bp -> $_ap) although the firewall unit was already active. apply_firewall should have run firewall.sh directly instead of restarting the unit"
         fi
     else
         ok "lighttpd is up after $3 (MainPID $_bp -> $_ap; the firewall unit was down beforehand, so the restart branch applied and a cycle is expected)"
@@ -110,7 +110,7 @@ if [ ! -f "$DIR/baseline" ]; then
     echo "  firewall unit active:      $(getval "$DIR/baseline" FWACTIVE)"
     b_port=$(getval "$DIR/baseline" SSHPORT)
     if [ -n "$b_port" ]; then
-        echo "  NOTE: SSH already reports port $b_port -- is it already installed?"
+        echo "  NOTE: SSH already reports port $b_port. Is it already installed?"
         echo "        Uninstall it first for a clean baseline."
     fi
     if [ "$(getval "$DIR/baseline" FWACTIVE)" != "1" ]; then
@@ -132,7 +132,7 @@ if [ ! -f "$DIR/after_install" ]; then
     a_port=$(getval "$DIR/after_install" SSHPORT)
 
     if [ -z "$a_port" ]; then
-        bad "SSH reports no configured port after install -- did the install actually complete?"
+        bad "SSH reports no configured port after install. Did the install actually complete?"
     else
         echo "  configured SSH port: $a_port"
         b_n=$(count_port_in "$DIR/baseline" "$a_port")
@@ -142,18 +142,18 @@ if [ ! -f "$DIR/after_install" ]; then
         if [ "$a_n" = "2" ]; then
             ok "port $a_port has its ACCEPT and catch-all DROP after install"
         elif [ "$a_n" = "$b_n" ]; then
-            bad "no rules added for port $a_port (still $a_n) -- did the SSH install actually complete, or is SSH saved as disabled?"
+            bad "no rules added for port $a_port (still $a_n). Did the SSH install actually complete, or is SSH saved as disabled?"
         else
             bad "expected 2 rules for port $a_port (ACCEPT+DROP), found $a_n"
         fi
     fi
     check_lighttpd "$DIR/baseline" "$DIR/after_install" "the SSH install"
-    [ "$a_j" -ge 1 ] && ok "INPUT still jumps to QUECDECK -- firewall intact" \
-        || bad "INPUT jump to QUECDECK is missing -- the firewall is DOWN"
+    [ "$a_j" -ge 1 ] && ok "INPUT still jumps to QUECDECK, firewall intact" \
+        || bad "INPUT jump to QUECDECK is missing. The firewall is DOWN"
 
     echo ""
     echo " Stage 2 result: $pass passed, $fail failed"
-    echo "Next: UNINSTALL SSH (the SSH page, or sh quecdeck.sh -> 4 -> uninstall), then run this again."
+    echo "Next: UNINSTALL SSH from the SSH page, then run this again."
     exit 0
 fi
 
@@ -168,16 +168,16 @@ u_j=$(getval "$DIR/after_uninstall" JUMPS)
 a_port=$(getval "$DIR/after_install" SSHPORT)
 
 if [ -z "$a_port" ]; then
-    bad "no SSH port was recorded at install time -- cannot check rule removal"
+    bad "no SSH port was recorded at install time, cannot check rule removal"
 else
     b_n=$(count_port_in "$DIR/baseline" "$a_port")
     u_n=$(count_port_in "$DIR/after_uninstall" "$a_port")
-    [ "$u_n" = "$b_n" ] && ok "rules for port $a_port removed -- back to baseline ($u_n)" \
+    [ "$u_n" = "$b_n" ] && ok "rules for port $a_port removed, back to baseline ($u_n)" \
         || bad "rules for port $a_port not cleaned up (found $u_n, baseline had $b_n)"
 fi
 check_lighttpd "$DIR/after_install" "$DIR/after_uninstall" "the SSH uninstall"
-[ "$u_j" -ge 1 ] && ok "INPUT still jumps to QUECDECK -- firewall intact" \
-    || bad "INPUT jump to QUECDECK is missing -- the firewall is DOWN"
+[ "$u_j" -ge 1 ] && ok "INPUT still jumps to QUECDECK, firewall intact" \
+    || bad "INPUT jump to QUECDECK is missing. The firewall is DOWN"
 
 # The whole ruleset should be byte-identical to the baseline.
 rules_of "$DIR/baseline" > "$DIR/b.rules"

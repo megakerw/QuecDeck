@@ -2,9 +2,46 @@
 
 Run this on the RM520N-GL before tagging any release that touches
 `update_quecdeck.sh`, `run_update.sh`, `get_update_log`, `auth_login`, or the
-health-probe/service-restart behavior. The web UI cannot test working-tree
-updater code (it fetches `update_quecdeck.sh` fresh from a release tag), so the
-gate runs the working-tree file directly:
+health-probe or service-restart behavior.
+
+## Test a candidate commit without a release
+
+Push the candidate commit after the pre-commit hook refreshes its checksum
+manifest. The updater accepts a commit hash when started from a root shell,
+while the web endpoint remains restricted to release tags.
+
+This performs a real update and writes the commit hash to QuecDeck's version
+file. Use a recoverable test device and reinstall the stable tag afterwards.
+Wait for any SSH page action to finish before starting the console updater.
+
+```
+adb push update_quecdeck.sh /tmp/test_update.sh
+adb shell "chmod 700 /tmp/test_update.sh && bash /tmp/test_update.sh <commit-sha>"
+```
+
+The candidate commit supplies the archive, checksum manifest, web application,
+root scripts, and services. This tests the complete install and rollback path
+without publishing a release. It does not test release discovery on the Update
+page.
+
+After the candidate succeeds, inspect the operation record and the persisted
+log, then exercise the page acknowledgement.
+
+```
+cat /run/quecdeck/update.operation
+cat /usrdata/quecdeck_last_update.log
+```
+
+Restore the stable release with the candidate updater still stored in `/tmp`.
+
+```
+bash /tmp/test_update.sh <stable-tag>
+```
+
+## Release gate
+
+The web UI fetches the updater from a release tag, so the gate runs the
+working-tree file directly:
 
 ```
 adb push update_quecdeck.sh /tmp/test_update.sh
@@ -23,13 +60,13 @@ adb shell sh /tmp/device-test-updategate.sh <current> [<older>]
 
 Still manual after a script pass: the browser checks in step 4 (login,
 session survival, update-page ack), the downgrade OVERRIDE in step 6 (not
-automated on purpose -- it parks the device on an older release mid-run), and
-step 7. Use the manual steps below when the script is unavailable or when
+automated on purpose, since it parks the device on an older release mid-run),
+and step 7. Use the manual steps below when the script is unavailable or when
 diagnosing a script failure.
 
 **Pushing working-tree scripts over installed ones** (e.g. testing a changed
 `run_update.sh` via the real web path): `adb push` drops ownership and mode,
-leaving the file `rw-rw-rw- root` -- sudo then fails with a generic error
+leaving the file `rw-rw-rw- root`. Sudo then fails with a generic error
 before the script runs, and a world-writable sudoers-listed root script is a
 privilege-escalation hole for as long as it sits there. Always follow the
 push with:
@@ -47,10 +84,10 @@ Between runs, reset state so the next test starts clean:
 
 ```
 systemctl reset-failed install_quecdeck 2>/dev/null
-rm -f /run/quecdeck/update.status
+rm -f /run/quecdeck/update.operation
 ```
 
-## 1. Health probe, standalone
+### 1. Health probe, standalone
 
 The firewall intentionally rejects modem-local HTTPS through `lo`, so the
 post-swap check verifies the equivalent local invariants directly: the active
@@ -82,7 +119,7 @@ su www-data -s /bin/bash -c 'REQUEST_METHOD=GET /usrdata/quecdeck/www/cgi-bin/au
 - [ ] No new entry in `/run/quecdeck-web/logs/access_events.jsonl` and no lockout
       counter created (the GET branch must be side-effect free)
 
-## 2. Preflight failure path (nonexistent tag)
+### 2. Preflight failure path (nonexistent tag)
 
 ```
 missing_tag="v999999999.$(date +%s).$$"
@@ -90,12 +127,12 @@ bash /tmp/test_update.sh "$missing_tag"
 ```
 
 - [ ] FATAL: could not download release files. Nothing staged, site untouched
-- [ ] `cat /run/quecdeck/update.status` is `failed`
+- [ ] `awk 'NR == 1 { print $3 }' /run/quecdeck/update.operation` is `failed`
 - [ ] `/usrdata/quecdeck_last_update.log` exists, `root` owner, mode `600`,
       content matches `/run/quecdeck/install.log`
 - [ ] `mount | grep ' / '` shows `ro`
 
-## 3. Downgrade guard blocks
+### 3. Downgrade guard blocks
 
 ```
 bash /tmp/test_update.sh <older>
@@ -105,7 +142,7 @@ bash /tmp/test_update.sh <older>
 - [ ] Status `failed`. No `.new`/`.old` dirs under /usrdata. Site still serving
 - [ ] `/` back to `ro`
 
-## 4. Happy-path reinstall (equal version passes the guard)
+### 4. Happy-path reinstall (equal version passes the guard)
 
 ```
 bash /tmp/test_update.sh <current>
@@ -123,7 +160,7 @@ bash /tmp/test_update.sh <current>
 - [ ] Browser: login works, dashboard AT data populates, session survived
 - [ ] Update page: shows the terminal state, ack clears it
 
-## 5. TERM mid-swap (trap rollback -- the path that otherwise never runs)
+### 5. TERM mid-swap (trap rollback, the path that otherwise never runs)
 
 Two shells (or `tail -f` in one, trigger from a second):
 
@@ -137,8 +174,8 @@ systemctl stop install_quecdeck
 ```
 
 The swap window is seconds wide. If the stop lands too early (before
-"Preparing for swap"), expect a plain `failed` with the site untouched --
-reset and retry until the stop lands inside the swap.
+"Preparing for swap"), expect a plain `failed` with the site untouched.
+Reset and retry until the stop lands inside the swap.
 
 - [ ] Log: `Install interrupted mid-swap. Attempting rollback.` followed by
       `Rollback complete. Previous version restored.`
@@ -147,7 +184,7 @@ reset and retry until the stop lands inside the swap.
       atcmd-daemon firewall` all active
 - [ ] `/` back to `ro`. No `.new`/`.old` leftovers under /usrdata
 
-## 6. Downgrade override, then return to current
+### 6. Downgrade override, then return to current
 
 ```
 QUECDECK_ALLOW_DOWNGRADE=1 bash /tmp/test_update.sh <older>
@@ -161,7 +198,7 @@ Then re-run step 4 with `<current>` to restore, and confirm it lands.
 
 - [ ] Back on `<current>`, status `done`
 
-## 7. Web-path smoke test (after tagging only)
+### 7. Web-path smoke test (after tagging only)
 
 The steps above all drive the console/bootstrap path. After the release is
 tagged, run one real update from the previous release via the web UI (this is

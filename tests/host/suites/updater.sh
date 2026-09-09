@@ -38,6 +38,27 @@ rm -rf "$_generation_fixture"
 unset -f _install_generation_supported
 unset _generation_fixture
 
+_operation_writer_case() {
+    (
+        eval "$(extract_fn update_quecdeck.sh write_operation)"
+        _fixture=$(mktemp -d)
+        OPERATION_FILE="$_fixture/update.operation"
+        OPERATION_ID=0123456789abcdef0123456789abcdef
+        write_operation "$@"
+        cat "$OPERATION_FILE"
+        rm -rf "$_fixture"
+    )
+}
+t "operation writer publishes one complete record" \
+  '0123456789abcdef0123456789abcdef quecdeck running 0 none' \
+  "$(_operation_writer_case running)"
+t "operation writer publishes code and rollback" \
+  '0123456789abcdef0123456789abcdef quecdeck failed 7 ok' \
+  "$(_operation_writer_case failed 7 ok)"
+unset -f _operation_writer_case
+t "operation writer normalizes the record mode" "yes" \
+  "$(extract_fn update_quecdeck.sh write_operation | grep -q 'chmod 644' && echo yes || echo no)"
+
 # The bind address lives in a tmpfs fragment, so the installed conf matches the
 # staged one byte for byte. Normalizing before the diff would mask a real change.
 t "lighttpd config compare is direct" "yes" \
@@ -85,9 +106,7 @@ t "failure to remove incompatible monitoring state aborts staging" "1" "$(_state
 rm -rf "$_state_fixture"
 unset -f _stage_persistent_state _state_case
 
-# The root-owned status file is the one outcome source for both CLI and web.
-# systemctl's rc appears only in diagnostics when no valid terminal status was
-# committed. It never overrides a committed result.
+# The root-owned operation record is authoritative for CLI and web results.
 LOG_FILE=/run/quecdeck/install.log
 eval "$(extract_fn update_quecdeck.sh report_install_outcome)"
 for _status in failed failed:rollback_ok failed:rollback_failed running '' unexpected; do
@@ -97,11 +116,11 @@ done
 report_install_outcome done 1 >/dev/null
 t_rc "done status overrides systemctl failure" "0" "$?"
 t "bootstrap replaces stale status before systemctl" "yes" \
-  "$(_status_line=$(grep -n 'Replace any terminal status from an earlier run' update_quecdeck.sh | cut -d: -f1); _start_line=$(grep -n '^systemctl start \$SERVICE_NAME$' update_quecdeck.sh | cut -d: -f1); [ -n "$_status_line" ] && [ "$_status_line" -lt "$_start_line" ] && echo yes || echo no)"
+  "$(_status_line=$(grep -n '^if ! write_operation running; then$' update_quecdeck.sh | tail -1 | cut -d: -f1); _start_line=$(grep -n '^systemctl start \$SERVICE_NAME$' update_quecdeck.sh | cut -d: -f1); [ -n "$_status_line" ] && [ "$_status_line" -lt "$_start_line" ] && echo yes || echo no)"
 t "install phase returns computed outcome" "yes" \
   "$(grep -q '^exit "\$_install_rc"$' update_quecdeck.sh && echo yes || echo no)"
 t "invalid bootstrap status is committed as failed" "yes" \
-  "$(sed -n '/^_final_status=/,$p' update_quecdeck.sh | grep -q 'echo "failed" > "${STATUS_FILE}.tmp"' && echo yes || echo no)"
+  "$(sed -n '/^read -r _final_id/,$p' update_quecdeck.sh | grep -q 'write_operation failed' && echo yes || echo no)"
 t "web fetch rejection uses terminal abort" "yes" \
   "$(grep -q 'systemctl start --no-block install_quecdeck_fetch.*|| abort' quecdeck/script/run_update.sh && echo yes || echo no)"
 t "installer refuses failed rw remount" "yes" \
@@ -224,25 +243,25 @@ t "updater leaves unready SSH stopped" "" "$(_ssh_reconcile_case 0 1 0)"
 t "updater starts inactive enabled ready SSH" "reset-failed sshd,start sshd," \
   "$(_ssh_reconcile_case 0 1 1)"
 unset -f _ssh_reconcile_case
-t "web updater requires initial status write" "yes" \
-  "$(grep -q '^if ! write_kind quecdeck || ! write_status running; then$' quecdeck/script/run_update.sh && echo yes || echo no)"
 t "SSH action unit is the only entry to the privileged run mode" "yes" \
   "$(grep -q 'QD_SERVICE_UNIT:-}" != "1" \]; then' quecdeck/script/run_update.sh && grep -q '^Environment=QD_SERVICE_UNIT=1$' quecdeck/script/run_update.sh && _refuse=$(sed -n '/QD_SERVICE_UNIT:-}" != "1" \]; then/,/^    fi$/p' quecdeck/script/run_update.sh) && ! printf '%s\n' "$_refuse" | grep -q 'abort\|write_status' && echo yes || echo no)"
 t "SSH actions and QuecDeck updates exclude each other" "yes" \
-  "$([ "$(grep -c 'for _unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd; do' quecdeck/script/run_update.sh)" -eq 2 ] && grep -q 'install_quecdeck_sshd 2>/dev/null)" = "failed"' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
+  "$([ "$(grep -c 'for _unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd; do' quecdeck/script/run_update.sh)" -eq 2 ] && grep -q 'systemctl is-active install_quecdeck_sshd' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
+t "operation acknowledgement shares the dispatch lock" "yes" \
+  "$(awk '/if \[ "\$TAG" = "--clear-status" \]/{seen=1} seen && /take_dispatch_lock/{locked=1} seen && /read -r current_id/{print locked ? "yes" : "no"; exit}' quecdeck/script/run_update.sh)"
 t "QuecDeck package install rechecks local opkg metadata" "yes" \
   "$( _install=$(sed -n '/if \[ "\$_lighttpd_needs_install" = "1" \]; then/,/^    fi$/p' update_quecdeck.sh); _opkg=$(printf '%s\n' "$_install" | grep -n '/opt/bin/opkg install' | cut -d: -f1); _secure=$(printf '%s\n' "$_install" | grep -n 'secure_opkg_metadata' | tail -1 | cut -d: -f1); [ -n "$_opkg" ] && [ -n "$_secure" ] && [ "$_opkg" -lt "$_secure" ] && echo yes || echo no)"
-t "SSH action failure carries the installer exit code to the UI" "yes" \
-  "$(grep -q 'write_status "failed:code:\$rc"' quecdeck/script/run_update.sh && grep -q 'failed:code:\*)' quecdeck/www/cgi-bin/get_update_log && grep -q '"code":%s' quecdeck/www/cgi-bin/get_update_log && grep -q 'case "\$code" in ..|\*\[!0-9\]\*) code=0' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
+t "SSH worker publishes the installer exit code" "yes" \
+  "$(grep -q 'write_operation "\$OPERATION_KIND" failed "\$rc"' quecdeck/script/run_update.sh && echo yes || echo no)"
 t "a stale SSH check answer cannot outlive the action that changed it" "yes" \
-  "$(grep -q '\[ "\$SSHD_ACTION" = check \] || rm -f "\$SSHD_CHECK"' quecdeck/script/run_update.sh && grep -q 'rm -f "\$STATUS_FILE" "\$KIND_FILE"' quecdeck/script/run_update.sh && echo yes || echo no)"
+  "$(grep -q '\[ "\$SSHD_ACTION" = check \] || rm -f "\$SSHD_CHECK"' quecdeck/script/run_update.sh && grep -q '\[ "\$current_id" = "\$OPERATION_ID" \]' quecdeck/script/run_update.sh && echo yes || echo no)"
 t "a QuecDeck version is reported only for a QuecDeck update" "yes" \
-  "$(grep -q '\[ "\$kind" = "quecdeck" \] &&' quecdeck/www/cgi-bin/get_update_log && grep -q 'quecdeck|sshd:install|sshd:update|sshd:uninstall|sshd:check)' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
+  "$(grep -q '\[ "\$kind" = quecdeck \] &&' quecdeck/www/cgi-bin/get_update_log && grep -q 'quecdeck|sshd:install|sshd:update|sshd:uninstall|sshd:check)' quecdeck/www/cgi-bin/get_update_log && echo yes || echo no)"
 . tests/host/support/update-auth.sh
 # A new installer code that nobody maps would silently read as "could not be
 # completed", which is the one message that means we do not know what happened.
 t "every installer exit code is named by the SSH page" "yes" \
-  "$( _missing=0; for _c in $(grep -oE '^RC_[A-Z_]+=[0-9]+' quecdeck/script/install_sshd.sh | cut -d= -f2 | grep -vxE '0|1'); do grep -q "case $_c:" quecdeck/www/js/security.js || _missing=1; done; [ "$_missing" = 0 ] && echo yes || echo no)"
+  "$( _missing=0; for _c in $(grep -oE '^RC_[A-Z_]+=[0-9]+' quecdeck/script/install_sshd.sh | cut -d= -f2 | grep -vxE '0|1'); do grep -q "case $_c:" quecdeck/www/js/ssh.js || _missing=1; done; [ "$_missing" = 0 ] && echo yes || echo no)"
 t "the SSH check endpoint never runs opkg itself" "yes" \
   "$(! grep -q '/opt/bin/opkg' quecdeck/www/cgi-bin/get_sshd_check && ! grep -q 'sudo' quecdeck/www/cgi-bin/get_sshd_check && grep -q 'CHECK_FILE=/run/quecdeck/sshd-check' quecdeck/www/cgi-bin/get_sshd_check && echo yes || echo no)"
 t "web updater requires log preparation" "yes" \
@@ -257,8 +276,6 @@ t "preflight rejects unreadable usrdata capacity" "yes" \
   "$(sed -n '/_pf_free=/,/Not enough free space on \/usrdata/p' update_quecdeck.sh | grep -q "''|\*\[!0-9\]\*)" && echo yes || echo no)"
 t "preflight reserves runtime headroom" "yes" \
   "$(grep -q '_pf_run_needed=\$((_pf_run_needed + 1024))' update_quecdeck.sh && echo yes || echo no)"
-t "all updater status renames normalize mode" "0" \
-  "$(grep 'mv .*STATUS_FILE' update_quecdeck.sh | grep -vc 'chmod 644')"
 t "successful install requires read-only remount" "yes" \
   "$(sed -n '/rm -f "\$SERVICE_FILE" \/lib\/systemd\/system\/install_quecdeck.service/,/exit "\$_install_rc"/p' update_quecdeck.sh | grep -q '^if ! remount_ro; then$' && echo yes || echo no)"
 t "atcli uses its installed path in the release tree" "yes" \

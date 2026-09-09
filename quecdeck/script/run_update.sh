@@ -1,30 +1,33 @@
 #!/bin/bash
-# Triggered by the QuecDeck web UI to perform an update.
-# Called via sudo by the trigger_update CGI.
-# Usage: run_update.sh <tag>  For example: run_update.sh v1.2.3
+# Usage: run_update.sh <tag> <operation-id>
 
 TAG="${1:-}"
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 umask 022
 case "$TAG" in
-    --clear-status) [ "$#" -eq 1 ] || exit 1 ;;
-    --fetch)        [ "$#" -eq 2 ] || exit 1 ;;
-    --service|--service-run) [ "$#" -eq 2 ] || [ "$#" -eq 3 ] || exit 1 ;;
-    *)              [ "$#" -eq 1 ] || { echo "Usage: run_update.sh <tag>"; exit 1; } ;;
+    --clear-status) [ "$#" -eq 2 ] || exit 1 ;;
+    --fetch)        [ "$#" -eq 3 ] || exit 1 ;;
+    --service)      [ "$#" -eq 3 ] || [ "$#" -eq 4 ] || exit 1 ;;
+    --service-run)  [ "$#" -eq 3 ] || [ "$#" -eq 4 ] || exit 1 ;;
+    *)              [ "$#" -eq 2 ] || { echo "Usage: run_update.sh <tag> <operation-id>"; exit 1; } ;;
 esac
-# Validate before touching runtime state. A tag is inserted into ExecStart,
-# so matching just one line (grep) would allow additional unit directives.
+# Tags enter systemd unit text and must match one complete line.
 case "$TAG" in
     --clear-status|--service|--service-run) ;;
     --fetch) [[ "${2:-}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1 ;;
     *) [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1 ;;
 esac
+case "$TAG" in
+    --clear-status) OPERATION_ID=${2:-} ;;
+    --fetch) OPERATION_ID=${3:-} ;;
+    --service|--service-run) OPERATION_ID=${3:-} ;;
+    *) OPERATION_ID=${2:-} ;;
+esac
+[[ "$OPERATION_ID" =~ ^[a-f0-9]{32}$ ]] || exit 1
 
-# The sudo entry point must verify credentials itself, even when the caller
-# bypasses the CGI. Read exactly one bounded line, the developer password, and
-# never put secrets in the service file, environment or command arguments.
-# Exit 3 means authentication failed (2 is reserved for a busy dispatcher),
-# and 75 means unavailable.
+# The root boundary accepts one bounded credential line.
+# Credentials must not enter unit files, environment, or arguments.
+# Authentication returns 3 for rejection and 75 when unavailable.
 verify_service_credentials() {
     local payload developer extra developer_rc
     payload=$(head -c 258; printf .)
@@ -41,48 +44,29 @@ verify_service_credentials() {
     [ "$developer_rc" != 75 ] || return 75
     [ "$developer_rc" = 0 ] || return 3
 }
-# Root-owned runtime state lives in /run/quecdeck, never in /tmp: www-data
-# cannot plant a name there, so these writes need no symlink ceremony.
-# Rule and rationale: tests/host/guards/runtime-path.sh.
+# www-data cannot create names under the root-owned runtime directory.
 RUNDIR=/run/quecdeck
 LOG="$RUNDIR/install.log"
-STATUS_FILE="$RUNDIR/update.status"
-# What the current status describes. The UI labels its progress panel from this,
-# and it is what stops a QuecDeck version from being reported as the outcome of
-# an SSH action.
-KIND_FILE="$RUNDIR/update.kind"
-# Last answer from install_sshd.sh --check. World-readable so the web tier can
-# read it without another root call.
+OPERATION_FILE="$RUNDIR/update.operation"
 SSHD_CHECK="$RUNDIR/sshd-check"
-# Serialises dispatch, not the work. The activity check, the shared status, the
-# transient unit and the start are one decision: without a lock two requests can
-# both pass the check, then race to define the unit systemd actually runs, and
-# both report that their own action started. The installer's lock cannot cover
-# this because only the action systemd picked ever reaches it.
+# Dispatch lock covers the unit check, record publication, definition, and start.
 DISPATCH_LOCK="$RUNDIR/dispatch.lock"
 UPDATE_TMP="$RUNDIR/update"
 CHECKSUMS="$UPDATE_TMP/quecdeck_update_checksums.sha256"
 UPDATE_SCRIPT="$UPDATE_TMP/quecdeck_update.sh"
 
-# Before anything else, because every entry point writes here. Without the
-# directory no status is ever written and the UI sits on "idle" as though
-# nothing had been requested.
 if ! mkdir -p "$RUNDIR" || ! chmod 755 "$RUNDIR"; then
     echo "FATAL: cannot create $RUNDIR. Refusing to start an update that could not report its own status."
     exit 1
 fi
 
-# Atomic status writes are mandatory: starting work without a readable outcome
-# would leave the UI stuck on stale or misleading state.
-write_status() {
-    printf '%s\n' "$1" > "${STATUS_FILE}.tmp" &&
-        chmod 644 "${STATUS_FILE}.tmp" &&
-        mv "${STATUS_FILE}.tmp" "$STATUS_FILE"
+write_operation() { # write_operation <kind> <status> [code] [rollback]
+    printf '%s %s %s %s %s\n' "$OPERATION_ID" "$1" "$2" "${3:-0}" "${4:-none}" > "${OPERATION_FILE}.tmp" &&
+        chmod 644 "${OPERATION_FILE}.tmp" &&
+        mv "${OPERATION_FILE}.tmp" "$OPERATION_FILE"
 }
 
-# Bounded, and held only across dispatch. A caller that cannot take it is
-# looking at a dispatch already under way, which is the same answer the activity
-# check below gives, so it exits 2 like any other in-progress result.
+# Lock contention and an active unit share the busy exit code.
 take_dispatch_lock() {
     . /usrdata/quecdeck/script/lock-lib.sh || return 1
     exec 8>>"$DISPATCH_LOCK" || return 1
@@ -90,53 +74,38 @@ take_dispatch_lock() {
     flock_wait 8 5
 }
 
-# Written before the status it describes, so a UI that reads a fresh "running"
-# never finds the kind missing and mislabels the panel.
-write_kind() {
-    printf '%s\n' "$1" > "${KIND_FILE}.tmp" &&
-        chmod 644 "${KIND_FILE}.tmp" &&
-        mv "${KIND_FILE}.tmp" "$KIND_FILE"
-}
-
-# Fails the run: log + status. Runs inside the fetch unit, whose stdout already
-# appends to $LOG.
+# Fetch-unit failures must publish a terminal operation state.
 abort() {
     echo "$1"
-    write_status failed || {
-        rm -f "${STATUS_FILE}.tmp"
+    write_operation "$OPERATION_KIND" failed || {
+        rm -f "${OPERATION_FILE}.tmp"
         echo "FATAL: could not record the failed update status." >&2
     }
     exit 1
 }
 
-# Clear a terminal status file at the UI's request. The status file is root
-# owned, so the www-data get_update_log CGI cannot unlink it and calls this via
-# the existing sudo entry. Only terminal states are cleared, so an ack racing a
-# live update never wipes a "running" status.
+# Only the matching terminal operation can be acknowledged.
 if [ "$TAG" = "--clear-status" ]; then
-    case "$(cat "$STATUS_FILE" 2>/dev/null)" in
-        done|failed|failed:rollback_ok|failed:rollback_failed|failed:code:*)
-            rm -f "$STATUS_FILE" "$KIND_FILE" ;;
-    esac
+    # Compare-and-delete shares the dispatch lock with record creation.
+    take_dispatch_lock || exit 2
+    read -r current_id current_kind current_status current_code current_rollback < "$OPERATION_FILE" 2>/dev/null || exit 0
+    if [ "$current_id" = "$OPERATION_ID" ]; then
+        case "$current_status" in done|failed) rm -f "$OPERATION_FILE" ;; esac
+    fi
     exit 0
 fi
 
-# SSH component actions, in the same two stages a QuecDeck update uses: --service
-# starts a transient unit and returns, --service-run is that unit's entry point.
-# A unit is required because an opkg install outlives a CGI request, and because
-# install and uninstall restart the firewall, which takes lighttpd down with the
-# CGI attached to it.
+# Package actions run in systemd because firewall restart drops the CGI process.
 if [ "$TAG" = "--service" ] || [ "$TAG" = "--service-run" ]; then
     SSHD_ACTION="${2:-}"
-    SSHD_PORT="${3:-}"
+    SSHD_PORT="${4:-}"
+    OPERATION_KIND="sshd:$SSHD_ACTION"
     case "$SSHD_ACTION" in
         check|update|uninstall)
-            [ "$#" -eq 2 ] || { echo "The $SSHD_ACTION action takes no port."; exit 1; }
+            [ "$#" -eq 3 ] || { echo "The $SSHD_ACTION action takes no port."; exit 1; }
             ;;
         install)
-            [ "$#" -eq 3 ] || { echo "Install needs a port."; exit 1; }
-            # Shape only. install_sshd.sh holds the range, so the bound lives in
-            # one place.
+            [ "$#" -eq 4 ] || { echo "Install needs a port."; exit 1; }
             case "$SSHD_PORT" in ''|*[!0-9]*) echo "Invalid SSH port."; exit 1 ;; esac
             ;;
         *) echo "Unknown SSH action."; exit 1 ;;
@@ -144,11 +113,7 @@ if [ "$TAG" = "--service" ] || [ "$TAG" = "--service-run" ]; then
 fi
 
 if [ "$TAG" = "--service-run" ]; then
-    # Only the unit may enter this mode. A direct www-data sudo call would bypass
-    # the exclusion guard below, and sudo's env_reset strips the marker from
-    # anything it starts. The unit sets it through Environment=.
-    # Not abort: refusing an invalid entry point must not overwrite the recorded
-    # outcome of whatever last ran.
+    # Unit-only mode prevents direct sudo entry past the dispatch guard.
     if [ "${QD_SERVICE_UNIT:-}" != "1" ]; then
         echo "--service-run is started by the install_quecdeck_sshd unit only."
         exit 1
@@ -156,9 +121,7 @@ if [ "$TAG" = "--service-run" ]; then
 
     case "$SSHD_ACTION" in
         check)
-            # stdout is the machine-readable answer, stderr carries the step
-            # lines. Both reach the log through the unit, and the answer is also
-            # kept for the UI to read after the run ends.
+            # Preserve the machine-readable result outside the shared log.
             _answer=$(/usrdata/quecdeck/script/install_sshd.sh --check)
             rc=$?
             printf '%s\n' "$_answer"
@@ -183,23 +146,20 @@ if [ "$TAG" = "--service-run" ]; then
             ;;
     esac
 
-    # Any action that changes what is installed invalidates the last check.
-    # A stale "update available" would otherwise survive the update that
-    # applied it.
+    # A package change invalidates the cached availability result.
     [ "$SSHD_ACTION" = check ] || rm -f "$SSHD_CHECK"
 
     if [ "$rc" -eq 0 ]; then
-        write_status done || {
-            rm -f "${STATUS_FILE}.tmp"
+        write_operation "$OPERATION_KIND" done || {
+            rm -f "${OPERATION_FILE}.tmp"
             echo "FATAL: could not record the completed status." >&2
             exit 1
         }
         exit 0
     fi
-    # The installer's exit code is the outcome, carried through the status file
-    # so the UI can say which failure this was without reading the log.
-    write_status "failed:code:$rc" || {
-        rm -f "${STATUS_FILE}.tmp"
+    # The UI maps the installer exit code to an actionable failure.
+    write_operation "$OPERATION_KIND" failed "$rc" || {
+        rm -f "${OPERATION_FILE}.tmp"
         echo "FATAL: could not record the failed status." >&2
     }
     exit "$rc"
@@ -213,8 +173,7 @@ if [ "$TAG" = "--service" ]; then
         echo "An update is already in progress. Not starting another."
         exit 2
     }
-    # One in-flight operation across both kinds: an SSH action and a QuecDeck
-    # update both drive opkg and both can cycle the web server.
+    # SSH and QuecDeck operations share one package and web-server slot.
     for _unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd; do
         state=$(systemctl is-active "$_unit" 2>/dev/null)
         if [ "$state" = "activating" ] || [ "$state" = "active" ]; then
@@ -224,13 +183,13 @@ if [ "$TAG" = "--service" ]; then
         systemctl reset-failed "$_unit" 2>/dev/null
     done
 
-    if ! write_kind "sshd:$SSHD_ACTION" || ! write_status running; then
-        rm -f "${KIND_FILE}.tmp" "${STATUS_FILE}.tmp"
-        echo "FATAL: cannot record the action status. Refusing to start." >&2
-        exit 1
-    fi
     if ! : > "$LOG" || ! chmod 644 "$LOG"; then
         abort "FATAL: cannot prepare the log. Refusing to start."
+    fi
+    if ! write_operation "$OPERATION_KIND" running; then
+        rm -f "${OPERATION_FILE}.tmp"
+        echo "FATAL: cannot record the action status. Refusing to start." >&2
+        exit 1
     fi
 
     SSHD_UNIT_FILE=/run/systemd/system/install_quecdeck_sshd.service
@@ -242,11 +201,10 @@ Description=QuecDeck SSH component action
 
 [Service]
 Type=oneshot
-# Bounds a hung opkg. Expiry force-fails the unit so it can never block a later
-# action, and the guard above clears it on the next trigger.
+# Bound a hung package operation.
 TimeoutStartSec=900
 Environment=QD_SERVICE_UNIT=1
-ExecStart=/bin/bash /usrdata/quecdeck/script/run_update.sh --service-run $SSHD_ACTION $SSHD_PORT
+ExecStart=/bin/bash /usrdata/quecdeck/script/run_update.sh --service-run $SSHD_ACTION $OPERATION_ID $SSHD_PORT
 StandardOutput=append:$LOG
 StandardError=append:$LOG
 UNIT
@@ -256,25 +214,22 @@ UNIT
     chmod 644 "$SSHD_UNIT_FILE" || abort "FATAL: cannot secure the SSH action unit."
     systemctl daemon-reload || abort "FATAL: systemd rejected the SSH action unit."
     systemctl start --no-block install_quecdeck_sshd 2>>"$LOG" || abort "The SSH action unit was rejected by systemd."
-    # Reply as soon as systemd accepts the job. The page now owns the running
-    # state and get_update_log turns an early unit failure into its result, so
-    # holding the credential dialog open for a second adds no protection.
     echo "Started."
     exit 0
 fi
 
-# Fetch phase: runs as the install_quecdeck_fetch transient unit (started at
-# the bottom of this file). Downloads and verifies the installer, then execs
-# its bootstrap in the foreground so the unit's lifetime spans the update.
+# Fetch-unit lifetime covers download and bootstrap.
 if [ "$TAG" = "--fetch" ]; then
-    # Only the fetch unit may enter this mode: a direct sudo call would bypass
-    # the exclusion guard below. The sudo env_reset policy strips the marker from any
-    # www-data attempt. The unit sets it through Environment=.
-    [ "${QD_FETCH_UNIT:-}" = "1" ] || abort "--fetch is started by the install_quecdeck_fetch unit only."
     TAG="${2:-}"
+    OPERATION_KIND=quecdeck
+    # Unit-only mode prevents direct sudo entry past the dispatch guard.
+    if [ "${QD_FETCH_UNIT:-}" != "1" ]; then
+        echo "--fetch is started by the install_quecdeck_fetch unit only."
+        exit 1
+    fi
     GITROOT="https://raw.githubusercontent.com/megakerw/QuecDeck/$TAG"
 
-    # Safe as a fixed path: only one fetch unit can exist at a time.
+    # One fetch unit owns this fixed path.
     rm -rf "$UPDATE_TMP"
     mkdir -m 700 "$UPDATE_TMP" || abort "Security: failed to create $UPDATE_TMP."
 
@@ -293,19 +248,15 @@ if [ "$TAG" = "--fetch" ]; then
     chmod +x "$UPDATE_SCRIPT"
 
     echo "Update started (tag: $TAG)."
-    exec "$UPDATE_SCRIPT" "$TAG"
+    exec "$UPDATE_SCRIPT" "$TAG" "$OPERATION_ID"
 fi
 
 if [ -z "$TAG" ]; then
-    echo "Usage: run_update.sh <tag>"
+    echo "Usage: run_update.sh <tag> <operation-id>"
     exit 1
 fi
 
-# Mutual exclusion via systemd for both stages: the install runs as the
-# install_quecdeck oneshot, the download window as the install_quecdeck_fetch
-# transient unit. "activating" is a oneshot's running state, "active" covers
-# RemainAfterExit. reset-failed clears leftovers so the fetch window reads as
-# running, not failed, in get_update_log.
+# The lock serializes dispatch. Unit state covers work already in progress.
 take_dispatch_lock || {
     echo "An update is already in progress. Not starting another." >> "$LOG" 2>/dev/null
     exit 2
@@ -319,22 +270,18 @@ for _unit in install_quecdeck install_quecdeck_fetch install_quecdeck_sshd; do
     systemctl reset-failed "$_unit" 2>/dev/null
 done
 
-if ! write_kind quecdeck || ! write_status running; then
-    rm -f "${KIND_FILE}.tmp" "${STATUS_FILE}.tmp"
-    echo "FATAL: cannot record update status. Refusing to start." >&2
-    exit 1
-fi
+OPERATION_KIND=quecdeck
 # Must stay ahead of the fetch unit start below, which opens $LOG append as root.
 if ! : > "$LOG" || ! chmod 644 "$LOG"; then
     abort "FATAL: cannot prepare the update log. Refusing to start."
 fi
+if ! write_operation "$OPERATION_KIND" running; then
+    rm -f "${OPERATION_FILE}.tmp"
+    echo "FATAL: cannot record update status. Refusing to start." >&2
+    exit 1
+fi
 
-# Start the fetch phase as a oneshot written to /run, the pattern the bootstrap
-# uses for the install unit. Do NOT swap in systemd-run: its D-Bus path is
-# unverified from the CGI-sudo context. systemd runs one instance per unit
-# name, so a second trigger arriving before this one starts joins this run
-# instead of starting a second download. The unit detaches from the CGI on its
-# own, so no nohup or lock file.
+# The fixed unit name coalesces starts. systemd-run is unverified here.
 FETCH_UNIT_FILE=/run/systemd/system/install_quecdeck_fetch.service
 mkdir -p /run/systemd/system || abort "FATAL: cannot create systemd's runtime unit directory."
 rm -f "$FETCH_UNIT_FILE" || abort "FATAL: cannot replace the previous fetch unit."
@@ -344,12 +291,10 @@ Description=QuecDeck update fetch
 
 [Service]
 Type=oneshot
-# Spans fetch + the bootstrap it execs (which blocks on the install unit, own
-# cap 900s). Expiry force-fails a hung fetch so it can never block future
-# updates. The guard's reset-failed clears it on the next trigger.
+# Bound the combined fetch and install-unit wait.
 TimeoutStartSec=1500
 Environment=QD_FETCH_UNIT=1
-ExecStart=/bin/bash /usrdata/quecdeck/script/run_update.sh --fetch $TAG
+ExecStart=/bin/bash /usrdata/quecdeck/script/run_update.sh --fetch $TAG $OPERATION_ID
 StandardOutput=append:$LOG
 StandardError=append:$LOG
 UNIT
