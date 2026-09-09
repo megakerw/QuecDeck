@@ -7,17 +7,23 @@ Tests are grouped by the environment they require:
   root, run `bash tests/host/run-tests.sh` for every suite or name one or more
   suites such as `bash tests/host/run-tests.sh monitoring`. Pass `--slow` for
   timing-dependent cases. The available suites are `libraries`, `sms`,
-  `monitoring`, `updater`, `security`, `firewall`, and `structure`. The SMS
-  suite automatically includes its `libraries` prerequisite.
+  `monitoring`, `connection-logger`, `updater`, `security`, `firewall`, and
+  `structure`. The SMS suite automatically includes its `libraries`
+  prerequisite.
 - `host/integration/` contains environment-backed host tests. `host/js/`
-  contains JavaScript unit tests. `host/guards/` contains definitions shared
-  by the pre-commit hook and CI, while `host/support/` contains test utilities.
+  contains JavaScript unit tests, run by `host/ci-checks.sh` where node is
+  available and skipped where it is not. `host/guards/` contains definitions
+  shared by the pre-commit hook and CI, while `host/support/` contains test
+  utilities.
 - `host/ci-checks.sh` contains repository-integrity checks. CI also runs the
   Linux-only auth.lua integration harness.
 - `device/` contains tests that must run on a Quectel modem. Read each script's
   header before use: some are disruptive, some require a configured device,
   and several deliberately restart services or cellular connectivity. Copy an
-  individual script to the device and run it as documented.
+  individual script to the device and run it as documented. Host tests only
+  syntax-check these scripts. They do not claim that a device test ran or that
+  its device-side assertions passed. Before a release, record the device tests
+  that were actually run and their results.
 
 `device-test-dns-proxy-settings.sh` is read-only. Onboard DNS proxy changes do
 not become active until the modem has rebooted, so configure and reboot first,
@@ -49,6 +55,11 @@ commands safely unavailable, it checks the journal for the startup-minute skip
 and confirms no reboot dispatch was attempted, then restores the original
 schedule and daemon state.
 
+`device-test-ssh-helper-failclosed.sh` briefly moves the installed SSH access
+helper and invokes the firewall script directly. It confirms that managed SSH
+state without its helper is rejected before any IPv4 or IPv6 rule changes. The
+helper is restored by a trap and no service is restarted.
+
 `device-test-update-monitoring.sh` is a two-phase manual release acceptance
 test. Run `prepare`, perform a normal update, then run `verify`. Its observer
 checks that neither monitoring worker returns between the release-tree swap and
@@ -56,6 +67,10 @@ terminal update status, and verification checks the boot ID, status, exact
 configuration hashes, final enabled/disabled states, boot links and read-only
 root filesystem. Repeat once with both features enabled and once with both
 disabled.
+
+Candidate updater commits can be installed directly from a root shell without
+publishing a release. The workflow and restore steps are documented in
+`tools/release-gate-updater.md`.
 
 Operational monitors, diagnostics, performance probes, and release notes remain
 in `tools/`. They are not part of the pass/fail test suites.

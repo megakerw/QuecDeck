@@ -6,30 +6,29 @@
     <meta name="color-scheme" content="dark" />
     <style>html,body{background:#0f1117}</style>
     <title>QuecDeck</title>
-    <link rel="stylesheet" href="css/bootstrap.min.css?v=25a918f1" />
-    <link rel="stylesheet" href="css/styles.css?v=25a918f1" />
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=ed36d404" />
+    <link rel="stylesheet" href="css/styles.css?v=ed36d404" />
     <link rel="icon" href="favicon.ico" />
-    <script src="js/bootstrap.bundle.min.js?v=25a918f1"></script>
-    <script src="js/utils.js?v=25a918f1"></script>
-    <script src="js/alpinejs.min.js?v=25a918f1" defer></script>
+    <script src="js/bootstrap.bundle.min.js?v=ed36d404"></script>
+    <script src="js/utils.js?v=ed36d404"></script>
+    <script src="js/alpinejs.min.js?v=ed36d404" defer></script>
   </head>
   <body>
     <main>
       <div class="container my-4" x-data="networkSettings()">
         <div id="nav-placeholder"></div>
-        <script src="js/nav.js?v=25a918f1"></script>
+        <script src="js/nav.js?v=ed36d404"></script>
 
         <div class="row gy-3 mt-4 mb-4 align-items-stretch">
           <div class="col-12 col-md-5">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title d-flex align-items-center gap-2 mb-4">
                 Band Locking
                 <span x-show="isGettingBands" class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true" x-cloak></span>
                 <select
-                  class="form-select ms-auto"
+                  class="form-select ms-auto input-mw-140"
                   id="networkModeBand"
                   aria-label="LTE"
-                  style="max-width:140px"
                 >
                   <option selected value="LTE">LTE</option>
                   <option value="NSA">NR5G-NSA</option>
@@ -40,7 +39,7 @@
                 <!-- Checkboxes will be populated here -->
               </form>
               <div class="text-muted small mt-2" x-text="'Active bands: ' + bands"></div>
-              <div class="mt-auto pt-3 d-flex align-items-center gap-2">
+              <div class="panel-actions d-flex align-items-center gap-2">
                 <button
                   type="button"
                   class="btn btn-primary"
@@ -70,7 +69,7 @@
           </div>
 
           <div class="col-12 col-md form-narrow">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title">APN Settings</div>
                 <div class="mb-4">
                   <label for="roamPref" class="form-label">Roaming Preference</label>
@@ -135,14 +134,14 @@
                     <label class="btn btn-outline-primary" for="SIM2">Slot 2</label>
                   </div>
                 </div>
-              <div class="mt-auto pt-3">
+              <div class="panel-actions">
                 <button type="button" class="btn btn-primary" @click="saveApnSettings()" :disabled="$store.scanBanner.active">Save</button>
               </div>
             </div>
           </div>
 
           <div class="col-12 col-md form-narrow">
-            <div class="panel-section" style="height:100%">
+            <div class="panel-section panel-fill">
               <div class="panel-title">Network Preferences</div>
                 <div class="mb-4">
                   <label class="form-label">Preferred Network Mode</label>
@@ -187,7 +186,7 @@
                     <option value="1">NR5G-SA Disabled</option>
                   </select>
                 </div>
-              <div class="mt-auto pt-3">
+              <div class="panel-actions">
                 <button type="button" class="btn btn-primary" @click="saveNetworkPreferences()" :disabled="$store.scanBanner.active">Save</button>
               </div>
             </div>
@@ -198,8 +197,8 @@
       </div>
     </main>
 
-    <script src="js/populate-bands.js?v=25a918f1"></script>
-    <script src="js/parse-settings.js?v=25a918f1"></script>
-    <script src="js/network.js?v=25a918f1"></script>
+    <script src="js/populate-bands.js?v=ed36d404"></script>
+    <script src="js/parse-settings.js?v=ed36d404"></script>
+    <script src="js/network.js?v=ed36d404"></script>
   </body>
 </html>

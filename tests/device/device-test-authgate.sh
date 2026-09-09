@@ -39,7 +39,7 @@ IP=${IP:-192.168.225.1}
 # probe <path>: prints "<status>|<location>" of the FIRST response (redirects
 # are not followed, so a 302 is seen as a 302, not its destination's 200).
 probe() {
-    _out=$(/opt/bin/wget -S --max-redirect=0 -O /dev/null --no-check-certificate "https://$IP$1" 2>&1)
+    _out=$(/opt/bin/wget --timeout=5 --tries=1 -S --max-redirect=0 -O /dev/null --no-check-certificate "https://$IP$1" 2>&1)
     _st=$(printf '%s\n' "$_out" | grep -m1 -oE 'HTTP/[0-9.]+ [0-9]+' | awk '{print $2}')
     _loc=$(printf '%s\n' "$_out" | grep -m1 -iE '^ *Location:' | awk '{print $2}')
     printf '%s|%s' "${_st:-none}" "$_loc"
@@ -125,6 +125,19 @@ for _p in '/cgi-bin/../auth.lua' '/cgi-bin/%2e%2e/auth.lua' '/..%2fauth.lua'; do
     case "$_r" in
         200\|*) bad "traversal probe '$_p' answered 200" ;;
         *)      ok "traversal probe '$_p' blocked ($_r)" ;;
+    esac
+done
+
+# The CGI-name guard runs before session lookup, so these must return 403
+# even without a cookie. A 302 would mean the alias reached session handling
+# and could skip the exact-path developer check with a valid session.
+echo ""
+echo "[Check 5] CGI path suffixes rejected before authentication"
+for _p in '/cgi-bin/user_atcommand/extra' '/cgi-bin/set_cell_lock/' '/cgi-bin/auth_login/extra'; do
+    _r=$(probe "$_p")
+    case "$_r" in
+        403\|*) ok "CGI alias '$_p' rejected" ;;
+        *) bad "CGI alias '$_p' returned '$_r' (expected 403)" ;;
     esac
 done
 

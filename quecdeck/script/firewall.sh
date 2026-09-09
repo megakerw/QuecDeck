@@ -46,10 +46,72 @@ fi
 
 # TCP ports to allow on LAN IP and block everywhere else
 PORTS=("80" "443")
-# Open port 22 only when sshd is installed
-# Check the service file on rootfs rather than the binary in /opt,
-# since /opt may not be mounted yet when the firewall starts.
-[ -f /lib/systemd/system/sshd.service ] && PORTS=("22" "${PORTS[@]}")
+SSH_ACCESS_HELPER=/usrdata/quecdeck/script/ssh_access.sh
+
+managed_ssh_artifacts_exist() {
+    [ -e /opt/etc/ssh/quecdeck_enabled ] || [ -L /opt/etc/ssh/quecdeck_enabled ] ||
+        grep -Fqx 'ExecStartPre=/bin/sh /usrdata/quecdeck/optional/sshd/update_sshd_ip.sh' /lib/systemd/system/sshd.service 2>/dev/null ||
+        grep -Fqx 'Include /run/quecdeck/sshd-listen.conf' /opt/etc/ssh/sshd_config 2>/dev/null
+}
+
+# ssh_access.sh owns sshd_config and the enable marker, and its status action
+# reports both already validated, so the rule here cannot drift from the port
+# sshd binds. status never calls back into this script. A missing or incomplete
+# state is safe only when no managed SSH artifacts remain: rebuilding without
+# the SSH port would strip LAN-only protection from an installed daemon.
+load_ssh_state() {
+    local ssh_status ssh_status_rc
+    ssh_enabled=0
+    ssh_port=""
+    if [ -x "$SSH_ACCESS_HELPER" ]; then
+        ssh_status=$("$SSH_ACCESS_HELPER" status 2>/dev/null)
+        ssh_status_rc=$?
+        case "$ssh_status_rc" in
+            0) IFS=$'\t' read -r ssh_enabled ssh_port <<< "$ssh_status" ;;
+            3)
+                if managed_ssh_artifacts_exist; then
+                    echo "firewall: managed SSH state is incomplete. Refusing to apply the policy." >&2
+                    return 1
+                fi
+                ;;
+            *)
+                echo "firewall: SSH state is unreadable. Refusing to apply the policy." >&2
+                return 1
+                ;;
+        esac
+    elif managed_ssh_artifacts_exist; then
+        echo "firewall: SSH is managed but its access helper is missing. Refusing to apply the policy." >&2
+        return 1
+    fi
+    if [ "$ssh_enabled" = 1 ]; then
+        case "$ssh_port" in ''|*[!0-9]*)
+            echo "firewall: SSH reported a non-numeric port. Refusing to apply the policy." >&2
+            return 1
+            ;;
+        esac
+    fi
+}
+
+# sshd calls this read-only path before binding. The unit's active state alone
+# is insufficient: an early boot run may have completed before /opt exposed the
+# SSH configuration. Require exactly the generated LAN ACCEPT/DROP pair for the
+# current port.
+ssh_firewall_ready() {
+    local rules port_rule_count
+    [ "$ssh_enabled" = 1 ] || return 1
+    . /usrdata/quecdeck/script/lan-ip-lib.sh || return 1
+    resolve_lan_ip || return 1
+    iptables -w 5 -C QUECDECK -i bridge0 -d "$LAN_IP" -p tcp --dport "$ssh_port" -j ACCEPT >/dev/null 2>&1 || return 1
+    iptables -w 5 -C QUECDECK -p tcp --dport "$ssh_port" -j DROP >/dev/null 2>&1 || return 1
+    rules=$(iptables -w 5 -S QUECDECK 2>/dev/null) || return 1
+    port_rule_count=$(printf '%s\n' "$rules" | grep -cE -- "--dport ${ssh_port}([[:space:]]|$)")
+    [ "$port_rule_count" -eq 2 ]
+}
+
+if [ "${1:-}" = "--check-ssh" ]; then
+    load_ssh_state && ssh_firewall_ready
+    exit $?
+fi
 
 # The firmware units ordered before firewall.service report started before their
 # asynchronous IPPT, Ethernet, dnsmasq, and iptables work has settled. During
@@ -72,23 +134,22 @@ if ! read -r uptime_value _ < /proc/uptime ||
 fi
 [ "$settle_delay" -eq 0 ] || sleep "$settle_delay"
 
-# Read LAN IP from mobileap config, fall back to default
-LAN_IP=""
-if [ -f "/etc/data/mobileap_cfg.xml" ]; then
-    LAN_IP=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' /etc/data/mobileap_cfg.xml | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
+# /opt is a bind mount populated asynchronously during boot. Read SSH state
+# only after the firmware settle boundary so a transiently absent helper or
+# configuration cannot produce a successful policy that omits the SSH rules.
+load_ssh_state || exit 1
+if [ "$ssh_enabled" = 1 ]; then
+    PORTS=("$ssh_port" "${PORTS[@]}")
 fi
-# Validate extracted IP: dotted-decimal format with each octet in 0-255.
-if ! printf '%s' "$LAN_IP" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || \
-   ! printf '%s' "$LAN_IP" | awk -F. '$1>255||$2>255||$3>255||$4>255{exit 1}'; then
-    LAN_IP="192.168.225.1"
-fi
+
+. /usrdata/quecdeck/script/lan-ip-lib.sh || exit 1
+resolve_lan_ip
 
 # bridge0 is the tested LAN ingress for both routed/NAT and IPPT modes. An
 # interface name can be loaded into iptables before it exists, which would make
 # the unit look healthy while the following DROP rules quietly lock out every
 # client. Verify both the interface and its address instead. A transient QCMAP
-# delay fails this run, and systemd retries in 10 seconds. A firmware topology change
-# stays fail-closed and leaves a useful error rather than weakening the policy.
+# delay fails this run and systemd retries in 10 seconds.
 if ! ip link show bridge0 >/dev/null 2>&1; then
     echo "firewall: LAN bridge bridge0 does not exist. Refusing to apply the policy." >&2
     exit 1

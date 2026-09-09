@@ -21,7 +21,7 @@
         + '<path d="M3.2 7.4a6.8 6.8 0 0 1 9.6 0"/>') },
       { href: '/scanner.html', label: 'Cell Scan', icon: icon(
         '<circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2 14 14"/>') },
-      { href: '/settings.html', label: 'LAN & Utilities', icon: icon(
+      { href: '/settings.html', label: 'LAN & Modem Options', icon: icon(
         '<circle cx="8" cy="8" r="2.2"/><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6'
         + 'M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M12.5 3.5l-1.1 1.1M4.6 11.4l-1.1 1.1"/>') },
     ] },
@@ -30,12 +30,17 @@
         '<path d="M1.8 9.6h2.6l2-5.2 2.8 8 1.9-3.4h3.1"/>') },
       { href: '/scheduled-restart.html', label: 'Scheduled Restart', icon: icon(
         '<circle cx="8" cy="8" r="5.7"/><path d="M8 4.8v3.5l2.4 1.4"/>') },
+      { href: '/ssh.html', label: 'SSH', icon: icon(
+        '<rect x="2.3" y="6.5" width="11.4" height="7" rx="1.4"/><path d="M5 6.5V4.7a3 3 0 0 1 6 0v1.8"/>') },
       { href: '/sms.html', label: 'SMS', icon: icon(
         '<path d="M2.2 3.6h11.6v7.2H6.6L3.6 13.6v-2.8H2.2z"/>') },
     ] },
     { label: 'System', links: [
       { href: '/deviceinfo.html', label: 'Device Information', icon: icon(
         '<circle cx="8" cy="8" r="6"/><path d="M8 7.4v3.8"/><path d="M8 4.9v.7"/>') },
+      { href: '/security.html', label: 'Security', icon: icon(
+        '<path d="M8 1.7 13 3.8v3.7c0 3.1-2 5.5-5 6.8-3-1.3-5-3.7-5-6.8V3.8z"/>'
+        + '<path d="M5.8 8 7.3 9.5l3-3"/>') },
       { href: '/update.html', label: 'Update', icon: icon(
         '<path d="M8 2.2v7.2"/><path d="M5.2 6.6 8 9.4l2.8-2.8"/>'
         + '<path d="M2.6 11.4v1.2a1.2 1.2 0 0 0 1.2 1.2h8.4a1.2 1.2 0 0 0 1.2-1.2v-1.2"/>') },
@@ -44,7 +49,10 @@
         + '<path d="M5.8 8.6h4.4M5.8 10.9h4.4"/>') },
       { href: '/developer.html', label: 'Developer', icon: icon(
         '<path d="M5.4 4.8 2.2 8l3.2 3.2"/><path d="M10.6 4.8 13.8 8l-3.2 3.2"/>') },
-    ] },
+    ],
+    // Not a destination, so it renders as a button below a divider.
+    action: { id: 'nav-reboot', label: 'Reboot', icon: icon(
+      '<path d="M13.3 5.6a5.8 5.8 0 1 1-2.4-2.6"/><path d="M13.6 2.2v3.6h-3.6"/>') } },
   ];
   const path = window.location.pathname;
 
@@ -82,7 +90,7 @@
   }
 
   // Above 992px each labelled group is a dropdown. Below it the menu is forced
-  // open and static (see styles.css) so the drawer still shows all eleven.
+  // open and static (see styles.css) so the drawer still shows every page.
   function renderLinks() {
     return groups.map(function (group) {
       if (!group.label) {
@@ -91,9 +99,15 @@
         }).join('');
       }
 
-      const items = group.links.map(function (link) {
+      let items = group.links.map(function (link) {
         return '<li>' + renderItem(link, 'dropdown-item') + '</li>';
       }).join('');
+      if (group.action) {
+        items += '<li><hr class="dropdown-divider"></li>'
+          + '<li><button type="button" class="dropdown-item app-reboot-item"'
+          + ' id="' + group.action.id + '">' + group.action.icon
+          + '<span>' + escapeText(group.action.label) + '</span></button></li>';
+      }
       const open = group.links.some(function (link) { return isActive(link.href); });
 
       return '<li class="nav-item dropdown">'
@@ -186,6 +200,38 @@
       if (toggle) toggle.classList.add('active');
     });
   });
+
+  // The confirm overlay is z-index 1000, under the offcanvas (1045) and its
+  // backdrop (1040), so in the drawer the dialog would open behind both. Close
+  // the drawer first. Above the breakpoint there is no instance to hide.
+  function closeDrawer() {
+    const drawer = document.getElementById('appNav');
+    const instance = drawer && window.bootstrap
+      && window.bootstrap.Offcanvas.getInstance(drawer);
+    if (instance) instance.hide();
+  }
+
+  const rebootButton = document.getElementById('nav-reboot');
+  if (rebootButton) {
+    rebootButton.addEventListener('click', function () {
+      // Alpine is deferred, so the stores exist by the time anything is
+      // clickable. Bail rather than throw if the page loaded without it.
+      if (!window.Alpine) return;
+      closeDrawer();
+      window.Alpine.store('confirmModal').open(
+        'This will reboot the modem.',
+        function () {
+          // The reboot drops the connection before the response arrives. The
+          // CGI schedules it server-side, so a failed fetch is expected here.
+          postForm('/cgi-bin/set_setting', { action: 'reboot' }).catch(function () {});
+          window.Alpine.store('waitModal').start('Rebooting...', REBOOT_WAIT_SECS, function () {
+            window.location.reload();
+          });
+        },
+        'Reboot'
+      );
+    });
+  }
 
   const logoutButton = document.querySelector('.logout-btn');
   if (logoutButton) {

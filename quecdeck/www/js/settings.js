@@ -45,17 +45,6 @@ function quecdeckSettings() {
         ));
     },
 
-    rebootDevice() {
-      this.$store.confirmModal.open(
-        'This will reboot the modem.',
-        () => {
-          this.sendSetting('reboot').catch(() => {});
-          this.$store.waitModal.start("Rebooting...", REBOOT_WAIT_SECS, () => this.init());
-        },
-        'Reboot'
-      );
-    },
-
     applyIpptChange(action) {
       this.isLoading = true;
       this.$store.waitModal.start('Rebooting modem...', REBOOT_WAIT_SECS + 5, () => {

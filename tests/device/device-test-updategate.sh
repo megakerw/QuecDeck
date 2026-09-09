@@ -28,7 +28,7 @@ TERM_ONLY=0
 [ "${3:-}" = "term-only" ] && TERM_ONLY=1
 UPDATER=/tmp/test_update.sh
 LOG=/run/quecdeck/install.log
-STATUS=/run/quecdeck/update.status
+STATUS=/run/quecdeck/update.operation
 PLOG=/usrdata/quecdeck_last_update.log
 ACCESS=/run/quecdeck-web/logs/access_events.jsonl
 pass=0; fail=0; warn=0
@@ -75,13 +75,18 @@ cleanup() {
 }
 trap 'cleanup' EXIT INT TERM
 
-# Wait until the status file holds a terminal value. Echoes it. Empty on timeout.
+# Echo the terminal operation state. Return empty on timeout.
 wait_terminal() { # wait_terminal <timeout-seconds>
     _wt_i=0
     while [ "$_wt_i" -lt "$1" ]; do
-        case "$(cat "$STATUS" 2>/dev/null)" in
-            done|failed|failed:rollback_ok|failed:rollback_failed)
-                cat "$STATUS"; return 0 ;;
+        _record=$(cat "$STATUS" 2>/dev/null)
+        _state=$(printf '%s\n' "$_record" | awk '{print $3}')
+        _rollback=$(printf '%s\n' "$_record" | awk '{print $5}')
+        case "$_state:$_rollback" in
+            done:*) echo done; return 0 ;;
+            failed:ok) echo failed:rollback_ok; return 0 ;;
+            failed:failed) echo failed:rollback_failed; return 0 ;;
+            failed:*) echo failed; return 0 ;;
         esac
         sleep 1; _wt_i=$((_wt_i+1))
     done
@@ -122,7 +127,7 @@ _acc_before=$(wc -l < "$ACCESS" 2>/dev/null || echo 0)
 if probe_site; then
     ok "lighttpd owns the LAN HTTPS listener. auth_login GET returns 303"
 else
-    bad "probe failed (rc $?) -- the post-swap health check WILL fail. Stop here"
+    bad "probe failed (rc $?). The post-swap health check WILL fail. Stop here"
 fi
 _acc_after=$(wc -l < "$ACCESS" 2>/dev/null || echo 0)
 [ "$_acc_before" = "$_acc_after" ] && ok "no access-log side effect" || bad "probe wrote to $ACCESS (GET branch must be side-effect free)"
@@ -183,12 +188,10 @@ grep -q "Switch complete." "$LOG" && ok "swap completed" || bad "'Switch complet
 if grep -q "lighttpd stayed up through the swap" "$LOG"; then
     ok "content-only run took the stays-up branch (web-stack probe passed)"
 elif grep -q "Verifying the new web stack" "$LOG"; then
-    note "restart branch ran (conf/unit/pkg change or opkg upgrade) -- health check still passed"
+    note "restart branch ran (conf/unit/pkg change or opkg upgrade), health check still passed"
 else
     bad "no health-check marker in log"
 fi
-grep -q "ttyd installed." "$LOG" && ok "ttyd install + local-manifest verify passed" || note "ttyd not reinstalled cleanly (see log)"
-grep -qi "download checksums for ttyd" "$LOG" && bad "ttyd fetched the manifest from the network (should use the local copy)" || ok "no network manifest fetch for ttyd"
 [ "$(cat /usrdata/quecdeck/version 2>/dev/null)" = "${CURRENT#v}" ] && ok "version file is ${CURRENT#v}" || bad "version file wrong"
 [ -s /usrdata/quecdeck/checksums.sha256 ] && ok "manifest retained on disk" || bad "manifest missing after install"
 cmp -s "$PLOG" "$LOG" && ok "persisted log updated for this run" || bad "persisted log stale"
@@ -203,7 +206,7 @@ fi # end of tests 1-4
 # ---- Test 5: TERM mid-swap triggers the trap rollback -------------------
 # Stop the install unit the moment the swap starts. Too early (before the
 # marker) yields a plain 'failed' with the site untouched. Too late yields
-# 'done'. Both are harmless -- retry up to 3 attempts total.
+# 'done'. Both are harmless, retry up to 3 attempts total.
 echo ""
 echo "[Test 5] SIGTERM mid-swap -> trap rollback (up to 3 attempts)"
 _t5_result=""
@@ -221,7 +224,7 @@ while [ "$_attempt" -le 3 ]; do
     while [ "$_w" -lt 900 ]; do
         grep -q "Preparing for swap" "$LOG" 2>/dev/null && break
         # A terminal status before the marker means the run failed in staging.
-        case "$(cat "$STATUS" 2>/dev/null)" in failed*) break ;; esac
+        case "$(awk 'NR==1 { print $3 }' "$STATUS" 2>/dev/null)" in failed) break ;; esac
         sleep 1; _w=$((_w+1))
     done
     systemctl stop install_quecdeck 2>/dev/null
@@ -245,7 +248,7 @@ if [ "$_t5_result" = "rolled_back" ]; then
 elif [ -z "$_t5_result" ]; then
     note "could not land the stop inside the swap window in 3 attempts. The trap rollback remains untested. Try it manually."
 else
-    bad "unexpected terminal state '$_t5_result' -- inspect the device before doing anything else"
+    bad "unexpected terminal state '$_t5_result'. Inspect the device before doing anything else"
 fi
 [ "$(cat /usrdata/quecdeck/version 2>/dev/null)" = "${CURRENT#v}" ] && ok "still on ${CURRENT#v}" || bad "version drifted"
 [ "$(rootfs_state)" = "ro" ] && ok "/ back to read-only" || bad "/ left read-write"
@@ -264,7 +267,7 @@ if [ "$_t5_result" = "rolled_back" ]; then
     _restore_rc=$?
     [ "$_restore_rc" -eq 0 ] && ok "restore reinstall exits zero" || bad "restore reinstall returned rc $_restore_rc"
     st=$(wait_terminal 900)
-    [ "$st" = "done" ] && ok "device restored to a clean $CURRENT install" || bad "restore install ended '$st' -- fix before release"
+    [ "$st" = "done" ] && ok "device restored to a clean $CURRENT install" || bad "restore install ended '$st', fix before release"
 fi
 
 # ---- verdict ------------------------------------------------------------
@@ -278,7 +281,7 @@ if [ "$fail" -eq 0 ]; then
     echo "          the downgrade-override test (gate doc step 6), and the"
     echo "          post-tag web-path smoke test (step 7)."
 else
-    echo " VERDICT: gate FAILED -- do not tag. See FAIL lines above."
+    echo " VERDICT: gate FAILED. Do not tag. See FAIL lines above."
 fi
 echo "=================================================================="
 # cleanup() runs on EXIT.

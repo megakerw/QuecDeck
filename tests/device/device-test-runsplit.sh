@@ -9,8 +9,8 @@
 #   /usrdata/root     root:root  root's private home
 #
 # The guard cannot check any of this: a mode is a runtime fact, not a source
-# pattern. Every mode bug in this codebase came from the same cause -- relying
-# on the ambient umask for a security-relevant mode -- and none of them were
+# pattern. Every mode bug in this codebase came from the same cause, relying
+# on the ambient umask for a security-relevant mode, and none of them were
 # visible to a source scan. Hence this file.
 #
 # Run as ROOT on a CONFIGURED device (setup complete):
@@ -45,11 +45,8 @@ cleanup() {
     for _d in "$RUNDIR" "$WEBDIR" /usrdata/root /usrdata/root/bin; do
         rm -f "$_d/$PROBE" 2>/dev/null
     done
-    "$SUDO" "$RUN_UPDATE" --clear-status >/dev/null 2>&1
-    # Clear BOTH layouts unconditionally. "running" is not a terminal state, so
-    # --clear-status will not remove it. A half-cleaned status leaves the UI
-    # stuck on an update banner it can never dismiss.
-    rm -f "$RUNDIR/update.status" "$OLD_STATUS" 2>/dev/null
+    # Test cleanup is root and may remove even a non-terminal fixture record.
+    rm -f "$RUNDIR/update.operation" "$OLD_STATUS" 2>/dev/null
     systemctl reset-failed install_quecdeck_fetch >/dev/null 2>&1
     systemctl reset-failed install_quecdeck >/dev/null 2>&1
     rm -rf "$HARDEN_FIXTURE" "$HARDEN_OUTSIDE" "$MODE_FIXTURE" 2>/dev/null
@@ -60,7 +57,7 @@ echo "=================================================================="
 echo " QuecDeck ownership-rule check"
 echo "=================================================================="
 [ "$(id -u)" = "0" ] || { echo "FATAL: run as root."; exit 1; }
-[ -x "$SUDO" ] || { echo "FATAL: $SUDO missing -- is QuecDeck installed?"; exit 1; }
+[ -x "$SUDO" ] || { echo "FATAL: $SUDO missing. Is QuecDeck installed?"; exit 1; }
 id www-data >/dev/null 2>&1 || { echo "FATAL: www-data user missing."; exit 1; }
 
 # The mutating sections assume the split is DEPLOYED. Against an older install
@@ -174,9 +171,8 @@ FRESH=/tmp/qdfresh
 $SUDO -u www-data rm -rf "$FRESH" 2>/dev/null; rm -rf "$FRESH" 2>/dev/null
 # Exercise the cache and authentication-state creators as www-data. Run them
 # www-data with their targets redirected, so a missing umask shows up as a
-# loose parent or file. bf_fail deliberately sleeps for one second as part of
-# the production brute-force path. Exercising it here avoids a vacuous glob
-# over a directory that _bf_file alone would leave empty.
+# loose parent or file. Exercising bf_fail here avoids a vacuous glob over a
+# directory that _bf_file alone would leave empty.
 $SUDO -u www-data bash -c "
     . /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null
     _CACHE_DIR=$FRESH/cache
@@ -198,8 +194,8 @@ if [ -d "$FRESH" ]; then
             *) ok "fresh $_d created $_fm (owner-only write)" ;;
         esac
     done
-    # The FILE mode, not just its parent. cache_write no longer chmods, so this
-    # is what catches a lost umask. The probe ran under sudo, outside any unit,
+    # The FILE mode, not just its parent. cache_write sets no mode of its own, so
+    # this is what catches a lost umask. The probe ran under sudo, outside any unit,
     # so it can only pass if cgi-lib.sh sets the mask itself: a mode that came
     # from a unit's UMask= would show up here as 644.
     for _f in "$FRESH/cache/probe" "$FRESH/auth_failures"/*; do
@@ -214,26 +210,29 @@ if [ -d "$FRESH" ]; then
         fi
     done
 
-    # Two requests from one address must serialize around both the lockout
-    # check and counter update. Without the transaction lock both can record a
-    # first failure and the threshold is bypassed.
+    # One request owns the complete lockout decision. A contender from the same
+    # address must fail immediately rather than queue another CGI process.
     _bf_parallel="$FRESH/auth_parallel"
     for _attempt in 1 2; do
         $SUDO -u www-data bash -c "
             . /usrdata/quecdeck/script/cgi-lib.sh 2>/dev/null
             BF_MAX_ATTEMPTS=2
-            bf_lock $_bf_parallel 10.0.0.2 || exit 1
-            bf_fail $_bf_parallel 10.0.0.2
+            if bf_lock $_bf_parallel 10.0.0.2; then
+                sleep 1
+                bf_fail $_bf_parallel 10.0.0.2
             printf '%s\\n' \"\$BF_FAIL_RESULT\" > $_bf_parallel/result.$_attempt
-            bf_unlock
+                bf_unlock
+            else
+                printf 'unavailable\\n' > $_bf_parallel/result.$_attempt
+            fi
         " &
     done
     wait
     _bf_results=$(cat "$_bf_parallel"/result.* 2>/dev/null | sort)
-    if [ "$_bf_results" = "$(printf 'failed\nlocked')" ]; then
-        ok "parallel failures from one client serialize and trigger lockout"
+    if [ "$_bf_results" = "$(printf 'failed\nunavailable')" ]; then
+        ok "parallel authentication contention fails without queuing"
     else
-        bad "parallel failures produced '$(printf '%s' "$_bf_results")', expected one failed and one locked"
+        bad "parallel authentication produced '$(printf '%s' "$_bf_results")', expected one failed and one unavailable"
     fi
     unset _bf_parallel _bf_results _attempt
 else
@@ -276,9 +275,9 @@ for _f in "$WEBDIR/logs"/*; do
     [ "$_lm" = "600" ] || note "$_f is $_lm: appended files keep their creation mode until /run clears at reboot"
 done
 
-# ---- C: the old paths are dead -------------------------------------------
+# ---- C: pre-split paths are unused ---------------------------------------
 echo ""
-echo "[C] pre-split paths are no longer used"
+echo "[C] pre-split paths remain unused"
 if [ "$DEPLOYED" = "0" ]; then
     note "skipped: split not deployed on this device"
 else
@@ -300,7 +299,7 @@ rm -f /tmp/qdsplit-out
 sleep 2
 [ -f "$RUNDIR/install.log" ] \
     && ok "the run wrote $RUNDIR/install.log, not the squatted /tmp path" \
-    || bad "no $RUNDIR/install.log after a trigger -- is the update still using /tmp?"
+    || bad "no $RUNDIR/install.log after a trigger. Is the update still using /tmp?"
 [ "$(cat "$OLD_LOG" 2>/dev/null)" = "SQUATTED" ] \
     && ok "the squatted $OLD_LOG was left untouched" \
     || bad "$OLD_LOG changed: something still writes the pre-split path"
@@ -311,7 +310,7 @@ sleep 2
 # with NO unit alive to finish it", so test that, not the bare string.
 _st=""; _i=0
 while [ "$_i" -lt 45 ]; do
-    _st=$(cat "$RUNDIR/update.status" 2>/dev/null)
+    _st=$(awk 'NR==1 { print $3 }' "$RUNDIR/update.operation" 2>/dev/null)
     case "$_st" in failed*|done) break ;; esac
     _fetch=$(systemctl is-active install_quecdeck_fetch 2>/dev/null)
     _inst=$(systemctl is-active install_quecdeck 2>/dev/null)
@@ -325,7 +324,7 @@ case "$_st" in
             *activating*|*active*) note "still 'running' with a live unit: a slow or offline fetch, not a wedge" ;;
             *) bad "status 'running' with NO unit alive: the wedge is back" ;;
         esac ;;
-    "") bad "no status file written -- run_update.sh could not write $RUNDIR" ;;
+    "") bad "no operation record written. run_update.sh could not write $RUNDIR" ;;
     *)  note "unexpected status '$_st'" ;;
 esac
 fi
@@ -339,7 +338,7 @@ for f in "$RUNDIR/atcmd.log" "$RUNDIR/install.log"; do
     if [ -f "$f" ]; then
         $SUDO -u www-data sh -c "cat $f" >/dev/null 2>&1 \
             && ok "www-data reads $(basename "$f") ($(ls -l "$f" | awk '{print $1, $3}'))" \
-            || bad "www-data CANNOT read $f -- the UI log view will be empty"
+            || bad "www-data CANNOT read $f. The UI log view will be empty"
     else
         note "$f not present yet"
     fi

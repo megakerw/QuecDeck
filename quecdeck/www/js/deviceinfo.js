@@ -37,6 +37,17 @@ function fetchDeviceInfo() {
     phoneNumber: "Unknown",
     upnpEnabled: false,
     system: null,
+
+    // Badge state for one service row. `system` stays null until the snapshot
+    // loads, and an absent service means the component is not installed, which
+    // maps onto serviceBadge's undefined and null cases. Firewall reports
+    // `active` where the rest report `running`.
+    serviceState(key, offCls) {
+      if (!this.system) return serviceBadge(undefined);
+      const svc = this.system[key];
+      if (svc === null || svc === undefined) return serviceBadge(null);
+      return serviceBadge(svc.running === true || svc.active === true, offCls);
+    },
     quecdeckVersion: '',
 
     // Fetches the device-info snapshot and parses each section under its own

@@ -38,10 +38,10 @@ fi
 
 # Reject immediately if locked out
 if ! cgi_flock_available; then
-    json_error "locked"; exit 0
+    json_error "unavailable"; exit 0
 fi
 if ! bf_lock "$FAILURE_DIR" "$client_ip"; then
-    json_error "locked"; exit 0
+    json_error "unavailable"; exit 0
 fi
 if bf_locked "$FAILURE_DIR" "$client_ip"; then
     log_access_event "$ACCESS_LOG" "{\"ts\":$now,\"type\":\"login_locked\",\"user\":\"$username\",\"ip\":\"$client_ip\",\"wan_ip\":\"$wan_ip\"}"
@@ -51,8 +51,14 @@ fi
 
 # Check credentials via the root sudo helper (htpasswd is not www-data readable)
 role=""
-if validate_password admin "$username" "$password"; then
+validate_password admin "$username" "$password"
+password_rc=$?
+if [ "$password_rc" = 0 ]; then
     role="admin"
+elif [ "$password_rc" = 75 ]; then
+    bf_unlock
+    json_error "unavailable"
+    exit 0
 fi
 
 if [ -z "$role" ]; then

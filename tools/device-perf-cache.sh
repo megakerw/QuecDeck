@@ -78,8 +78,13 @@ bench "modem_stats MISS (ttl 0)"          "$N_AT" \
       cache_get_or_fetch "$_CACHE_DIR/miss" 0 "$STATS" 2000
 bench "modem_conn MISS (ttl 0)"           "$N_AT" \
       cache_get_or_fetch "$_CACHE_DIR/miss2" 0 "$CONN" 2000
+# device_sim joined the dashboard poll when the roaming row needed the IMSI. It
+# stays a separate batch because +CIMI errors with no SIM, which would fail the
+# whole chain if it rode along in modem_stats.
+bench "device_sim MISS (ttl 0)"           "$N_AT" \
+      cache_get_or_fetch "$_CACHE_DIR/miss3" 0 "$SIM" 2000
 
 echo
-echo "A dashboard poll is modem_stats + modem_conn. At ttl 2 with a 3 s poll"
-echo "every one is a miss. The HIT figure is what a second concurrent reader"
-echo "in the same tick costs instead."
+echo "A dashboard poll is modem_stats + modem_conn + device_sim. At ttl 2 with a"
+echo "3 s poll every one is a miss. The HIT figure is what a second concurrent"
+echo "reader in the same tick costs instead."

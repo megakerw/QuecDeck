@@ -420,6 +420,24 @@ html {
   background: var(--bs-primary-bg-subtle);
 }
 
+/* The one destructive entry in the nav, in the same --bs-danger as the buttons
+   that carry the action elsewhere. Both states are written at
+   .app-nav .dropdown-item specificity: the plain :hover rule above sets
+   --bs-body-color at 0,3,0 and would otherwise take the colour back off on
+   hover. The background still comes from that rule. */
+.app-nav .dropdown-item.app-reboot-item,
+.app-nav .dropdown-item.app-reboot-item:hover {
+  color: var(--bs-danger);
+}
+
+/* This menu sets --bs-dropdown-padding-y: 0, so every row sits flush against
+   its neighbours and the menu edges. Bootstrap's 0.5rem divider margins are
+   then the only gaps in the list, and they leave a hovered row's fill floating
+   short of the rule above it. */
+.app-nav .dropdown-divider {
+  margin: 0;
+}
+
 /* Nav and logout glyphs are stroked at 1.5, so they hold their weight against
    the label rather than blotting next to it. */
 .app-nav svg,
@@ -576,9 +594,19 @@ html {
     text-align: left;
   }
 
+  /* The dropdown divider above Reboot and .app-logout's border-top below it are
+     two rules one row apart, which boxes Reboot in. On the bar there is only
+     one, because the menu is its own surface. The drawer delimits groups with
+     its small-caps headings rather than rules, so drop the divider here and let
+     Reboot end the System block on its colour alone. */
+  .app-nav .dropdown-divider {
+    display: none;
+  }
+
   .app-nav-panel .app-nav {
     flex: 1 1 auto;
   }
+
 }
 
 /* ---------- horizontal bar, 992px and up ---------- */
@@ -833,6 +861,14 @@ html {
   font-weight: 500;
 }
 
+/* The Caps Lock hint appears mid-typing, so it is kept tight against the
+   field and reclaims part of the gap below rather than pushing the form. */
+.caps-hint {
+  margin-top: 0.2rem;
+  margin-bottom: -0.35rem;
+  line-height: 1.25;
+}
+
 /* ============================================================
    LIST GROUP
    ============================================================ */
@@ -891,6 +927,49 @@ html {
    !important needed to override Bootstrap's mb-* utility classes. */
 .panel-section > *:last-child {
   margin-bottom: 0 !important;
+}
+
+/* Panel action row. Pinned to the bottom by the panel flex column so buttons
+   line up across panels of equal height in a stretched row. */
+/* The key box holds a single wrapped token, so dragging it larger reveals
+   nothing. Set here rather than inline: the CSP has no style-src unsafe-inline,
+   so a literal style attribute would be dropped. */
+#public-key {
+  resize: none;
+}
+
+.panel-actions {
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+/* Footer stats. Micro-label over the value, reusing the .panel-title and
+   .stat-label typography so the strip stays in the product's existing voice.
+   The value carries tabular figures: both the clock and the uptime tick, and
+   proportional digits make them jitter on every poll. */
+.foot-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+/* Typed off the panel tables above, not off .panel-title: the footer sits under
+   two tables of label/value rows and reads as one more of them, so it borrows
+   their th and td treatment rather than the uppercase micro-label idiom, which
+   belongs to headings and stat cards. */
+.foot-stat-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+  line-height: 1.2;
+}
+
+.foot-stat-value {
+  font-size: 0.9rem;
+  color: var(--bs-body-color);
+  line-height: 1.25;
+  /* Both figures tick, and proportional digits make them jitter every poll. */
+  font-variant-numeric: tabular-nums;
 }
 
 .panel-title {
@@ -962,10 +1041,14 @@ html {
   font-size: 1.25rem;
 }
 
-/* When the last direct child is a list-group (no button row below), remove the
-   panel's own bottom padding. The last item's natural padding provides the
-   visual breathing room. */
-.panel-section:has(> ul.list-group:last-child) {
+/* When the last direct child is a list-group or an info table (no button row
+   below), remove the panel's own bottom padding. The last item's natural
+   padding provides the visual breathing room.
+   table:not(.table) is the same selector that styles these tables above, so
+   this covers the dashboard's two info panels and leaves the Bootstrap .table
+   panels on logs, scanner and sms alone. */
+.panel-section:has(> ul.list-group:last-child),
+.panel-section:has(> table:not(.table):last-child) {
   padding-bottom: 0;
 }
 
@@ -977,6 +1060,34 @@ html {
 .chart-box    { height: 210px !important; }
 .input-mw-180 { max-width: 180px; }
 .input-mw-160 { max-width: 160px; }
+.input-mw-140 { max-width: 140px; }
+.input-w-port { width: 4.5rem; }
+.panel-fill { height: 100%; }
+.panel-relative { position: relative; }
+.panel-loading { min-height: 8rem; }
+.text-label { font-size: 0.875rem; }
+.setup-actions { margin-top: 2rem; }
+.log-scroll { max-height: 420px; overflow-y: auto; }
+.table-col-compact { width: 1%; white-space: nowrap; }
+.surface-muted { background: var(--bs-secondary-bg); }
+.update-log {
+  background: var(--bs-secondary-bg);
+  min-height: 240px;
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.icon-sun { color: var(--status-color-yellow); }
+.icon-muted { color: var(--status-color-grey); }
+.ram-icon {
+  fill: none;
+  stroke: var(--status-color-green);
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ram-contacts { stroke: none; }
 
 /* .form-narrow is on three column wrappers (network.html twice, settings.html
    once) and deliberately styles nothing. A 24rem cap on the controls inside was
@@ -984,4 +1095,132 @@ html {
    Left inert rather than removed from the markup, which would touch two pages
    for no gain. */
 
-.sms-inbox-scroll { max-height: 400px; overflow-y: scroll; overflow-x: hidden; }
+/* ============================================================
+   SMS INBOX
+   ============================================================ */
+/* The page owns vertical scrolling. A nested scroll area puts a second
+   scrollbar against the cards, and its gutter comes out of the container's own
+   content box, so anything left outside ends up wider than the cards. No
+   max-height or overflow here.
+   The box groups the inbox and bounds the sticky selection bar's travel.
+   min-width is defensive: nothing currently relies on it, since the cards break
+   long words themselves. */
+.sms-inbox { min-width: 0; }
+
+.sms-toolbar { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+.sms-search { position: relative; flex: 1 1 14rem; max-width: 22rem; }
+.sms-search input { padding-left: 2.1rem; }
+.sms-search svg {
+  position: absolute; left: .7rem; top: 50%; transform: translateY(-50%);
+  color: var(--bs-secondary-color); pointer-events: none;
+}
+
+.sms-count { font-size: .82rem; color: var(--bs-secondary-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Selection bar, shown only while something is picked. The delete action lives
+   here rather than in a permanent .panel-actions row, so the destructive button
+   is never sitting under an inbox with nothing selected.
+   Sticky against the page, so delete stays reachable at any scroll position.
+   The background has to be opaque because cards pass under it, so the tint is
+   layered over the panel's surface colour rather than written as one blended
+   hex that would drift if --sa-surface changed. */
+.sms-selbar {
+  display: flex; align-items: center; gap: .75rem;
+  position: sticky;
+  top: .5rem;
+  z-index: 2;
+  padding: .55rem .55rem .55rem .9rem;
+  margin-bottom: .85rem;
+  border: 1px solid rgba(96, 165, 250, .35);
+  border-radius: var(--sa-control-radius);
+  background: linear-gradient(rgba(96, 165, 250, .09), rgba(96, 165, 250, .09)), var(--sa-surface);
+  box-shadow: 0 .35rem .8rem rgba(0, 0, 0, .22);
+}
+.sms-selbar-text { font-size: .875rem; font-variant-numeric: tabular-nums; }
+.sms-selbar .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .6rem; --bs-btn-font-size: .82rem; }
+
+.sms-list { display: flex; flex-direction: column; gap: .5rem; }
+
+/* Checkbox, avatar, then the message. The card is not a label: message text is
+   there to be selected and copied, and a drag inside a label toggles it. */
+.sms-card {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: .8rem;
+  align-items: start;
+  padding: .75rem .9rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--sa-control-radius);
+  background: rgba(255, 255, 255, .018);
+  transition: background var(--sa-transition), border-color var(--sa-transition);
+}
+.sms-card:hover { background: rgba(255, 255, 255, .045); border-color: rgba(255, 255, 255, .16); }
+.sms-card.is-selected { border-color: rgba(96, 165, 250, .6); background: rgba(96, 165, 250, .08); }
+.sms-card .form-check-input { margin-top: .55rem; }
+
+.sms-avatar {
+  width: 2.3rem; height: 2.3rem; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: .78rem; font-weight: 700;
+}
+.sms-avatar svg { width: 1.05rem; height: 1.05rem; }
+/* Sender class, not decoration: named sender, dialable number, short code. */
+.sms-avatar.is-brand   { background: rgba(96, 165, 250, .16); color: #8fbcfb; }
+.sms-avatar.is-contact { background: rgba(25, 135, 84, .18);  color: #52c98f; }
+.sms-avatar.is-code    { background: rgba(255, 193, 7, .14);  color: #e0b13c; }
+/* A stable sender hash selects from this small palette. The semantic classes
+   above remain as a fallback if a message has no sender color. */
+.sms-avatar.sender-color-0 { background: rgba(96, 165, 250, .16); color: #8fbcfb; }
+.sms-avatar.sender-color-1 { background: rgba(25, 135, 84, .18);  color: #52c98f; }
+.sms-avatar.sender-color-2 { background: rgba(255, 193, 7, .14);  color: #e0b13c; }
+.sms-avatar.sender-color-3 { background: rgba(13, 202, 240, .15);  color: #65d6ee; }
+.sms-avatar.sender-color-4 { background: rgba(111, 66, 193, .20); color: #ad8ee6; }
+.sms-avatar.sender-color-5 { background: rgba(214, 51, 132, .18); color: #e584b4; }
+
+/* min-width on the grid child, or a long unbroken body widens the whole card. */
+.sms-main { min-width: 0; }
+
+.sms-head { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .2rem; }
+.sms-sender { font-weight: 600; font-size: .95rem; overflow-wrap: anywhere; }
+.sms-time {
+  margin-left: auto; white-space: nowrap;
+  font-size: .78rem; color: var(--bs-secondary-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.sms-text {
+  margin: 0;
+  font-size: .9rem; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* Three lines. sms.js measures the element against this to decide whether to
+   offer the toggle, so the line count can change here alone. */
+.sms-text.is-clamped {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Shown only on a card whose text the clamp actually cuts off. sms.js sets
+   is-clipped from a measurement, since no selector can ask whether an element
+   overflows. */
+.sms-more { display: none; }
+.sms-main.is-clipped .sms-more {
+  display: block;
+  background: none; border: 0; padding: 0; margin-top: .3rem;
+  font-size: .8rem; font-weight: 600; color: var(--status-color-blue);
+}
+.sms-main.is-clipped .sms-more:hover { text-decoration: underline; }
+
+.sms-chip {
+  font-size: .68rem; font-weight: 600; letter-spacing: .03em;
+  padding: .1rem .38rem; border-radius: 999px;
+  color: var(--bs-secondary-color);
+  border: 1px solid var(--bs-border-color);
+  white-space: nowrap;
+}
+
+.sms-empty { display: flex; flex-direction: column; align-items: center; gap: .5rem; padding: 3rem 1rem; text-align: center; }
+.sms-empty svg { color: var(--bs-secondary-color); opacity: .55; }
+.sms-empty-title { font-weight: 600; }
+.sms-empty-sub { font-size: .875rem; color: var(--bs-secondary-color); max-width: 34ch; }

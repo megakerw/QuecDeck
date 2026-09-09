@@ -8,17 +8,11 @@
 # against a web-tier compromise, and any CGI code-execution bug is immediately
 # full admin with no password.
 #
-# This is a DESIGN QUESTION, not a regression test. It is expected to hold by
-# design today. The open decision is whether to accept or fix it:
-#
-#   accept: record it as a known tradeoff (any www-data RCE == admin), which is
-#           defensible because ttyd.service runs the web console as root, so an
-#           authenticated admin already has root by design.
-#   fix:    split identity from liveness. Identity (user/role) in a root-owned,
-#           www-data-readable file minted by a sudo helper that re-validates the
-#           password itself. Liveness (last_access) stays in the www-data-writable
-#           sibling, refreshed fork-free per request. Touches auth.lua,
-#           auth_login, auth_dev, sudoers, and host/integration/auth-lua.sh.
+# This is an accepted design limitation, not a regression. A www-data
+# compromise can forge administrator and developer application state. Root
+# helpers remain fixed-operation. Credential changes still require the current
+# administrator password, and SSH key changes also require the developer
+# password. The test documents that boundary explicitly.
 #
 # Run as ROOT on a CONFIGURED device (setup complete):
 #
@@ -29,8 +23,8 @@
 # access log. That is why it is a separate file: authgate guarantees pure
 # unauthenticated GETs and must stay that way.
 #
-# Scope note: the fixed-path /tmp write checks that used to live here are gone.
-# They are covered properly at runtime by tests/device/device-test-runsplit.sh,
+# Scope note: fixed-path /tmp write checks live in
+# tests/device/device-test-runsplit.sh at runtime,
 # and at commit time by tests/host/guards/runtime-path.sh, which catches a
 # reintroduced /tmp path before it can ever reach a device.
 
@@ -67,8 +61,8 @@ done
 echo ""
 echo "[Prop 1] www-data writes a session file. auth.lua accepts it as admin"
 _now=$(date +%s)
-if "$SUDO" -u www-data sh -c "printf 'user=admin\nrole=admin\ncreated=%s\nlast_access=%s\n' $_now $_now > $SESSIONS/$PROOF_TOKEN" 2>/dev/null; then
-    _code=$(/opt/bin/wget -S --max-redirect=0 -O /dev/null --no-check-certificate \
+if "$SUDO" -u www-data sh -c "umask 077; mkdir -p $SESSIONS && printf 'user=admin\nrole=admin\ncreated=%s\nlast_access=%s\n' $_now $_now > $SESSIONS/$PROOF_TOKEN" 2>/dev/null; then
+    _code=$(/opt/bin/wget --timeout=5 --tries=1 -S --max-redirect=0 -O /dev/null --no-check-certificate \
         --header="Cookie: session=$PROOF_TOKEN" "https://$IP/cgi-bin/get_system_status" 2>&1 \
         | grep -m1 -oE 'HTTP/[0-9.]+ [0-9]+' | awk '{print $2}')
     case "$_code" in
@@ -78,14 +72,16 @@ if "$SUDO" -u www-data sh -c "printf 'user=admin\nrole=admin\ncreated=%s\nlast_a
     esac
     rm -f "$SESSIONS/$PROOF_TOKEN"
 else
-    note "could not write the test session file as www-data -- $SESSIONS may not be www-data-writable on this build. That alone would REFUTE prop 1."
+    note "could not create the session directory and proof file as www-data"
 fi
 
 echo ""
 echo "=================================================================="
 echo " Results: $pass safe, $fail vulnerable, $warn notes"
-if [ "$fail" -eq 0 ]; then
+if [ "$fail" -eq 0 ] && [ "$warn" -eq 0 ]; then
     echo " VERDICT: forged sessions are rejected."
+elif [ "$fail" -eq 0 ]; then
+    echo " VERDICT: inconclusive. Review the notes above."
 else
     echo " VERDICT: forgery succeeded. This is the EXPECTED result today and"
     echo "          reflects an open design decision, not a new regression."

@@ -1,0 +1,33 @@
+#!/bin/bash
+# Reports the last answer from install_sshd.sh --check, written by the SSH
+# action unit. Reading a file, never running opkg: refreshing the index needs
+# the network and belongs in the unit, not in a request.
+
+. /usrdata/quecdeck/script/cgi-lib.sh
+cgi_check_cors
+cgi_output_json
+
+CHECK_FILE=/run/quecdeck/sshd-check
+
+if [ ! -f "$CHECK_FILE" ]; then
+    printf '{"checked":false,"available":false,"version":"","checked_at":0}\n'
+    exit 0
+fi
+
+checked_at=$(stat -c %Y "$CHECK_FILE" 2>/dev/null)
+case "$checked_at" in ''|*[!0-9]*) checked_at=0 ;; esac
+
+# Lines are "available<TAB><package><TAB><version>", or a single "current".
+# Report the first upgradable package: the two move together, and the UI names
+# the version rather than enumerating them.
+available=false
+version=""
+while IFS=$'\t' read -r state _package upgrade || [ -n "$state" ]; do
+    [ "$state" = "available" ] || continue
+    available=true
+    version=$(printf '%s' "$upgrade" | tr -cd '0-9A-Za-z.:+~_-')
+    break
+done < "$CHECK_FILE"
+
+printf '{"checked":true,"available":%s,"version":"%s","checked_at":%s}\n' \
+    "$available" "$version" "$checked_at"

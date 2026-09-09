@@ -2,33 +2,53 @@
 
 . /usrdata/quecdeck/script/cgi-lib.sh
 cgi_check_cors
+case "${REQUEST_METHOD:-GET}" in
+    GET|POST) ;;
+    *)
+        printf 'Status: 405 Method Not Allowed\r\nAllow: GET, POST\r\nContent-type: text/plain\r\n\r\nMethod Not Allowed\n'
+        exit 1
+        ;;
+esac
 cgi_output_json
 
 LOG=/run/quecdeck/install.log
-STATUS_FILE=/run/quecdeck/update.status
+OPERATION_FILE=/run/quecdeck/update.operation
 
-# No fallback to the pre-split /tmp paths, even across the update that moves
-# them: the incoming update_quecdeck.sh creates install.log during bootstrap,
-# before the www swap puts this CGI live. A fallback would also be unclearable,
-# since --clear-status only knows the /run path.
-
-offset=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^offset=' | cut -d= -f2)
-case "$offset" in
-    ''|*[!0-9]*) offset=0 ;;
-esac
-
-if [ ! -f "$STATUS_FILE" ]; then
-    printf '{"log":"","offset":0,"status":"idle"}\n'
+# Acknowledgement is scoped so a delayed client cannot clear a newer result.
+if [ "${REQUEST_METHOD:-GET}" = POST ]; then
+    cgi_read_post 256
+    ack_id=$(get_post_param operation_id)
+    case "$ack_id" in *[!a-f0-9]*|'') printf '{"ok":false,"error":"Invalid operation ID"}\n'; exit 0 ;; esac
+    [ "${#ack_id}" -eq 32 ] || { printf '{"ok":false,"error":"Invalid operation ID"}\n'; exit 0; }
+    /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --clear-status "$ack_id" >/dev/null 2>&1
+    printf '{"ok":true}\n'
     exit 0
 fi
 
-ack=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^ack=' | cut -d= -f2)
-if [ "$ack" = "1" ]; then
-    # The status file is root-owned in root-owned /run/quecdeck, so www-data
-    # cannot unlink it here. The run_update.sh helper clears terminal states as
-    # root via sudo.
-    /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --clear-status >/dev/null 2>&1
-    printf '{"ok":true}\n'
+idle_response() {
+    printf '{"log":"","offset":0,"status":"idle","kind":"","operation_id":"","code":0,"rollback":"none","version":""}\n'
+}
+
+offset=$(printf '%s' "${QUERY_STRING:-}" | tr '&' '\n' | grep '^offset=' | cut -d= -f2)
+case "$offset" in ''|*[!0-9]*) offset=0 ;; esac
+[ "${#offset}" -le 10 ] || offset=0
+
+if [ ! -f "$OPERATION_FILE" ]; then
+    idle_response
+    exit 0
+fi
+
+# Validate the complete record before reflecting any field into JSON.
+IFS=' ' read -r operation_id kind status code rollback < "$OPERATION_FILE"
+valid_record=1
+case "$operation_id" in *[!a-f0-9]*|'') valid_record=0 ;; esac
+[ "${#operation_id}" -eq 32 ] || valid_record=0
+case "$kind" in quecdeck|sshd:install|sshd:update|sshd:uninstall|sshd:check) ;; *) valid_record=0 ;; esac
+case "$status" in running|done|failed) ;; *) valid_record=0 ;; esac
+case "$code" in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) valid_record=0 ;; esac
+case "$rollback" in none|ok|failed) ;; *) valid_record=0 ;; esac
+if [ "$valid_record" != 1 ]; then
+    idle_response
     exit 0
 fi
 
@@ -41,32 +61,17 @@ else
     chunk_b64=""
 fi
 
-raw_status=$(cat "$STATUS_FILE" 2>/dev/null)
 version=""
-case "$raw_status" in
-# On "done", the swapped-in version file is the installed version. Report
-    # it so the UI doesn't have to infer it. Sanitized for JSON embedding.
-    done)
-        status="done" ; rollback="none"
-        version=$(cat /usrdata/quecdeck/version 2>/dev/null | tr -cd '0-9A-Za-z.-')
-        ;;
-    failed:rollback_ok)     status="failed" ; rollback="ok"     ;;
-    failed:rollback_failed) status="failed" ; rollback="failed" ;;
-    failed)                 status="failed" ; rollback="none"   ;;
-    *)
-        # Non-terminal status ("running" or empty). Distinguish a live update
-        # from a crash via systemd: the download window runs as the
-        # install_quecdeck_fetch oneshot and the install as install_quecdeck.
-        # "failed" on either = it died before writing an outcome (SIGKILL or
-# the fetch unit's TimeoutStartSec bypasses the cleanup paths). Anything
-        # else is still running. An empty/failed query defaults to running,
-        # never a false "failed".
-        if [ "$(systemctl is-active install_quecdeck 2>/dev/null)" = "failed" ] ||            [ "$(systemctl is-active install_quecdeck_fetch 2>/dev/null)" = "failed" ]; then
-            status="failed" ; rollback="none"
-        else
-            status="running" ; rollback="none"
-        fi
-        ;;
-esac
+[ "$status" = done ] && [ "$kind" = quecdeck ] &&
+    version=$(cat /usrdata/quecdeck/version 2>/dev/null | tr -cd '0-9A-Za-z.-')
 
-printf '{"log":"%s","offset":%s,"status":"%s","rollback":"%s","version":"%s"}\n' "$chunk_b64" "$total" "$status" "$rollback" "$version"
+if [ "$status" = running ]; then
+    if [ "$(systemctl is-active install_quecdeck 2>/dev/null)" = failed ] ||
+       [ "$(systemctl is-active install_quecdeck_fetch 2>/dev/null)" = failed ] ||
+       [ "$(systemctl is-active install_quecdeck_sshd 2>/dev/null)" = failed ]; then
+        status=failed
+    fi
+fi
+
+printf '{"log":"%s","offset":%s,"status":"%s","rollback":"%s","version":"%s","kind":"%s","operation_id":"%s","code":%s}\n' \
+    "$chunk_b64" "$total" "$status" "$rollback" "$version" "$kind" "$operation_id" "$code"

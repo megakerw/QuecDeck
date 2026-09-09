@@ -1,27 +1,58 @@
 #!/bin/sh
 
-CONFIG_FILE="/etc/data/mobileap_cfg.xml"
-LIGHTTPD_CONF="/usrdata/quecdeck/lighttpd.conf"
+PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 QUECDECK_DIR="/usrdata/quecdeck"
+RUNTIME_DIR=/run/quecdeck
+LISTEN_CONF="$RUNTIME_DIR/lighttpd-listen.conf"
 
-LAN_IP=""
-if [ -f "$CONFIG_FILE" ]; then
-    LAN_IP=$(grep -o '<APIPAddr>[^<]*</APIPAddr>' "$CONFIG_FILE" | sed 's/<APIPAddr>//;s/<\/APIPAddr>//')
+# Credential reset protection depends on www-data being unable to remove the
+# root-owned htpasswd files. Refuse to start the web tier if the Entware config
+# directory is a symlink, is not root-owned, or is writable by group or other.
+secure_entware_config_dir() { # secure_entware_config_dir [path]
+    _etc_dir=${1:-/opt/etc}
+    [ -d "$_etc_dir" ] && [ ! -L "$_etc_dir" ] || return 1
+    [ "$(stat -c %u "$_etc_dir" 2>/dev/null)" = 0 ] || return 1
+    _etc_mode=$(stat -c %a "$_etc_dir" 2>/dev/null)
+    case "$_etc_mode" in ''|*[!0-7]*) return 1 ;; esac
+    [ $((0$_etc_mode & 022)) -eq 0 ]
+}
+
+if ! command -v stat >/dev/null 2>&1; then
+    echo "FATAL: stat is unavailable, so /opt/etc permissions cannot be verified." >&2
+    exit 1
 fi
-# Validate extracted IP: dotted-decimal format with each octet in 0-255.
-# Guards against malformed or malicious content in the XML reaching sed.
-if ! printf '%s' "$LAN_IP" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || \
-   ! printf '%s' "$LAN_IP" | awk -F. '$1>255||$2>255||$3>255||$4>255{exit 1}'; then
-    LAN_IP="192.168.225.1"
+if ! secure_entware_config_dir; then
+    echo "FATAL: /opt/etc must be a root-owned directory without group or other write access." >&2
+    exit 1
 fi
 
-# Update lighttpd.conf binding if the IP has changed.
-current_ip=$(grep -o 'server\.bind = "[0-9.]*"' "$LIGHTTPD_CONF" | grep -o '"[0-9.]*"' | tr -d '"')
-if [ "$current_ip" != "$LAN_IP" ]; then
-    LAN_IP_ESC=$(printf '%s' "$LAN_IP" | sed 's/[\/&]/\\&/g')
-    sed -i "s/server\.bind = \"[0-9.]*\"/server.bind = \"$LAN_IP_ESC\"/" "$LIGHTTPD_CONF"
-    sed -i "s/== \"[0-9.]*:443\"/== \"$LAN_IP_ESC:443\"/" "$LIGHTTPD_CONF"
+. /usrdata/quecdeck/script/lan-ip-lib.sh || exit 1
+resolve_lan_ip
+
+# Publish the bind address to tmpfs. lighttpd.conf is checksummed and must stay
+# byte-identical to its manifest hash, so no boot may write to it. Every failure
+# here exits non-zero, and this runs as ExecStartPre, so the server never starts
+# against a stale or missing fragment. That, not lighttpd's include behaviour,
+# is what keeps a bad read from reaching a listening socket.
+[ ! -L "$RUNTIME_DIR" ] || exit 1
+mkdir -p "$RUNTIME_DIR" || exit 1
+[ -d "$RUNTIME_DIR" ] && [ ! -L "$RUNTIME_DIR" ] || exit 1
+chown root:root "$RUNTIME_DIR" && chmod 755 "$RUNTIME_DIR" || exit 1
+[ ! -L "$LISTEN_CONF" ] || exit 1
+_tmp="$LISTEN_CONF.tmp.$$"
+if ! printf 'var.lan_ip = "%s"\n' "$LAN_IP" > "$_tmp" ||
+   ! chown root:root "$_tmp" || ! chmod 644 "$_tmp" ||
+   ! mv -f "$_tmp" "$LISTEN_CONF"; then
+    rm -f "$_tmp"
+    exit 1
 fi
+
+# Entware's rc.unslung runs every S* script in /opt/etc/init.d/ at boot, and the
+# lighttpd package's postinst recreates one on any opkg upgrade. That second
+# server binds 0.0.0.0:80 from stock config and takes the port from this unit.
+# The installer reaps it too, this covers an upgrade done by hand afterwards.
+# Never fatal: a stray init script must not keep the web server down.
+rm -f /opt/etc/init.d/*lighttpd* 2>/dev/null || :
 
 # Regenerate TLS cert only if its SAN doesn't already match the current LAN IP.
 # Checking the cert SAN directly (rather than the conf binding) avoids spurious

@@ -2,48 +2,36 @@
 
 . /usrdata/quecdeck/script/cgi-lib.sh
 
-# Delete a space- or comma-separated slot list, ONE COMMAND PER SLOT. Echoes OK,
-# or an ERROR naming how many parts STILL HOLD A MESSAGE, or were left
-# unattempted when the budget expired. A slot that was already empty counts as
-# done. Top-level so tests/host/run-tests.sh can extract it and drive it with a
+# Delete a space- or comma-separated slot list, one command per slot. Echoes OK,
+# or an ERROR naming how many parts still hold a message or were left
+# unattempted when the budget expired. An already-empty slot counts as done.
+# Top-level so tests/host/run-tests.sh can extract it and drive it with a
 # stubbed atcmd_run.
 #
-# Never chained. Chaining measured 21 ms/slot against 20 ms for a single slot,
-# There is no gain because the flash write dominates and batching the round trips buys
-# nothing (tools/device-costs.md). What it did buy was two caps to stay under
-# (the daemon's CMD_MAX of 512 and a modem-side limit near 80 commands), a
-# chunk size to tune, abort-at-first-error semantics, and a retry loop that
-# re-sent deletes for slots the chain had already emptied. A single-slot line is
-# ~30 chars, so neither cap can bind and there is nothing to retry.
-# Measurements and the story: tools/sms-delete-flow.md.
+# Do not chain slots into one command. The flash write dominates, so chaining
+# costs 21 ms/slot against 20 ms single and only adds two caps to stay under:
+# the daemon's CMD_MAX of 512 and a modem-side limit near 80 commands. A
+# single-slot line is ~30 chars, so neither can bind.
+# Measurements in tools/sms-delete-flow.md.
 delete_sms_indices() {
-    # CPMS re-selected per line: index numbering is per-storage, and the daemon
-    # serializes single commands rather than requests, so another CGI can change
-    # the selection between ours. <mem1> only: mem2 and mem3 are the write and
-    # receive stores, and a delete must not move where arriving messages land.
-    # Device-verified 2026-08-06 that omitting them preserves them.
-    #
-    # get_sms deliberately sets all three, and that asymmetry is intended: it
-    # lists from ME, so it pins <mem3> to ME as well to guarantee arriving
-# messages land where the page can see them. The read path owns that choice. A
-    # delete does not.
+    # CPMS re-selected per line: index numbering is per-storage and another CGI
+    # can change the selection between ours. <mem1> only, so the write and
+    # receive stores keep pointing where arriving messages already land
+    # (device-verified 2026-08-06).
     local at_pfx='AT+CPMS="ME"'
     local failed=0 total=0 idx reply deadline expired=0
 
-    # Overall budget, because a global fault (daemon restarting, store busy)
-    # would otherwise hold the serialized AT port for minutes. Slots left
-    # unattempted count as failed.
-    #
-    # Sized against the manual's 300 ms per +CMGD, not the 20 ms a delete
-    # actually costs: 300 ms is the vendor's worst case and a cold CPU clock is
-    # ~3.5x slower. A slot is only started if its own timeout still fits, or the
-    # budget is not a ceiling. Costs in tools/device-costs.md.
+    # Overall budget, so a global fault (daemon restarting, store busy) cannot
+    # hold the serialized AT port for minutes. Unattempted slots count as
+    # failed. Sized against the manual's worst-case 300 ms per +CMGD rather
+    # than the 20 ms a delete costs. Not a ceiling: a slot starts only if its
+    # own timeout still fits.
     local budget=45 slot_tmo=2
     _epoch_now
     deadline=$(( _NOW + budget ))
 
-# Unquoted on purpose, for the word splitting. The valid_slot_list function has already
-    # limited this to digits and commas, so globbing has nothing to match.
+    # Unquoted for the word splitting. valid_slot_list has limited this to
+    # digits and commas, so globbing has nothing to match.
     for idx in ${1//,/ }; do
         total=$((total + 1))
         _epoch_now
@@ -54,19 +42,14 @@ delete_sms_indices() {
         fi
         reply=$(atcmd_run "${at_pfx};+CMGD=${idx}" $(( slot_tmo * 1000 )))
         at_response_ok "$reply" && continue
-        # 321 = invalid memory index = the slot holds no message, which is the
-        # end state asked for. A selection the listing no longer matches is
-        # therefore done, not failed. $failed means "still holds a message".
+        # 321 = invalid memory index = the slot holds no message, the end state
+        # asked for. $failed means "still holds a message". The RM520N answers
+        # "+CMS ERROR: 321" identically at CMEE 0, 1 and 2 (device-probed
+        # 2026-08-06), so the literal match is safe.
         #
-        # The literal is safe: device-probed 2026-08-06, this firmware answers
-        # "+CMS ERROR: 321" identically at CMEE 0, 1 and 2. The spec allows a
-        # verbose form, which would slip past this match, but the RM520N does
-        # not emit one.
-        #
-        # The +CPMS: line must come first. Without it, a 321 raised by the
-        # STORAGE SELECTION would read as "that slot is empty" for every slot
-        # in the request: nothing gets deleted, failed stays 0, and the page is
-        # told OK while the messages are all still there.
+        # Match the +CPMS: line first. A 321 raised by the storage selection
+        # would otherwise read as "empty" for every slot in the request, and
+        # the page would be told OK with the messages still there.
         case $reply in *'+CPMS:'*'+CMS ERROR: 321'*) continue ;; esac
         failed=$((failed + 1))
     done
@@ -80,9 +63,8 @@ delete_sms_indices() {
     fi
 }
 
-# Slot lists arrive from the page and go straight into an AT command line, so
-# this is the boundary that keeps everything else out. A function so the suite
-# can extract and drive it. This is equivalent to ^[0-9]+(,[0-9]+)*$ without the fork.
+# Slot lists go straight into an AT command line, so this is the boundary that
+# keeps everything else out. Equivalent to ^[0-9]+(,[0-9]+)*$ without the fork.
 valid_slot_list() {
     case $1 in ''|*[!0-9,]*) return 1 ;; esac
     case $1 in ,*|*,,*|*,) return 1 ;; esac
@@ -96,10 +78,9 @@ indices=$(get_post_param indices)
 
 cgi_output_text
 
-# Always by index, even when everything is selected. Do not reintroduce an
-# AT+CMGD=1,4 shortcut: it erases the whole store, including messages that
-# arrived while the page was open, and the UI's "delete all" means the ones on
-# screen. History in tools/sms-delete-flow.md.
+# Always by index, even when everything is selected. AT+CMGD=1,4 erases the
+# whole store, including messages that arrived while the page was open, and the
+# UI's "delete all" means the ones on screen.
 if [ -z "$indices" ]; then
     cgi_error "ERROR: provide indices=N,N,..."
 fi

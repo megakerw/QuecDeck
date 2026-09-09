@@ -18,25 +18,33 @@ CHECKSUMMED_FILES=(
   quecdeck/script/connection_logger.sh
   quecdeck/script/connection-log.sh
   quecdeck/script/lighttpd_prestart.sh
+  quecdeck/script/install_sshd.sh
+  quecdeck/script/lan-ip-lib.sh
+  quecdeck/script/lock-lib.sh
+  quecdeck/script/sshd-policy-lib.sh
   quecdeck/script/write_htpasswd.sh
+  quecdeck/script/change_password.sh
+  quecdeck/script/ssh_access.sh
   quecdeck/script/check_password.sh
   quecdeck/script/firewall.sh
   quecdeck/systemd/firewall.service
   quecdeck/systemd/lighttpd.service
   quecdeck/systemd/watchcat.service
-  quecdeck/systemd/ttyd.service
   quecdeck/systemd/scheduled_restart.service
   quecdeck/systemd/atcmd-daemon.service
   quecdeck/systemd/connection-logger.service
-  quecdeck/console/ttyd.bash
   quecdeck/quecdeckpasswd
   quecdeck/quecdeckdevpasswd
   quecdeck/auth.lua
+  quecdeck/install-generation
   quecdeck/monitoring-generation
-  quecdeck/console/menu/start_menu.sh
+  quecdeck/optional/sshd/sshd.service
+  quecdeck/optional/sshd/update_sshd_ip.sh
   quecdeck/www/index.html
   quecdeck/www/network.html
   quecdeck/www/settings.html
+  quecdeck/www/security.html
+  quecdeck/www/ssh.html
   quecdeck/www/watchcat.html
   quecdeck/www/scheduled-restart.html
   quecdeck/www/logs.html
@@ -51,6 +59,10 @@ CHECKSUMMED_FILES=(
   quecdeck/www/js/login.js
   quecdeck/www/js/home.js
   quecdeck/www/js/settings.js
+  quecdeck/www/js/security-api.js
+  quecdeck/www/js/security.js
+  quecdeck/www/js/ssh.js
+  quecdeck/www/js/operation-monitor.js
   quecdeck/www/js/scanner.js
   quecdeck/www/js/network-names.js
   quecdeck/www/js/deviceinfo.js
@@ -62,11 +74,14 @@ CHECKSUMMED_FILES=(
   quecdeck/www/js/logs.js
   quecdeck/www/js/setup.js
   quecdeck/www/js/nav.js
+  quecdeck/www/js/password-toggle.js
   quecdeck/www/js/update.js
   quecdeck/www/css/styles.css
   quecdeck/www/cgi-bin/auth_login
   quecdeck/www/cgi-bin/auth_logout
   quecdeck/www/cgi-bin/auth_dev
+  quecdeck/www/cgi-bin/get_security
+  quecdeck/www/cgi-bin/manage_security
   quecdeck/www/cgi-bin/get_deviceinfo
   quecdeck/www/cgi-bin/get_settings
   quecdeck/www/cgi-bin/set_setting
@@ -86,7 +101,6 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/watchcat_maker
   quecdeck/www/cgi-bin/get_scheduled_restart
   quecdeck/www/cgi-bin/scheduled_restart_maker
-  quecdeck/www/cgi-bin/toggle_ttyd
   quecdeck/www/cgi-bin/get_set_lanip
   quecdeck/www/cgi-bin/get_ippt_status
   quecdeck/www/cgi-bin/run_cell_scan
@@ -98,6 +112,8 @@ CHECKSUMMED_FILES=(
   quecdeck/www/cgi-bin/check_update
   quecdeck/www/cgi-bin/trigger_update
   quecdeck/www/cgi-bin/get_update_log
+  quecdeck/www/cgi-bin/trigger_sshd_action
+  quecdeck/www/cgi-bin/get_sshd_check
   quecdeck/www/cgi-bin/init_setup
   quecdeck/console/.profile
   quecdeck/atcli
@@ -128,8 +144,6 @@ CHECKSUMMED_FILES=(
 # pin ship and fail integrity checks on-device.
 PINNED_FILES=(
   installentware.sh
-  optional/sshd/sshd.service
-  optional/sshd/update_sshd_ip.sh
   quecdeck/quecdeckpasswd
   quecdeck/quecdeckdevpasswd
 )
@@ -159,7 +173,7 @@ fi
 index_missing=0
 for f in "${CHECKSUMMED_FILES[@]}"; do
   if ! git show ":$f" > /dev/null 2>&1; then
-    echo "ERROR: $f is in CHECKSUMMED_FILES but not in the git index."
+    echo "ERROR: $f is in CHECKSUMMED_FILES but not in the Git index."
     index_missing=1
   fi
 done
@@ -194,6 +208,8 @@ HTML_FILES=(
   quecdeck/www/setup.html
   quecdeck/www/network.html
   quecdeck/www/settings.html
+  quecdeck/www/security.html
+  quecdeck/www/ssh.html
   quecdeck/www/watchcat.html
   quecdeck/www/scheduled-restart.html
   quecdeck/www/logs.html

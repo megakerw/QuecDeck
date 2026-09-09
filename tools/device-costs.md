@@ -7,7 +7,7 @@ comments can cite a number instead of carrying a copy of it. Cite as
 Everything here was measured on the real device, not estimated. If you change a
 number, say how you measured it.
 
-**Hardware:** Quectel RM520N (sdxlemur), single-core `armv7l`, bash 3.2.57,
+**Hardware:** Quectel RM520N (sdxlemur), single-core `armv7l`, Bash 3.2.57,
 busybox userland. Governor `ondemand`, **345 MHz to 1805 MHz**.
 
 ---
@@ -40,13 +40,13 @@ pays the TLS handshake once, not per request. Confirm with
 
 **A/B properly.** Install one version, measure, install the other, measure, in
 the same session. Comparing a fresh measurement against a number from earlier in
-the day compares CPU states, not code. Get the "before" from git if the file is
+the day compares CPU states, not code. Get the "before" from Git if the file is
 otherwise unmodified: `git show HEAD:path > /tmp/old`.
 
 Better still, **alternate rounds** rather than measuring each variant once, so
 drift cancels instead of landing on whichever variant you timed second.
-`tests/device/device-test-authforkbench.sh` does this properly and is the pattern to
-copy for anything marginal.
+`tests/device/device-test-authforkbench.sh` alternates rounds, and is the
+pattern to copy for anything marginal.
 
 ---
 
@@ -58,7 +58,7 @@ user's first request after an idle period pays.
 | Operation | Cost | Notes |
 |---|---|---|
 | `read -r var < file` (builtin) | **150 us** | one line |
-| passing a large string to a function | **~10 ms per 49 KB** | bash copies it. Window instead |
+| passing a large string to a function | **~10 ms per 49 KB** | Bash copies it. Window instead |
 | whole-file read via `read -r -d ''` | **400-450 us** | includes the open |
 | `_epoch_now` (two procfs reads) | **800-1000 us** | no fork |
 | `var=$(<file)` | **1750-1800 us** | subshell, no exec |
@@ -67,25 +67,47 @@ user's first request after an idle period pays.
 | `date +%s` | **3600 us** | fork + exec |
 | `stat -c %Y` | **3700-4100 us** | fork + exec |
 | `grep` over a 462-line file, in `$( )` | **7400 us** | subshell + exec + heredoc |
-| bash `read` loop | **~82 us per line** | see the threshold below |
+| Bash `read` loop | **~82 us per line** | see the threshold below |
+
+### SSH key fingerprinting
+
+Measured 2026-08-29 on the device, 20 rounds each, centisecond clock from
+`/proc/uptime` (BusyBox `date` has no `%N`).
+
+| Operation | Cost | Notes |
+| --- | --- | --- |
+| `ssh-keygen -lf` on ONE key | **15 ms** | dominated by process startup |
+| `ssh-keygen -lf` on FIVE keys | **15 ms** | flat in key count |
+| per-key fallback, 5 keys | **115 ms** | ~23 ms/key: mktemp + write + keygen + rm |
+| `ssh_access.sh ready`, 5-key store | **45 ms** | batch path, plus `sshd -T` and the stat checks |
+
+`ssh-keygen -lf` **skips a line it cannot parse and still exits 0** (3 lines in,
+one corrupt, 2 fingerprints out, empty stderr). So its output alone answers "is
+any key usable", which is all `keys_ready` needs. `load_store` keeps the
+count-mismatch fallback only because `list` and `remove` need fingerprints
+aligned to source lines.
+
+The batch call costing the same for 1 key as for 5 is why there is no cache: a
+`stat`-keyed validation would cost ~4 ms to save ~11 ms, on a tmpfs file that is
+empty after every reboot.
 
 ### The threshold that decides these calls
 
-**A fork costs about the same as 40 lines of bash line-processing.**
+**A fork costs about the same as 40 lines of Bash line-processing.**
 
 3200 us per fork against ~82 us per line. So replacing a `grep`/`awk` with a
-pure-bash scan is a *loss* on anything bigger than a few dozen lines. Measured
+pure-Bash scan is a *loss* on anything bigger than a few dozen lines. Measured
 directly on `mobileap_read` over the real 462-line `/etc/data/mobileap_cfg.xml`,
 all variants returning identical values:
 
 | Variant | Cost |
 |---|---|
 | `grep` + heredoc (what ships) | **7400 us** |
-| pure bash, full scan | 37800 us (5.1x worse) |
-| pure bash, stopping at the last tag (~23% of the file) | 11900 us (1.6x worse) |
+| pure Bash, full scan | 37800 us (5.1x worse) |
+| pure Bash, stopping at the last tag (~23% of the file) | 11900 us (1.6x worse) |
 
 Every fork removed successfully in this codebase was a single operation on a
-handful of lines. Don't generalise the wins to bulk text processing.
+handful of lines. The measurements above show the opposite result on bulk text.
 
 ---
 
@@ -95,7 +117,7 @@ handful of lines. Don't generalise the wins to bulk text processing.
 |---|---|---|
 | Static asset, warm connection | 2.8 ms | - |
 | TLS handshake | ~42 ms | once per connection, not per request |
-| CGI floor: fork + bash + source `cgi-lib.sh` + Lua auth | **19 ms** | only by leaving bash |
+| CGI floor: fork + Bash + source `cgi-lib.sh` + Lua auth | **19 ms** | only by leaving Bash |
 | `atcli` spawn + socket round trip, no AT | 2 ms | - |
 | `systemctl is-active` for 7 units | **~24 ms** | already one batched D-Bus call |
 | a Lua `os.execute` fork in `auth.lua` | **~3 ms** | removed, see below |
@@ -120,7 +142,7 @@ cost every other page pays while one is in flight.
 | Batch | Commands | Cost |
 |---|---|---|
 | `AT+CSQ` | 1 | 2 ms |
-| `device_sim` (`+CIMI;+ICCID;+CNUM`) | 3 | 2 ms |
+| `device_sim` (`+CIMI;+ICCID;+CNUM`) | 3 | 2 ms (3 ms re-measured 2026-09-05) |
 | `modem_conn` (`+QMAP="WWANIP";+CGCONTRDP`) | 2 | 5 ms |
 | `modem_stats` (`+QTEMP;+QENG;+QCAINFO;+CSQ;...`) | 9 | **18 ms** |
 | `get_sms` full listing (`+CMGL=4`, 128 parts, ~49 KB) | 6 | **127-136 ms** |
@@ -145,7 +167,7 @@ Chained deletes scale **linearly**: 21 ms per slot chained against 20 ms for a
 single slot, so batching the round trips buys nothing. QuecDeck therefore does
 **not** chain (see `tools/sms-delete-flow.md`). The chained figure is kept
 because it is what settled that question. Both are one-shot measurements against
-real messages, which is why they were not taken sooner.
+real messages.
 
 The manual's stated maximum for `+CMGD` is **300 ms**, i.e. 15x the observed
 cost. Size timeouts on the manual's figure, not this one: it is the vendor's
@@ -156,7 +178,7 @@ clock is ~3.5x slower. `delete_sms` uses `budget=45 slot_tmo=2` on that basis.
 
 ## Endpoints, at a real 3 s cadence
 
-The honest numbers. Burst figures for the same endpoints are roughly a third of
+Measured at cadence. Burst figures for the same endpoints are roughly a third of
 these.
 
 | Endpoint | Cost | Note |
@@ -184,6 +206,7 @@ Reproduce with `tools/device-perf-cache.sh`. Boosted clock, as everywhere here.
 | `cache_get_or_fetch` HIT | **3900 us** |
 | `cache_get_or_fetch` MISS, `modem_stats` | **35500 us** |
 | `cache_get_or_fetch` MISS, `modem_conn` | 15500 us |
+| `cache_get_or_fetch` MISS, `device_sim` | **13500 us** |
 
 After the chmod removal, `modem_stats` is 20500 us raw against 35500 us through
 the cache, and `modem_conn` is 5000 against 15500. The wrapper adds roughly
@@ -206,12 +229,43 @@ At a 3 s dashboard cadence with ttl 2, every poll misses: **~24 AT commands per
 Second-granularity comparison was cheaper (~19) only because its +-1 s error
 sometimes served stale data.
 
+### device_sim joined the dashboard poll, 2026-09-05
+
+Measured after the roaming row started reading the IMSI. `device_sim` is the
+clearest case yet of the wrapper dominating: **3000 us of modem time, 13500 us
+as a miss**. The batch is 3 commands against `modem_conn`'s 2 and still costs
+less at the port, which is the "command count does not predict cost" rule again,
+but through the cache the two are 13500 against 15500. Nearly everything a
+short batch costs is the wrapper.
+
+That took a dashboard poll from `modem_stats` + `modem_conn` to those two plus
+`device_sim`, **~48 ms to ~61.5 ms**, about 28% more, for one row. The raw AT
+figure of 3 ms would have predicted 6%.
+
+The batch cannot be folded into `modem_stats` to avoid the round trip: `+CIMI`
+errors with no SIM, and `cache_get_or_fetch` treats a non-OK body as a failed
+fetch, so it would take the whole dashboard batch down on a SIM-less device.
+
+**Cost ACCEPTED 2026-09-05, ttl left at 2.** The poll is a background refresh,
+not a hot path, and 13.5 ms is affordable against never serving a stale SIM
+identity. Raising the ttl was weighed and set aside, and the reasoning is
+recorded here so it does not have to be worked out again: all three `device_sim`
+fields (IMSI, ICCID, phone number) are static for the life of the inserted SIM,
+so ttl 2 is a consistency choice rather than a data-driven one, and raising it
+would put the dashboard on the 3900 us HIT path instead of the 13500 us miss on
+all but one poll in a hundred, at the price of staleness on `deviceinfo` after a
+SIM hot swap. SIM *status* is unaffected either way: it comes from `+QSIMSTAT?`
+in `modem_stats`.
+
+The `_epoch_now`-twice-per-miss finding is separate and still open: it costs
+~1100 us on every cache miss product-wide, not just this one.
+
 ---
 
 ## Where the measurements live
 
-This file is the index. Domain detail stays in its own document. Don't copy
-numbers here that already have a home.
+This file is the index. Domain detail stays in its own document, and numbers
+that already have a home stay there.
 
 | Harness | Measures |
 |---|---|

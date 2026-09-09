@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <style>html,body{background:#0f1117}</style>
+    <title>QuecDeck</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=ed36d404" />
+    <link rel="stylesheet" href="css/styles.css?v=ed36d404" />
+    <link rel="icon" href="favicon.ico" />
+    <script src="js/bootstrap.bundle.min.js?v=ed36d404"></script>
+    <script src="js/utils.js?v=ed36d404"></script>
+    <script src="js/alpinejs.min.js?v=ed36d404" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="sshController()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=ed36d404"></script>
+
+        <!-- Always rendered. Every serverView state below paints a real card
+             body, so the row needs no visibility binding and the layout is
+             stable from the first frame. -->
+        <div class="row gy-3 mt-4 mb-4 align-items-start ssh-panel-layout">
+
+          <!-- During removal this becomes the only card and moves to the centre.
+               The normal two-column layout returns with the install view. -->
+          <div class="col-lg-6 ssh-primary-column" :class="sshdRemovalView ? 'mx-auto' : ''">
+            <div class="ssh-server-slot">
+              <div class="panel-section">
+              <div class="panel-title d-flex justify-content-between align-items-center">
+                <span>SSH Server</span>
+                <span
+                  class="badge"
+                  :class="sshBadge.cls"
+                  x-text="sshBadge.label"
+                ></span>
+              </div>
+
+              <!-- Reserves height with a class, not a skeleton, so the card
+                   does not collapse to its header while get_security is in
+                   flight. The badge above already reads Loading. -->
+              <template x-if="serverView === 'loading'">
+                <div class="panel-loading">
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="spinner-border spinner-border-sm text-secondary" role="status" aria-hidden="true"></span>
+                    <span class="text-muted small">Reading the SSH server status.</span>
+                  </div>
+                </div>
+              </template>
+
+              <template x-if="serverView === 'removing'">
+                <div>
+                  <div class="fw-semibold mb-2">Removing SSH</div>
+                  <p class="text-muted small mb-3">Stopping the server, removing its packages and keys, and closing the firewall port.</p>
+                  <div class="progress bar-xs mb-2" role="progressbar" aria-label="Removing SSH" aria-valuetext="In progress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated w-100"></div>
+                  </div>
+                  <div class="text-muted small font-monospace" x-show="sshdStepVisible" x-text="sshdStep"></div>
+                  <div class="text-info small" x-show="sshdRunning && sshdReconnecting" x-cloak>Reconnecting...</div>
+                </div>
+              </template>
+
+              <template x-if="serverView === 'removed'">
+                <div>
+                  <div class="fw-semibold text-success mb-2">SSH was removed</div>
+                  <p class="text-muted small mb-3">The server is stopped, its firewall port is closed, and its packages, configuration, and authorized keys have been removed.</p>
+                  <details class="mb-2">
+                    <summary class="text-muted small">Show removal log</summary>
+                    <div class="font-monospace small p-2 rounded update-log mt-2" x-text="sshdLog"></div>
+                  </details>
+                  <button type="button" class="btn btn-secondary btn-sm" @click="dismissSshdOutcome()">Dismiss</button>
+                </div>
+              </template>
+
+              <template x-if="serverView === 'install'">
+                <div>
+                  <p class="text-muted small">OpenSSH is not part of QuecDeck. Installing it fetches the server from Entware after confirming your developer password, and configures it for key-only root access.</p>
+
+                  <div class="mb-4">
+                    <div class="fw-semibold mb-2 text-label">Installing does the following:</div>
+                    <ul class="text-muted small mb-0 ps-3">
+                      <li>Installs <code>openssh-server</code> and <code>openssh-keygen</code>.</li>
+                      <li>Creates a dedicated privilege separation account.</li>
+                      <li>Writes a key-only configuration. Password login stays off.</li>
+                      <li>Opens the port below in the firewall.</li>
+                    </ul>
+                  </div>
+
+                  <div class="mb-4">
+                    <label class="form-label fw-semibold" for="install-port">SSH Port</label>
+                    <div class="text-muted small mb-2">Use the standard port 22, or a port from 1024 to 65535. Can be changed later.</div>
+                    <input
+                      id="install-port"
+                      type="number"
+                      class="form-control input-mw-180"
+                      min="22"
+                      max="65535"
+                      inputmode="numeric"
+                      x-model.number="sshdInstallPort"
+                      :disabled="sshdRunning"
+                    />
+                  </div>
+
+                  <div class="alert alert-warning small mb-4" x-show="!developerConfigured" x-cloak>Set a developer password on the Security page before installing SSH.</div>
+
+                  <div class="panel-actions">
+                    <button type="button" class="btn btn-primary" :disabled="sshdRunning || !developerConfigured" @click="promptSshdInstall()">
+                      <span x-show="sshdRunning && sshdAction === 'install'" class="spinner-border spinner-border-sm me-1" x-cloak></span>
+                      <span x-text="sshdRunning && sshdAction === 'install' ? 'Installing...' : 'Install SSH server'"></span>
+                    </button>
+                  </div>
+
+                  <div class="text-muted small mt-2 font-monospace" x-show="sshdStepVisible" x-cloak x-text="sshdStep"></div>
+                  <div class="text-info small mt-2" x-show="sshdRunning && sshdReconnecting" x-cloak>Reconnecting...</div>
+
+                  <div class="progress bar-xs mt-3" x-show="sshdProgressVisible" x-cloak
+                       role="progressbar" aria-label="Installing SSH" aria-valuetext="In progress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated w-100"></div>
+                  </div>
+
+                  <template x-if="!sshdRunning && sshdOutcome === 'failed'">
+                    <div class="mt-3">
+                      <div class="alert alert-warning small" x-text="sshdFailureMessage()"></div>
+                      <details class="mb-2">
+                        <summary class="text-muted small">Show log</summary>
+                        <div class="font-monospace small p-2 rounded update-log mt-2" x-text="sshdLog"></div>
+                      </details>
+                      <button type="button" class="btn btn-secondary btn-sm" @click="dismissSshdOutcome()">Dismiss</button>
+                    </div>
+                  </template>
+                </div>
+              </template>
+
+              <template x-if="serverView === 'manage'">
+                <div>
+                  <div class="alert alert-danger" x-show="!rootHomeReady">The root home permissions are incompatible. Re-run the QuecDeck installer before managing SSH access.</div>
+                  <div class="alert alert-danger" x-show="!sshSettingsReady" x-cloak>The SSH port or enabled state could not be read. Check <code>/opt/etc/ssh/sshd_config</code> and the QuecDeck enable marker.</div>
+                  <p class="text-muted small">Every change on this page asks for your developer password.</p>
+
+                  <!-- Enable / Disable -->
+                  <div class="d-flex justify-content-between align-items-start mb-1">
+                    <div>
+                      <div class="fw-semibold mb-1 text-label">Enable SSH server</div>
+                      <div class="small" :class="enableHint.cls" x-text="enableHint.text"></div>
+                    </div>
+                    <div class="form-check form-switch ms-3">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        x-model="sshEnabled"
+                        :disabled="busy || sshdRunning || !rootHomeReady || !sshSettingsReady"
+                      />
+                    </div>
+                  </div>
+
+                  <fieldset :disabled="!sshEnabled" :style="!sshEnabled ? 'opacity: 0.45' : ''">
+
+                    <hr />
+
+                    <div class="mb-4">
+                      <label class="form-label fw-semibold" for="ssh-port">SSH Port</label>
+                      <div class="text-muted small mb-2">Use the standard port 22, or a port from 1024 to 65535.</div>
+                      <input
+                        id="ssh-port"
+                        type="number"
+                        class="form-control input-mw-180"
+                        min="22"
+                        max="65535"
+                        inputmode="numeric"
+                        x-model.number="sshPort"
+                      />
+                    </div>
+                  </fieldset>
+
+                  <div class="panel-actions">
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      @click="saveSshSettings()"
+                      :disabled="busy || sshdRunning || !rootHomeReady || !sshSettingsReady || !sshSettingsChanged"
+                    >Save settings</button>
+                    <span class="ms-3 text-muted small" x-show="sshSettingsChanged" x-cloak>Unsaved changes.</span>
+                    <span class="ms-3 text-muted small" x-show="saveMessage" x-cloak x-text="saveMessage"></span>
+                  </div>
+                </div>
+              </template>
+              </div>
+            </div>
+
+            <!-- The packages themselves, and their removal. Separate from the
+                 settings panel above: these change what is installed, not how
+                 it is configured. -->
+            <template x-if="serverView === 'manage'">
+              <div class="ssh-software-slot">
+                <div class="panel-section mt-3">
+                <div class="panel-title d-flex justify-content-between align-items-center">
+                  <span>Server Software</span>
+                  <span class="badge" :class="sshdBadgeClass()" x-text="sshdBadgeLabel()"></span>
+                </div>
+
+                <div class="mb-3">
+                  <div class="fw-semibold mb-1 text-label">Installed package</div>
+                  <div class="small">
+                    <span class="font-monospace" x-text="sshVersion || 'openssh-server'"></span>
+                    <template x-if="updateAvailable">
+                      <span>
+                        <span class="text-muted mx-1">&rarr;</span>
+                        <span class="font-monospace text-warning" x-text="updateVersion"></span>
+                      </span>
+                    </template>
+                  </div>
+                </div>
+
+                <div class="text-muted small mb-2" x-show="!sshdRunning && !sshdOutcome" x-cloak>An update or reinstall keeps the configuration and keys.</div>
+                <div class="text-muted small mb-2" x-show="updateCheckedAt && !sshdRunning" x-cloak x-text="checkedAtText()"></div>
+
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                  <button x-show="updateAvailable" type="button" class="btn btn-success btn-sm"
+                          :disabled="sshdRunning" @click="promptSshdUpdate()" x-cloak>
+                    <span x-show="sshdRunning && sshdAction === 'update'" class="spinner-border spinner-border-sm me-1" x-cloak></span>
+                    <span x-text="sshdRunning && sshdAction === 'update' ? 'Updating...' : 'Update to ' + updateVersion"></span>
+                  </button>
+                  <button type="button" class="btn btn-primary btn-sm" :disabled="sshdRunning" @click="checkForSshdUpdate()">
+                    <span x-show="sshdRunning && sshdAction === 'check'" class="spinner-border spinner-border-sm me-1" x-cloak></span>
+                    <span x-text="sshdRunning && sshdAction === 'check' ? 'Checking...' : (updateChecked ? 'Re-check' : 'Check for updates')"></span>
+                  </button>
+                  <button x-show="!updateAvailable" type="button" class="btn btn-outline-primary btn-sm"
+                          :disabled="sshdRunning" @click="promptSshdUpdate()" x-cloak>Reinstall</button>
+                </div>
+
+                <div class="text-muted small mt-2 font-monospace" x-show="sshdStepVisible" x-cloak x-text="sshdStep"></div>
+                <!-- The rules are rebuilt in place, so no SSH action cycles the
+                     web server. This covers a plain connection drop. -->
+                <div class="text-info small mt-2" x-show="sshdRunning && sshdReconnecting" x-cloak>Reconnecting...</div>
+
+                <div class="progress bar-xs mt-3" x-show="sshdProgressVisible" x-cloak
+                     role="progressbar" aria-label="Changing SSH server" aria-valuetext="In progress">
+                  <div class="progress-bar progress-bar-striped progress-bar-animated w-100"></div>
+                </div>
+
+                <!-- x-show, not x-if, so the leave transition has something to
+                     fade out when the dismissal timer clears the outcome. -->
+                <div class="text-success small mt-2" x-cloak
+                     x-show="!sshdRunning && sshdOutcome === 'done'"
+                     x-transition:leave.opacity.duration.700ms
+                     x-text="sshdAction === 'uninstall' ? 'SSH removed.' : sshdAction === 'check' ? 'Check complete.' : 'SSH server updated.'"></div>
+
+                <template x-if="!sshdRunning && sshdOutcome === 'failed'">
+                  <div class="mt-3">
+                    <div class="alert alert-warning small" x-text="sshdFailureMessage()"></div>
+                    <details class="mb-2">
+                      <summary class="text-muted small">Show log</summary>
+                      <div class="font-monospace small p-2 rounded update-log mt-2" x-text="sshdLog"></div>
+                    </details>
+                    <button x-show="sshdNeedsReload()" type="button" class="btn btn-primary btn-sm" @click="location.reload()" x-cloak>Reload page</button>
+                    <button x-show="!sshdNeedsReload()" type="button" class="btn btn-secondary btn-sm" @click="dismissSshdOutcome()" x-cloak>Dismiss</button>
+                  </div>
+                </template>
+
+                <hr />
+
+                <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap" :class="sshdRunning ? 'opacity-50' : ''">
+                  <div class="min-w-0">
+                    <div class="fw-semibold mb-1 text-label">Remove SSH</div>
+                    <div class="text-muted small">Stops the daemon, removes the packages and configuration, closes the firewall port, and deletes every authorized key.</div>
+                  </div>
+                  <button type="button" class="btn btn-outline-danger btn-sm flex-shrink-0"
+                          :disabled="sshdRunning" @click="promptSshdUninstall()">
+                    <span x-show="sshdRunning && sshdAction === 'uninstall'" class="spinner-border spinner-border-sm me-1" x-cloak></span>
+                    <span x-text="sshdRunning && sshdAction === 'uninstall' ? 'Removing...' : 'Uninstall'"></span>
+                  </button>
+                </div>
+                </div>
+              </div>
+            </template>
+
+          </div>
+
+          <!-- Authorized keys -->
+          <!-- Hidden during the dedicated removal flow. A class, not x-show, so
+               no inline style attribute is written: the CSP has no
+               style-src-attr allowance. At all other times the card's own
+               states keep the column occupied and the layout stable. -->
+          <div class="col-lg-6 ssh-keys-column" :class="sshdRemovalView ? 'd-none' : ''">
+
+            <!-- Exactly the complement of the live panel below, so the column
+                 always holds one of the two and never empties. -->
+            <template x-if="!keysManageable">
+              <div class="panel-section opacity-50">
+                <div class="panel-title d-flex justify-content-between align-items-center">
+                  <span>Authorized Keys</span>
+                  <span class="badge text-bg-secondary" x-text="keysStandDown.badge"></span>
+                </div>
+                <p class="text-muted small mb-0" x-text="keysStandDown.message"></p>
+              </div>
+            </template>
+
+            <template x-if="keysManageable">
+              <div class="panel-section">
+                <div class="panel-title d-flex justify-content-between align-items-center">
+                  <span>Authorized Keys</span>
+                  <span
+                    class="badge"
+                    :class="keys.length >= 5 ? 'text-bg-warning' : 'text-bg-primary'"
+                    x-text="keys.length + ' / 5'"
+                  ></span>
+                </div>
+
+                <div class="alert alert-warning" x-show="!developerConfigured">Set a developer password on the Security page before managing SSH keys.</div>
+                <p class="text-muted small">Public keys are the only SSH login method. Adding or removing one asks for your developer password, because a key grants root access.</p>
+
+                <div class="list-group list-group-flush mb-2" x-show="keys.length > 0" x-cloak>
+                  <template x-for="(key, index) in keys" :key="key.fingerprint">
+                    <div
+                      class="list-group-item px-0 d-flex justify-content-between align-items-center gap-3 flex-wrap"
+                      :class="index === keys.length - 1 ? 'border-bottom-0' : ''"
+                    >
+                      <div class="min-w-0">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                          <span class="fw-semibold text-truncate" :class="key.comment ? '' : 'text-muted fst-italic'" x-text="keyTitle(key)"></span>
+                          <span class="badge text-bg-secondary flex-shrink-0" x-text="keyAlgorithm(key.type)"></span>
+                        </div>
+                        <div class="font-monospace small text-muted text-break" x-text="key.fingerprint"></div>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn btn-outline-danger btn-sm flex-shrink-0"
+                        @click="confirmRemove(key)"
+                        :disabled="busy || !developerConfigured || !rootHomeReady"
+                      >Remove</button>
+                    </div>
+                  </template>
+                </div>
+
+                <hr />
+
+                <div class="mb-3">
+                  <label class="form-label fw-semibold" for="public-key">Add a Public Key</label>
+                  <div class="text-muted small mb-2">One Ed25519, ECDSA, or RSA public key. Private keys and key options are rejected.</div>
+                  <textarea
+                    id="public-key"
+                    class="form-control font-monospace mb-2"
+                    rows="3"
+                    maxlength="8192"
+                    placeholder="ssh-ed25519 AAAA... laptop"
+                    x-model="publicKey"
+                    @input="validateKey()"
+                    :class="keyError ? 'is-invalid' : ''"
+                    :disabled="!developerConfigured || keys.length >= 5"
+                  ></textarea>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="text-muted small">or</span>
+                    <input
+                      id="public-key-file"
+                      type="file"
+                      class="form-control form-control-sm"
+                      accept=".pub,text/plain"
+                      @change="readKeyFile($event)"
+                      :disabled="!developerConfigured || keys.length >= 5"
+                    />
+                  </div>
+                  <div class="text-danger small mt-2" x-show="keyError" x-cloak x-text="keyError"></div>
+                </div>
+
+                <div class="panel-actions">
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    @click="addKey()"
+                    :disabled="busy || !developerConfigured || !rootHomeReady || keys.length >= 5 || !keyReady"
+                  >Add key</button>
+                  <span class="ms-3 text-muted small" x-show="keys.length >= 5" x-cloak>Remove a key before adding another.</span>
+                </div>
+              </div>
+              </template>
+          </div>
+
+        </div>
+
+        <!-- Kept on this page rather than in the global modal layer. x-if
+             prevents password inputs from existing until an SSH action needs
+             them, which avoids browser password-manager matches with the port. -->
+        <div class="modal-overlay" x-show="credentialOpen" x-cloak>
+          <template x-if="credentialOpen">
+            <div class="loading-modal text-start">
+              <h5 class="mb-1 fw-semibold" x-text="credentialTitle"></h5>
+              <p class="mb-3 text-muted small" x-text="credentialMessage"></p>
+              <p x-show="credentialDetail" class="mb-3 font-monospace small rounded px-2 py-1 surface-muted text-break" x-text="credentialDetail"></p>
+              <!-- Not monospace: these are the things an action removes, not an
+                   identifier being echoed back for the reader to match. -->
+              <ul x-show="credentialDetailList.length" class="mb-3 small rounded ps-4 pe-3 py-2 surface-muted">
+                <template x-for="item in credentialDetailList" :key="item">
+                  <li x-text="item"></li>
+                </template>
+              </ul>
+              <div x-show="credentialError" x-cloak class="alert alert-danger py-2 px-3 small mb-3" x-text="credentialError"></div>
+              <div role="group" aria-label="Confirm credentials"
+                   @keydown.enter.prevent="submitCredentials()">
+                <!-- One password field, deliberately. A pair with no username
+                     reads as new-password plus confirm, which is what made
+                     Chrome offer to save one and iOS Safari offer to generate
+                     one. autocomplete="off" is ignored on password fields by
+                     design, so the shape of the dialog is the only lever.
+                     There is also no form element here: see the Chromium note
+                     on the test that pins it. -->
+                <div class="mb-4">
+                  <label class="form-label fw-semibold" for="cred-dev">Developer Password</label>
+                  <input id="cred-dev" type="password" class="form-control" maxlength="256"
+                         autocomplete="current-password" x-model="credentialDeveloper"
+                         :disabled="credentialBusy || credentialLocked">
+                </div>
+                <div class="d-flex justify-content-end gap-2">
+                  <button type="button" class="btn btn-secondary btn-sm"
+                          :disabled="credentialBusy" @click="closeCredentials()"
+                          x-text="credentialLocked ? 'Close' : 'Cancel'"></button>
+                  <button type="button" class="btn btn-primary btn-sm"
+                          @click="submitCredentials()"
+                          :disabled="credentialBusy || credentialLocked"
+                          x-text="credentialBusy ? 'Verifying...' : credentialAction"></button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </main>
+    <script src="js/capslock.js?v=ed36d404"></script>
+    <script src="js/password-toggle.js?v=ed36d404"></script>
+    <script src="js/security-api.js?v=ed36d404"></script>
+    <script src="js/operation-monitor.js?v=ed36d404"></script>
+    <script src="js/ssh.js?v=ed36d404"></script>
+  </body>
+</html>

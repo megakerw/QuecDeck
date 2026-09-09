@@ -24,8 +24,7 @@ listing_complete "$_long_pdu" 0
 t_rc "a listing with no OK is incomplete"        "1" "$?"
 listing_complete "" 0
 t_rc "an empty listing is incomplete"            "1" "$?"
-# A short inbox is the everyday case for a device with few messages, and used
-# to be handled by a windowing fallback that no longer exists.
+# A short inbox is the everyday case for a device with few messages.
 listing_complete "$(printf '+CMGL: 1,1,,24\n07919909000000F00DA1\nOK')" 0
 t_rc "a short terminated listing is complete"    "0" "$?"
 listing_complete "$(printf 'OK')" 0
@@ -75,8 +74,7 @@ atcmd_run() {
 _reset() { : > "$_AT_LOG"; : > "$_DELETED"; }
 
 # One command per slot: 25 slots is 25 lines, each naming exactly one index and
-# re-selecting the storage. The chunk boundary these used to test no longer
-# exists. What replaces it is that no line can ever carry more than one delete.
+# re-selecting the storage. No line can carry more than one delete.
 _reset
 t "25 slots report OK" "OK" "$(delete_sms_indices "$(seq -s, 1 25)")"
 t "25 slots take 25 AT lines" "25" "$(wc -l < "$_AT_LOG")"
@@ -139,9 +137,8 @@ _reset; delete_sms_indices "1,2,3" >/dev/null
 t "3 slots take 3 AT lines"   "3" "$(wc -l < "$_AT_LOG")"
 _reset; delete_sms_indices "1" >/dev/null
 t "1 slot takes 1 AT line"    "1" "$(wc -l < "$_AT_LOG")"
-# The regression that started this: a full store used to become one ~1200-char
-# line that the daemon silently dropped. Per-slot it is 128 short lines, and the
-# longest possible line is bounded by the width of an index.
+# A full store is 128 short lines, never one long one: the daemon silently drops
+# an oversized line, and per-slot the longest is bounded by the width of an index.
 _reset; delete_sms_indices "$(seq -s, 1 128)" >/dev/null
 t "128 slots take 128 AT lines" "128" "$(wc -l < "$_AT_LOG")"
 t "no line is anywhere near CMD_MAX" "0" "$(awk 'length($0) > 64' "$_AT_LOG" | wc -l)"
@@ -174,7 +171,7 @@ rm -f "$_AT_LOG"
 # and retrying the first cannot help: it is the modem's final answer, and the
 # port is serialized, so the wasted round trip is charged to every caller queued
 # behind it. Device-measured 2026-08-05: AT+BOGUSCMD answers ERROR with rc 0, so
-# the old body-only condition sent it twice.
+# a body-only condition cannot tell a terminated error from a cut-short reply.
 # _CACHE_DIR is a cgi-lib global, so save it rather than unset it below, or every
 # later caller of cache_write/cache_get_or_fetch trips set -u.
 _CACHE_DIR_SAVED=$_CACHE_DIR
@@ -299,11 +296,10 @@ rm -rf "$_CACHE_DIR" "$_FETCH_LOG"
 _CACHE_DIR=$_CACHE_DIR_SAVED
 unset _CACHE_DIR_SAVED _STUB_OUT _STUB_RC _FETCH_LOG
 
-# The stub blocks above replace at-lib's atcmd_run, and used to unset it on the
-# way out, leaving the suite with no definition: a later case touching the AT or
-# cache layer would have failed with "command not found" and read as a code bug.
-# Assert the real one is back, and that it is at-lib's (which routes through the
-# _ATCLI stub) rather than a recorder left behind.
+# The stub blocks above replace at-lib's atcmd_run. Without a definition on the
+# way out, a later case touching the AT or cache layer fails with "command not
+# found" and reads as a code bug. Assert the real one is back, and that it is
+# at-lib's (which routes through the _ATCLI stub) rather than a recorder.
 t "atcmd_run survives the stub blocks" "function" "$(type -t atcmd_run)"
 STUB_OUT="+CSQ: 9,99"; STUB_RC=0
 t "and it is at-lib's, not a leftover stub" "+CSQ: 9,99" "$(atcmd_run 'AT+CSQ' 2>/dev/null)"
@@ -474,19 +470,23 @@ if [ "$SLOW" = "1" ]; then
             (
                 . quecdeck/script/cgi-lib.sh
                 BF_MAX_ATTEMPTS=2
-                bf_lock "$_bf_parallel" 10.0.0.3 || exit 1
-                bf_fail "$_bf_parallel" 10.0.0.3
-                printf '%s\n' "$BF_FAIL_RESULT" > "$_bf_parallel/result.$_attempt"
-                bf_unlock
+                if bf_lock "$_bf_parallel" 10.0.0.3; then
+                    sleep 1
+                    bf_fail "$_bf_parallel" 10.0.0.3
+                    printf '%s\n' "$BF_FAIL_RESULT" > "$_bf_parallel/result.$_attempt"
+                    bf_unlock
+                else
+                    printf 'unavailable\n' > "$_bf_parallel/result.$_attempt"
+                fi
             ) &
         done
         wait
-        t "parallel failures from one client are both counted" \
-          "$(printf 'failed\nlocked')" \
+        t "a parallel request from one client fails without queuing" \
+          "$(printf 'failed\nunavailable')" \
           "$(cat "$_bf_parallel"/result.* 2>/dev/null | sort)"
         bf_lock "$_bf_parallel" 10.0.0.3
         bf_locked "$_bf_parallel" 10.0.0.3
-        t_rc "parallel failures leave the client locked out" 0 "$?"
+        t_rc "an unverified contender does not advance the lockout" 1 "$?"
         bf_unlock
 
         # Holding one client's lock must not serialize an unrelated client.

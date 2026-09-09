@@ -13,8 +13,8 @@ const path = require('path');
 // Renamed on the way out, or they collide with eval's own declarations.
 const src = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'quecdeck', 'www', 'js', 'sms.js'), 'utf8');
 const { fetchSMS: makeSMS, SMS_GSM7_BASIC: gsm7Table,
-        deleteFailureText: failureText } =
-  eval(`${src}\n;({ fetchSMS, SMS_GSM7_BASIC, deleteFailureText })`);
+        deleteFailureText: failureText, localDayNumber: dayNumber } =
+  eval(`${src}\n;({ fetchSMS, SMS_GSM7_BASIC, deleteFailureText, localDayNumber })`);
 
 // Shared prefix for every fixture below:
 //   00        no SMSC address supplied
@@ -88,6 +88,15 @@ check('GSM-7 alphabet is 128 entries', gsm7Table.length === 128, `${gsm7Table.le
 check('escape slot is at 0x1B', gsm7Table.charCodeAt(0x1B) === 0x1B);
 check('entries after the escape are not shifted', gsm7Table[0x1F] === 'É',
   gsm7Table[0x1F]);
+
+// Calendar-day labels must not depend on the elapsed hours between local
+// midnights. Explicit offsets model the 23-hour spring-forward day without
+// relying on the host's time zone database.
+const beforeDst = new Date('2026-03-29T00:00:00+01:00');
+const afterDst = new Date('2026-03-30T00:00:00+02:00');
+check('consecutive dates remain one calendar day apart across DST',
+  dayNumber(afterDst) - dayNumber(beforeDst) === 1,
+  `${dayNumber(afterDst) - dayNumber(beforeDst)}`);
 
 // Reference reuse: two messages sharing one (sender, ref, total), seen on a
 // real inbox as 12 parts under one reference with sequences 1-6 twice. They
@@ -180,6 +189,29 @@ check('a reserved alphabet is rejected', reserved.messages.length === 0,
 check('a reserved alphabet is reported', reservedLog.some(m => /reserved alphabet/.test(m)),
   JSON.stringify(reservedLog));
 
+// ---- alphanumeric sender lengths ---------------------------------------
+// The address length field counts semi-octets, not characters, so it cannot
+// separate a 7-character name from an 8-character one: both pack into 7
+// octets. The 7-character case leaves a whole zero septet, which is "@" in
+// GSM-7 and must be dropped as fill rather than read as the last character.
+const namedDeliver = addr => `0004${addr}0000${SCTS}02C834`;
+
+[
+  // 7 characters, 7 octets, 7 bits of fill. The 8th septet is not a character.
+  ['0ED0D432BBBC7EB701', 'Telekom', 'a 7-character name drops the fill septet'],
+  // 6 characters, 6 octets, 6 bits of fill. No 7th septet fits, so nothing is
+  // ambiguous and nothing may be stripped.
+  ['0CD04F79D87D2E03', 'Orange', 'a 6-character name is untouched'],
+  // 8 characters in the same 7 octets as Telekom, so the same length field.
+  // The 8th septet is a real character and must survive.
+  ['0ED0D637396C7EBBCB', 'Vodafone', 'an 8-character name keeps its last character']
+].forEach(([addr, expected, name]) => {
+  const box = makeSMS();
+  box.parseSMSData(listing([[60, namedDeliver(addr)]]));
+  check(name, box.messages.length === 1 && box.messages[0].sender === expected,
+    JSON.stringify(box.messages.map(m => m.sender)));
+});
+
 // ---- deleteFailureText -------------------------------------------------
 // cgi-bin/delete_sms answers with a COUNTED failure, and the whole point of
 // surfacing it is that "3 of 40" tells the user the scale. A fixed string
@@ -212,6 +244,15 @@ check('a null rejection falls back',
 check('an empty message falls back',
   failureText(new Error('')) === 'The messages could not be deleted.',
   failureText(new Error('')));
+
+// Representative sender types get distinct identity cues, and every result
+// must correspond to one of the six CSS palette classes.
+const colorBox = makeSMS();
+const senderColors = ['Telekom', '+46701234567', '72500'].map(sender => colorBox.senderColor(sender));
+check('representative senders get different colors',
+  new Set(senderColors).size === senderColors.length, senderColors.join(', '));
+check('sender color uses the six-color palette',
+  senderColors.every(color => Number.isInteger(color) && color >= 0 && color < 6));
 
 console.log(`\nfailures: ${failures}`);
 process.exit(failures ? 1 : 0);

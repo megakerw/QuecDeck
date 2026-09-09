@@ -42,6 +42,44 @@ t "firewall protects every admin TCP port through helper" "yes" \
   "$(grep -q '^[[:space:]]*add_v4_lan_only tcp "\$port"$' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "firewall helper updates rule-count check" "yes" \
   "$(grep -q 'expected=\$((expected + 2))' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall derives SSH exposure from the ssh_access status action" "yes" \
+  "$(grep -q '^SSH_ACCESS_HELPER=/usrdata/quecdeck/script/ssh_access.sh$' quecdeck/script/firewall.sh && grep -q '"\$SSH_ACCESS_HELPER" status' quecdeck/script/firewall.sh && grep -q 'PORTS=("\$ssh_port"' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall keeps one SSH port parser" "yes" \
+  "$(! grep -qE '^(SSHD_CONFIG|SSHD_ENABLED)=' quecdeck/script/firewall.sh && ! grep -q '^valid_ssh_port()' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall refuses policy on an unreadable SSH state" "yes" \
+  "$(grep -q 'SSH state is unreadable' quecdeck/script/firewall.sh && grep -q 'SSH reported a non-numeric port' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "firewall fails closed when managed SSH loses its helper" "yes" \
+  "$( _load=$(extract_fn quecdeck/script/firewall.sh load_ssh_state); printf '%s\n' "$_load" | grep -q 'elif managed_ssh_artifacts_exist; then' && printf '%s\n' "$_load" | grep -q 'SSH is managed but its access helper is missing' && echo yes || echo no)"
+t "firewall reads SSH state after the boot settle delay" "yes" \
+  "$(_sleep=$(grep -n '^\[ "\$settle_delay" -eq 0 \] || sleep' quecdeck/script/firewall.sh | cut -d: -f1); _state=$(grep -n '^load_ssh_state || exit 1$' quecdeck/script/firewall.sh | cut -d: -f1); [ -n "$_sleep" ] && [ -n "$_state" ] && [ "$_sleep" -lt "$_state" ] && echo yes || echo no)"
+t "firewall refuses incomplete managed SSH state" "yes" \
+  "$( _load=$(extract_fn quecdeck/script/firewall.sh load_ssh_state); printf '%s\n' "$_load" | grep -q '3)' && printf '%s\n' "$_load" | grep -q 'managed_ssh_artifacts_exist' && printf '%s\n' "$_load" | grep -q 'managed SSH state is incomplete' && echo yes || echo no)"
+t "firewall exposes a read-only SSH rule check" "yes" \
+  "$( _check=$(extract_fn quecdeck/script/firewall.sh ssh_firewall_ready); printf '%s\n' "$_check" | grep -q -- '-C QUECDECK -i bridge0' && printf '%s\n' "$_check" | grep -q -- '-C QUECDECK -p tcp' && printf '%s\n' "$_check" | grep -q 'port_rule_count.*-eq 2' && grep -q '^if \[ "${1:-}" = "--check-ssh" \]; then$' quecdeck/script/firewall.sh && echo yes || echo no)"
+t "sshd verifies its firewall rules before binding" "yes" \
+  "$(_active=$(grep -n '^ExecStartPre=/bin/systemctl is-active firewall$' quecdeck/optional/sshd/sshd.service | cut -d: -f1); _check=$(grep -n '^ExecStartPre=/bin/bash /usrdata/quecdeck/script/firewall.sh --check-ssh$' quecdeck/optional/sshd/sshd.service | cut -d: -f1); _start=$(grep -n '^ExecStart=/opt/sbin/sshd -D$' quecdeck/optional/sshd/sshd.service | cut -d: -f1); [ -n "$_active" ] && [ -n "$_check" ] && [ -n "$_start" ] && [ "$_active" -lt "$_check" ] && [ "$_check" -lt "$_start" ] && echo yes || echo no)"
+eval "$(extract_fn quecdeck/script/firewall.sh managed_ssh_artifacts_exist)"
+t "firewall recognizes the managed SSH service copy" "yes" \
+  "$(grep() { [ "${!#}" = /lib/systemd/system/sshd.service ] && return 0; command grep "$@"; }; managed_ssh_artifacts_exist && echo yes || echo no)"
+unset -f grep
+t "firewall treats an uninstalled SSH as no exposure" "yes" \
+  "$( _load=$(extract_fn quecdeck/script/firewall.sh load_ssh_state); printf '%s\n' "$_load" | grep -q '3)' && printf '%s\n' "$_load" | grep -q 'if managed_ssh_artifacts_exist' && echo yes || echo no)"
+t "SSH unit follows the checksummed release asset" "yes" \
+  "$(grep -q 'cp "\$ASSET_DIR/sshd.service" "\$unit_tmp"' quecdeck/script/install_sshd.sh && grep -q 'mv -f "\$unit_tmp" /lib/systemd/system/sshd.service' quecdeck/script/install_sshd.sh && [ "$(grep -c 'refresh_managed_sshd_unit "\$QUECDECK_DIR"' update_quecdeck.sh)" -eq 2 ] && echo yes || echo no)"
+eval "$(extract_fn quecdeck/script/sshd-policy-lib.sh valid_ssh_port)"
+eval "$(extract_fn quecdeck/script/ssh_access.sh configured_port)"
+_ssh_port_fixture=$(mktemp)
+SSHD_CONFIG=$_ssh_port_fixture
+printf 'Port 2222\n' > "$_ssh_port_fixture"
+t "ssh_access accepts one configured unprivileged SSH port" "2222" "$(configured_port)"
+printf 'Port 22\n' > "$_ssh_port_fixture"
+t "ssh_access accepts the standard SSH port" "22" "$(configured_port)"
+printf 'Port 80\n' > "$_ssh_port_fixture"
+t "ssh_access rejects other privileged ports" "1" "$(configured_port >/dev/null 2>&1; echo $?)"
+printf 'Port 2222\nPort 2223\n' > "$_ssh_port_fixture"
+t "ssh_access rejects ambiguous SSH ports" "1" "$(configured_port >/dev/null 2>&1; echo $?)"
+rm -f "$_ssh_port_fixture"
+unset _ssh_port_fixture SSHD_CONFIG
 t "firewall leaves DHCP outside its policy" "yes" \
   "$(! grep -q -- '--dport 67' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "firewall never deletes jumps until absent" "yes" \
@@ -56,21 +94,27 @@ t "firewall verifies exactly one final jump" "yes" \
   "$(grep -q '\[ "\$jump_count" -ne 1 \]' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "firewall converges both family jumps" "2" \
   "$(grep -c '^converge_input_jump .* QUECDECK' quecdeck/script/firewall.sh)"
+# Scoped to the function, not to a comment range: each landmark below is unique
+# within it, and a renamed function yields an empty range that fails loudly
+# where a missing comment anchor would silently widen the window to the rest of
+# the file.
+_uninstall_fn=$(extract_fn quecdeck.sh uninstall_quecdeck_components)
 t "firewall uninstall explicitly removes owned rules" "yes" \
-  "$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh | grep -q 'firewall.sh --remove' && echo yes || echo no)"
+  "$(printf '%s\n' "$_uninstall_fn" | grep -q 'firewall.sh --remove' && echo yes || echo no)"
 t "firewall helper declares remove API" "yes" \
   "$(grep -qx 'QUECDECK_FIREWALL_REMOVE_API=1' quecdeck/script/firewall.sh && echo yes || echo no)"
 t "uninstall checks remove API before invoking helper" "yes" \
-  "$(_fw_block=$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh); _check_line=$(printf '%s\n' "$_fw_block" | grep -n 'QUECDECK_FIREWALL_REMOVE_API=1' | cut -d: -f1); _run_line=$(printf '%s\n' "$_fw_block" | grep -n 'firewall.sh --remove' | cut -d: -f1); [ -n "$_check_line" ] && [ "$_check_line" -lt "$_run_line" ] && echo yes || echo no)"
+  "$(_check_line=$(printf '%s\n' "$_uninstall_fn" | grep -n 'QUECDECK_FIREWALL_REMOVE_API=1' | cut -d: -f1); _run_line=$(printf '%s\n' "$_uninstall_fn" | grep -n 'firewall.sh --remove' | cut -d: -f1); [ -n "$_check_line" ] && [ -n "$_run_line" ] && [ "$_check_line" -lt "$_run_line" ] && echo yes || echo no)"
 t "unsupported firewall helper requires reboot" "yes" \
-  "$(sed -n '/# Uninstall firewall/,/# Uninstall ttyd/p' quecdeck.sh | grep -q 'result_firewall="REBOOT REQUIRED"' && grep -q 'REBOOT REQUIRED: restart the modem' quecdeck.sh && echo yes || echo no)"
+  "$(printf '%s\n' "$_uninstall_fn" | grep -q 'result_firewall="REBOOT REQUIRED"' && grep -q 'REBOOT REQUIRED: restart the modem' quecdeck.sh && echo yes || echo no)"
 t "uninstall stops UI before firewall cleanup" "yes" \
-  "$(_uninstall=$(sed -n '/^uninstall_quecdeck_components() {/,/^}/p' quecdeck.sh); _stop_line=$(printf '%s\n' "$_uninstall" | grep -n 'systemctl stop lighttpd' | head -1 | cut -d: -f1); _remove_line=$(printf '%s\n' "$_uninstall" | grep -n 'firewall.sh --remove' | cut -d: -f1); [ -n "$_stop_line" ] && [ "$_stop_line" -lt "$_remove_line" ] && echo yes || echo no)"
+  "$(_stop_line=$(printf '%s\n' "$_uninstall_fn" | grep -n 'systemctl stop lighttpd' | head -1 | cut -d: -f1); _remove_line=$(printf '%s\n' "$_uninstall_fn" | grep -n 'firewall.sh --remove' | cut -d: -f1); [ -n "$_stop_line" ] && [ -n "$_remove_line" ] && [ "$_stop_line" -lt "$_remove_line" ] && echo yes || echo no)"
 t "normal firewall service stop does not remove policy" "yes" \
   "$(! grep -q '^ExecStop=.*firewall.sh --remove' quecdeck/systemd/firewall.service && echo yes || echo no)"
+unset _uninstall_fn _check_line _run_line _stop_line _remove_line
 
 # Execute the real convergence function against a stateful iptables mock. The
-# The source checks above catch accidental deletion of the design. These scenarios
+# source checks above catch accidental deletion of the design. These scenarios
 # prove its behavior and, critically, that a failed duplicate deletion never
 # removes the final working jump.
 eval "$(extract_fn quecdeck/script/firewall.sh converge_input_jump)"
@@ -147,5 +191,3 @@ _remove_case() { # <initial-jumps> <chain-exists>
 t "firewall removal handles absent state"    "0:0:0:"    "$(_remove_case 0 0)"
 t "firewall removal deletes one owned chain" "0:0:0:DFX" "$(_remove_case 1 1)"
 t "firewall removal deletes duplicate jumps" "0:0:0:DDFX" "$(_remove_case 2 1)"
-t "device ingress regression test uses same bridge policy" "yes" \
-  "$(grep -q 'iptables -A QUECDECK -i bridge0 -d "\$LAN_IP"' tests/device/device-test-firewall-ingress.sh && echo yes || echo no)"

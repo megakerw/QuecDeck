@@ -1,0 +1,104 @@
+#!/bin/bash
+
+. /usrdata/quecdeck/script/cgi-lib.sh
+
+cgi_require_post
+cgi_read_post 4096
+cgi_output_json
+
+json_result() { # json_result <true|false> [error]
+    if [ "$1" = true ]; then
+        printf '{"ok":true}\n'
+    else
+        printf '{"ok":false,"error":"%s"}\n' "$2"
+    fi
+}
+
+client_ip=$(cgi_client_ip)
+action=$(get_post_param action)
+port=$(get_post_param port)
+developer=$(get_post_param developer_password)
+operation_id=$(cgi_new_operation_id) || {
+    json_result false "Could not create operation ID"
+    exit 0
+}
+
+# Package checks use session auth. Mutations use developer-password auth.
+case "$action" in
+    install|uninstall|update) auth_class=dev ;;
+    check)                    auth_class="" ;;
+    *) json_result false "Unknown SSH action" ; exit 0 ;;
+esac
+
+# Keep nonnumeric input out of privileged arguments.
+if [ "$action" = install ]; then
+    case "$port" in
+        ''|*[!0-9]*) json_result false "Use port 22, or a port between 1024 and 65535" ; exit 0 ;;
+    esac
+fi
+
+start_action() {
+    if [ "$action" = install ]; then
+        printf '%s\n' "$developer" |
+            /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service install "$operation_id" "$port" >/dev/null
+    else
+        printf '%s\n' "$developer" |
+            /opt/bin/sudo /usrdata/quecdeck/script/run_update.sh --service "$action" "$operation_id" >/dev/null
+    fi
+    rc=${PIPESTATUS[1]}
+}
+
+report_action() {
+    if [ "$rc" -eq 2 ]; then
+        json_result false "An update is already in progress"
+    elif [ "$rc" -ne 0 ]; then
+        json_result false "Failed to start the SSH action"
+    else
+        printf '{"ok":true,"operation_id":"%s"}\n' "$operation_id"
+    fi
+}
+
+if [ -z "$auth_class" ]; then
+    start_action
+    report_action
+    exit 0
+fi
+
+if [ -z "$developer" ] || [ "${#developer}" -gt 256 ]; then
+    json_result false "Developer password is required"
+    exit 0
+fi
+
+FAILURE_DIR=/run/quecdeck-web/security-auth-failures/$auth_class
+if ! cgi_flock_available || ! bf_lock "$FAILURE_DIR" "$client_ip"; then
+    json_result false "Password verification is temporarily unavailable"
+    exit 0
+fi
+if bf_locked "$FAILURE_DIR" "$client_ip"; then
+    bf_unlock
+    json_result false "Too many failed attempts. Try again later"
+    exit 0
+fi
+
+start_action
+if [ "$rc" = 75 ]; then
+    bf_unlock
+    json_result false "Password verification is temporarily unavailable"
+    exit 0
+fi
+if [ "$rc" = 3 ]; then
+    bf_fail "$FAILURE_DIR" "$client_ip"
+    result=$BF_FAIL_RESULT
+    bf_unlock
+    if [ "$result" = locked ]; then
+        json_result false "Too many failed attempts. Try again later"
+    else
+        json_result false "Developer password is incorrect"
+    fi
+    exit 0
+fi
+
+bf_clear "$FAILURE_DIR" "$client_ip"
+bf_unlock
+
+report_action

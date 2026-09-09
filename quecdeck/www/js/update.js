@@ -15,11 +15,9 @@ function updatePage() {
     done: false,
     failed: false,
     rollback: 'none',
+    operationId: '',
+    operationMonitor: null,
     log: '',
-    logOffset: 0,
-    logDecoder: null,
-    pollTimer: null,
-    logFetching: false,
     lastProgressAt: null,
     stallWarning: false,
     reloadCountdown: 0,
@@ -45,8 +43,7 @@ function updatePage() {
           this.checkedAt = new Date().toLocaleString([], { hour12: false });
         })
         .catch((err) => {
-          // Raw exception text (e.g. a JSON parse error from a captive
-          // portal's HTML reply) is meaningless to the user. Log it instead.
+          // Network parser errors do not give the user an actionable remedy.
           console.error('check_update failed:', err);
           this.checkError = 'Could not reach the update server.';
         })
@@ -72,6 +69,10 @@ function updatePage() {
               this.updating = false;
               return;
             }
+            if (!/^[a-f0-9]{32}$/.test(data.operation_id || '')) {
+              throw new Error('The updater did not return an operation ID.');
+            }
+            this.operationId = data.operation_id;
             this.startPolling();
           })
           .catch((err) => {
@@ -82,15 +83,13 @@ function updatePage() {
       });
     },
 
-    // Resets state for a freshly-triggered run, or for resuming one that was
-    // already running when the page loaded (e.g. after a reload mid-update).
     beginUpdatingView() {
       this.updating = true;
       this.done = false;
       this.failed = false;
       this.rollback = 'none';
       this.log = '';
-      this.logOffset = 0;
+      this.operationId = '';
       this.lastProgressAt = null;
       this.stallWarning = false;
       this.reconnectingSince = null;
@@ -98,15 +97,10 @@ function updatePage() {
       clearInterval(this.reloadTimer);
       this.reloadTimer = null;
       this.reloadCountdown = 0;
-      // A fresh streaming decoder per run: it buffers any multi-byte UTF-8
-      // sequence that gets split across two poll chunks instead of mangling it.
-      this.logDecoder = new TextDecoder('utf-8');
+      if (this.operationMonitor) this.operationMonitor.stop();
     },
 
-    // Scroll a log box to the bottom after the DOM update AND the next
-    // layout: the done/failed boxes are display:none until the status flips,
-    // and a scroll issued before the revealed box is laid out is a no-op
-    // (scrollHeight reads 0).
+    // Hidden result boxes have no scroll height until the next layout pass.
     scrollLogBox(refName) {
       this.$nextTick(() => {
         requestAnimationFrame(() => {
@@ -116,17 +110,13 @@ function updatePage() {
       });
     },
 
-    appendLogChunk(b64, finalFlush) {
-      if (b64) {
-        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        this.log += this.logDecoder.decode(bytes, { stream: true });
-      }
-      if (finalFlush) this.log += this.logDecoder.decode();
+    appendLogText(chunk) {
+      this.log += chunk;
       this.scrollLogBox('logbox');
     },
 
     ackUpdate() {
-      fetch('/cgi-bin/get_update_log?ack=1').catch(() => {});
+      if (this.operationMonitor) this.operationMonitor.acknowledge(this.operationId);
     },
 
     startReloadCountdown() {
@@ -140,96 +130,91 @@ function updatePage() {
       }, 1000);
     },
 
-    startPolling() {
-      this.lastProgressAt = Date.now();
-      this.pollTimer = setInterval(() => {
-        // Skip if the previous tick's request is still in flight: it would
-        // read the same not-yet-advanced logOffset and duplicate the chunk.
-        // The paired timeout keeps a hung request from leaving this stuck
-        // true forever.
-        if (this.logFetching) return;
-        this.logFetching = true;
-        fetchWithTimeout(fetchJSON, '/cgi-bin/get_update_log?offset=' + this.logOffset, 8000)
-          .then((data) => {
-            if (this.reconnecting) {
-              this.reconnecting = false;
-              this.reconnectingSince = null;
-              this.reconnectingTimeout = false;
-            }
-            const finished = data.status === 'done' || data.status === 'failed';
-            const prevLen = this.log.length;
-            try {
-              this.appendLogChunk(data.log, finished);
-            } catch (e) {
-              this.log += '\n[Could not decode log chunk]';
-            }
-            if (this.log.length > prevLen) {
-              this.lastProgressAt = Date.now();
-              this.stallWarning = false;
-            } else if (Date.now() - this.lastProgressAt > 180000) {
-              this.stallWarning = true;
-            }
-            if (typeof data.offset === 'number') this.logOffset = data.offset;
+    ensureOperationMonitor() {
+      if (this.operationMonitor) return;
+      this.operationMonitor = createOperationMonitor({
+        intervalMs: 3000,
+        onSnapshot: (data, chunk) => this.handleOperationSnapshot(data, chunk),
+        onDisconnect: (elapsed) => {
+          if (!this.reconnecting) this.reconnectingSince = Date.now();
+          this.reconnecting = true;
+          this.reconnectingTimeout = elapsed > 60000;
+        },
+        onReconnect: () => {
+          this.reconnecting = false;
+          this.reconnectingSince = null;
+          this.reconnectingTimeout = false;
+        },
+        onMismatch: () => {
+          this.updating = false;
+          this.checkForUpdates();
+        },
+      });
+    },
 
-            if (data.status === 'done') {
-              this.done = true;
-              // get_update_log reports the installed version file, which is
-              // authoritative after the swap. It keeps the cached version
-              // correct even if check_update is unreachable.
-              if (data.version) {
-                this.currentVersion = data.version;
-                localStorage.setItem('quecdeck_version', data.version);
-              }
-              this.updating = false;
-              clearInterval(this.pollTimer);
-              this.ackUpdate();
-              this.scrollLogBox('logboxDone');
-              this.startReloadCountdown();
-            } else if (data.status === 'failed') {
-              this.failed = true;
-              this.rollback = data.rollback || 'none';
-              this.updating = false;
-              clearInterval(this.pollTimer);
-              this.ackUpdate();
-              this.scrollLogBox('logboxFailed');
-            }
-          })
-          .catch(() => {
-            if (!this.reconnecting) {
-              this.reconnectingSince = Date.now();
-            } else if (Date.now() - this.reconnectingSince > 60000) {
-              this.reconnectingTimeout = true;
-            }
-            this.reconnecting = true;
-          })
-          .finally(() => { this.logFetching = false; });
-      }, 3000);
+    startPolling(initial = null) {
+      this.ensureOperationMonitor();
+      this.lastProgressAt = Date.now();
+      this.operationMonitor.start({ id: this.operationId, expectedKind: 'quecdeck', initial });
+    },
+
+    handleOperationSnapshot(data, chunk) {
+      const prevLen = this.log.length;
+      this.appendLogText(chunk);
+      if (this.log.length > prevLen) {
+        this.lastProgressAt = Date.now();
+        this.stallWarning = false;
+      } else if (Date.now() - this.lastProgressAt > 180000) {
+        this.stallWarning = true;
+      }
+      if (data.status === 'done') {
+        this.done = true;
+        // The installed version file remains authoritative when GitHub is unavailable.
+        if (data.version) {
+          this.currentVersion = data.version;
+          localStorage.setItem('quecdeck_version', data.version);
+        }
+        this.updating = false;
+        this.ackUpdate();
+        this.scrollLogBox('logboxDone');
+        this.startReloadCountdown();
+      } else if (data.status === 'failed') {
+        this.failed = true;
+        this.rollback = data.rollback || 'none';
+        this.updating = false;
+        this.ackUpdate();
+        this.scrollLogBox('logboxFailed');
+      }
     },
 
     init() {
       fetchJSON('/cgi-bin/get_update_log')
         .then((data) => {
-          if (data.status === 'running') {
+          // Only the owning page may acknowledge an operation.
+          if (data.kind && data.kind !== 'quecdeck') {
+            this.checkForUpdates();
+            return;
+          }
+          const validOperation = /^[a-f0-9]{32}$/.test(data.operation_id || '');
+          if (data.status === 'running' && validOperation) {
             this.beginUpdatingView();
-            this.appendLogChunk(data.log, false);
-            if (typeof data.offset === 'number') this.logOffset = data.offset;
-            this.startPolling();
+            this.operationId = data.operation_id;
+            this.startPolling(data);
             this.checkForUpdates();
             return;
           }
-          if (data.status === 'done') {
-            // "done" on fresh load is stale (ack race with "Reload now"). Go straight to idle.
+          if (data.status === 'done' && validOperation) {
+            // A completed update requires no progress view after a fresh load.
+            this.operationId = data.operation_id;
+            this.ensureOperationMonitor();
             this.ackUpdate();
             this.checkForUpdates();
             return;
           }
-          if (data.status === 'failed') {
-            this.logDecoder = new TextDecoder('utf-8');
-            this.appendLogChunk(data.log, true);
-            this.ackUpdate();
-            this.failed = true;
-            this.rollback = data.rollback || 'none';
-            this.scrollLogBox('logboxFailed');
+          if (data.status === 'failed' && validOperation) {
+            this.operationId = data.operation_id;
+            this.ensureOperationMonitor();
+            this.startPolling(data);
             this.checkForUpdates();
             return;
           }

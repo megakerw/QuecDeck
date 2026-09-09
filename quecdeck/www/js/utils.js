@@ -26,7 +26,6 @@ function authFetch(url, options) {
     });
 }
 
-// Register global stores
 document.addEventListener('alpine:init', () => {
   Alpine.store('scanBanner', {
     active: false,
@@ -122,7 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <h5 class="mb-0 fw-semibold" x-text="$store.confirmModal.title"></h5>
       </div>
       <p class="mb-3 text-muted" x-text="$store.confirmModal.message"></p>
-      <p x-show="$store.confirmModal.detail" class="mb-3 font-monospace small rounded px-2 py-1" style="background:var(--bs-secondary-bg)" x-text="$store.confirmModal.detail"></p>
+      <p x-show="$store.confirmModal.detail" class="mb-3 font-monospace small rounded px-2 py-1 surface-muted" x-text="$store.confirmModal.detail"></p>
       <div class="d-flex justify-content-end gap-2">
         <button type="button" class="btn btn-secondary btn-sm" @click="$store.confirmModal.cancel()">Cancel</button>
         <button type="button" class="btn btn-primary btn-sm" @click="$store.confirmModal.confirm()">Confirm</button>
@@ -203,6 +202,21 @@ function fetchText(url, options) {
   return authFetch(url, options).then(r => r.text());
 }
 
+// Decodes one chunk of /cgi-bin/get_update_log, which returns the log as base64
+// keyed on a byte offset. The caller owns the decoder and reuses it across
+// chunks: stream:true buffers a multi-byte UTF-8 sequence split by a poll
+// boundary, and the final flush emits what is still pending at a terminal
+// status. Shared, because the updater and the SSH page read the same log.
+function decodeLogChunk(decoder, b64, finalFlush) {
+  let out = '';
+  if (b64) {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    out += decoder.decode(bytes, { stream: true });
+  }
+  if (finalFlush) out += decoder.decode();
+  return out;
+}
+
 // POSTs form-encoded params and resolves with the response text.
 // Rejects if the body contains ERROR (the CGI convention for AT failures).
 function postForm(url, params) {
@@ -277,4 +291,22 @@ function cleanIp(ip) {
   if (ip === '0.0.0.0') return '-';
   if (/^[0:]+$/.test(ip)) return '-'; // covers ::, 0:0:0:0:0:0:0:0, etc.
   return ip;
+}
+
+// One shape for every service status badge, so pages bind
+// `:class="x.cls"` and `x-text="x.label"` instead of repeating a ternary chain.
+// Keeps the wording of the two states identical across pages.
+//
+//   undefined  the snapshot has not loaded yet
+//   null       the component is not installed
+//   boolean    running or not
+//
+// offCls separates a service meant to run always, where inactive is a fault, from
+// one driven by configuration, where inactive is the normal resting state.
+function serviceBadge(running, offCls = 'text-bg-secondary') {
+  if (running === undefined) return { cls: 'text-bg-secondary', label: 'Loading' };
+  if (running === null) return { cls: 'text-bg-secondary', label: 'Not installed' };
+  return running
+    ? { cls: 'text-bg-success', label: 'Active' }
+    : { cls: offCls, label: 'Inactive' };
 }

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <style>html,body{background:#0f1117}</style>
+    <title>QuecDeck</title>
+    <link rel="stylesheet" href="css/bootstrap.min.css?v=ed36d404" />
+    <link rel="stylesheet" href="css/styles.css?v=ed36d404" />
+    <link rel="icon" href="favicon.ico" />
+    <script src="js/bootstrap.bundle.min.js?v=ed36d404"></script>
+    <script src="js/utils.js?v=ed36d404"></script>
+    <script src="js/alpinejs.min.js?v=ed36d404" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="container my-4" x-data="securityController()">
+        <div id="nav-placeholder"></div>
+        <script src="js/nav.js?v=ed36d404"></script>
+
+        <div class="row gy-3 mt-4 mb-4 align-items-stretch">
+          <div class="col-lg-6">
+          <div class="panel-section h-100">
+            <div class="panel-title">Administrator Password</div>
+            <p class="text-muted small">Changing the administrator password signs out all active web sessions.</p>
+            <div class="row gy-3">
+              <div class="col-12">
+                <label class="form-label" for="current-password">Current password</label>
+                <input id="current-password" type="password" class="form-control" maxlength="256" autocomplete="current-password" x-model="currentPassword">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="new-password">New password</label>
+                <input id="new-password" type="password" class="form-control" minlength="12" maxlength="256" autocomplete="new-password" x-model="newPassword">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="confirm-password">Confirm new password</label>
+                <input id="confirm-password" type="password" class="form-control" minlength="12" maxlength="256" autocomplete="new-password" x-model="confirmPassword">
+              </div>
+            </div>
+            <div class="panel-actions">
+              <button type="button" class="btn btn-primary" @click="changePassword()" :disabled="busy" x-text="busyAction === 'password' ? 'Changing...' : 'Change password'"></button>
+            </div>
+          </div>
+          </div>
+
+          <div class="col-lg-6">
+          <div class="panel-section h-100">
+            <div class="panel-title">Developer Password</div>
+            <p class="text-muted small">Changing the developer password revokes any active developer unlock.</p>
+            <div class="row gy-3">
+              <div class="col-12">
+                <label class="form-label" for="current-developer-password">Current developer password</label>
+                <input id="current-developer-password" type="password" class="form-control" maxlength="256" autocomplete="current-password" x-model="currentDeveloperPassword">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="new-developer-password">New developer password</label>
+                <input id="new-developer-password" type="password" class="form-control" minlength="12" maxlength="256" autocomplete="new-password" x-model="newDeveloperPassword">
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="confirm-developer-password">Confirm new developer password</label>
+                <input id="confirm-developer-password" type="password" class="form-control" minlength="12" maxlength="256" autocomplete="new-password" x-model="confirmDeveloperPassword">
+              </div>
+            </div>
+            <div class="panel-actions">
+              <button type="button" class="btn btn-primary" @click="changeDeveloperPassword()" :disabled="busy" x-text="busyAction === 'developer' ? 'Changing...' : 'Change developer password'"></button>
+              <span class="ms-3 text-muted small" x-show="saveMessage" x-cloak x-text="saveMessage"></span>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script src="js/capslock.js?v=ed36d404"></script>
+    <script src="js/password-toggle.js?v=ed36d404"></script>
+    <script src="js/security-api.js?v=ed36d404"></script>
+    <script src="js/security.js?v=ed36d404"></script>
+  </body>
+</html>

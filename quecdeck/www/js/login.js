@@ -9,7 +9,10 @@ function loginPage() {
   return {
     error:      false,
     locked:     false,
+    unavailable: false,
     expired:    params.get('expired')   === '1',
+    passwordChanged: params.get('password_changed') === '1',
+    sessionWarning: params.get('session_warning') === '1',
     submitting: false,
     nextUrl:    next,
 
@@ -17,6 +20,7 @@ function loginPage() {
       const form = event.target;
       this.error = false;
       this.locked = false;
+      this.unavailable = false;
       this.submitting = true;
 
       const body = new URLSearchParams();
@@ -30,6 +34,9 @@ function loginPage() {
             window.location.href = this.nextUrl;
           } else if (data.error === 'locked') {
             this.locked = true;
+            this.submitting = false;
+          } else if (data.error === 'unavailable') {
+            this.unavailable = true;
             this.submitting = false;
           } else {
             this.error = true;

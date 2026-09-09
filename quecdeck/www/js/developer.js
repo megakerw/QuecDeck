@@ -5,7 +5,6 @@ function developerPage() {
     atcmd: "",
     atTimeout: 5,
     atCommandResponse: "",
-    ttydRunning: false,
     devUnlocked: false,
     devConfigured: true,
     devStatusLoaded: false,
@@ -119,7 +118,6 @@ function developerPage() {
           this.devUnlocked = data.unlocked === true;
           this.devConfigured = data.configured !== false;
           if (this.devUnlocked) {
-            this.fetchTtydStatus();
             this.fetchCellLockStatus();
           }
         })
@@ -140,10 +138,12 @@ function developerPage() {
           if (data.unlocked) {
             this.devUnlocked = true;
             this.devPassword = "";
-            this.fetchTtydStatus();
             this.fetchCellLockStatus();
           } else if (data.error === "locked") {
             this.devAuthError = "Too many failed attempts. Try again in 15 minutes.";
+            this.devPassword = "";
+          } else if (data.error === "unavailable") {
+            this.devAuthError = "Password verification is temporarily unavailable. Please try again.";
             this.devPassword = "";
           } else {
             this.devAuthError = "Wrong password. Please try again.";
@@ -180,32 +180,6 @@ function developerPage() {
     clearResponses() {
       this.atCommandResponse = "";
       this.isClean = true;
-    },
-
-    fetchTtydStatus() {
-      fetchJSON("/cgi-bin/toggle_ttyd")
-        .then((data) => { this.ttydRunning = data.running === true; })
-        .catch(() => {});
-    },
-
-    toggleTtyd(action) {
-      this.isLoading = true;
-      this.$store.waitModal.start(
-        action === "start" ? "Starting ttyd..." : "Stopping ttyd...",
-        15,
-        () => {}
-      );
-      fetchJSON("/cgi-bin/toggle_ttyd", { method: "POST", body: new URLSearchParams({ action }) })
-        .then((data) => {
-          this.$store.waitModal.stop();
-          this.ttydRunning = data.running === true;
-          this.isLoading = false;
-        })
-        .catch(() => {
-          this.$store.waitModal.stop();
-          this.isLoading = false;
-          this.$store.errorModal.open("Failed to toggle ttyd. Please try again.");
-        });
     },
 
     init() {

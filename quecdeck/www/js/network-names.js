@@ -580,7 +580,7 @@ const NETWORK_NAMES = {
   "25503": "Kyivstar",
   "25504": "Intertelecom",
   "25506": "lifecell",
-  "25507": "3Mob; Lycamobile",
+  "25507": "3Mob, Lycamobile",
   "25508": "JSC Ukrtelecom",
   "25509": "PRJSC \"Farlep-Invest\"",
   "25510": "Atlantis Telecom LLC",

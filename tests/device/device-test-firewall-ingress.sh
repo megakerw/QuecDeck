@@ -50,7 +50,11 @@ iptables -X "$PROBE"
 # actually delivered the host's phase-one request. Every other ingress path
 # falls through to DROP, independent of QCMAP's rules or WAN interface names.
 PORTS="80 443"
-[ -f /lib/systemd/system/sshd.service ] && PORTS="22 $PORTS"
+if [ -f /opt/etc/ssh/quecdeck_enabled ]; then
+    SSH_PORT=$(sed -n 's/^Port \([0-9][0-9]*\)$/\1/p' /opt/etc/ssh/sshd_config)
+    case "$SSH_PORT" in ''|*[!0-9]*) echo "FATAL: invalid SSH port"; exit 1 ;; esac
+    PORTS="$SSH_PORT $PORTS"
+fi
 iptables -F QUECDECK
 for port in $PORTS; do
     iptables -A QUECDECK -i bridge0 -d "$LAN_IP" -p tcp --dport "$port" -j ACCEPT
